@@ -16,7 +16,8 @@ use Illuminate\Support\Facades\Route;
 | Auth: Sanctum SPA cookie/session (guard `web`). Authorization: role Gates via
 | the `can:` middleware. See docs/api_convention.md.
 |
-| Tahap 5.3 — read-only inventory + master-data endpoints. No write operations.
+| Tahap 5.3 — read-only inventory + master-data endpoints  (can:viewer).
+| Tahap 5.4 — asset write API & lifecycle                   (can:operator).
 |
 */
 
@@ -30,17 +31,14 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
     // --- read API: any active user (viewer / operator / admin) ---
     Route::middleware('can:viewer')->group(function () {
-        Route::apiResource('assets', AssetController::class)
-            ->only(['index', 'show'])
-            ->names('api.assets');
+        Route::get('assets', [AssetController::class, 'index'])->name('api.assets.index');
+        Route::get('assets/{asset}', [AssetController::class, 'show'])->name('api.assets.show');
 
-        Route::apiResource('locations', LocationController::class)
-            ->only(['index', 'show'])
-            ->names('api.locations');
+        Route::get('locations', [LocationController::class, 'index'])->name('api.locations.index');
+        Route::get('locations/{location}', [LocationController::class, 'show'])->name('api.locations.show');
 
-        Route::apiResource('categories', CategoryController::class)
-            ->only(['index', 'show'])
-            ->names('api.categories');
+        Route::get('categories', [CategoryController::class, 'index'])->name('api.categories.index');
+        Route::get('categories/{category}', [CategoryController::class, 'show'])->name('api.categories.show');
 
         Route::get('categories/{category}/subcategories', [SubcategoryController::class, 'index'])
             ->name('api.categories.subcategories.index');
@@ -49,7 +47,21 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
         Route::get('locations/{location}/rooms', [RoomController::class, 'index'])
             ->name('api.locations.rooms.index');
-        Route::get('rooms/{room}', [RoomController::class, 'show'])
-            ->name('api.rooms.show');
+        Route::get('rooms/{room}', [RoomController::class, 'show'])->name('api.rooms.show');
+    });
+
+    // --- write API: operator / admin (Gate `operator` already passes admins) ---
+    Route::middleware('can:operator')->group(function () {
+        Route::post('assets', [AssetController::class, 'store'])->name('api.assets.store');
+        Route::match(['put', 'patch'], 'assets/{asset}', [AssetController::class, 'update'])->name('api.assets.update');
+        Route::delete('assets/{asset}', [AssetController::class, 'destroy'])->name('api.assets.destroy');
+
+        // restore resolves a soft-deleted asset — the only route that does
+        Route::post('assets/{asset}/restore', [AssetController::class, 'restore'])
+            ->withTrashed()
+            ->name('api.assets.restore');
+
+        Route::post('assets/{asset}/write-off', [AssetController::class, 'writeOff'])->name('api.assets.write-off');
+        Route::post('assets/{asset}/unwrite-off', [AssetController::class, 'unwriteOff'])->name('api.assets.unwrite-off');
     });
 });

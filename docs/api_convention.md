@@ -1,9 +1,10 @@
 # API Convention — Inventaris Vidatra
 
 Status: **HTTP/API foundation established (Tahap 5.0), hardened (Tahap 5.2),
-read-only inventory + master-data endpoints added (Tahap 5.3).**
-Write endpoints (asset create/update, mutations, imports, reports, user/master-data
-management) do **not exist yet** — they arrive from **Tahap 5.4+** and must follow the
+read-only inventory + master-data endpoints (Tahap 5.3), asset write API & lifecycle
+(Tahap 5.4).**
+Still to come: mutation-log read API, non-relocation mutation types, room / room-alias
+management, and the import/report HTTP layer (Tahap 5.5+). Those must follow the
 conventions below.
 
 ---
@@ -174,8 +175,8 @@ scoped/soft-deleted binding is configured per route when needed.
 
 All routes below sit behind `auth:sanctum` + `auth.active` + **`can:viewer`**
 (`routes/api.php`). Every active user — `viewer`, `operator`, `admin` — has full read
-access. Unauthenticated → `401`; authenticated-but-inactive → `403`. **No write
-operations exist yet** (Tahap 5.4+).
+access. Unauthenticated → `401`; authenticated-but-inactive → `403`. The asset **write**
+endpoints (Tahap 5.4) are in §12.
 
 | Method | Path | Name | Notes |
 |---|---|---|---|
@@ -220,11 +221,15 @@ tie-break on `id` is always appended.
 
 ### 8.2 Soft-delete vs written-off
 
-- **Soft-deleted** (`deleted_at` set) = an erroneous record. **Never returned** — the
-  default `SoftDeletes` scope applies and `withTrashed()` is not used anywhere.
-  `GET /api/assets/{id}` for a soft-deleted asset → `404`.
+Two independent lifecycle concepts — never conflated (see also §12.4):
+
+- **Soft-deleted** (`deleted_at` set) = an erroneous record. **Never returned** by the
+  read API — the default `SoftDeletes` scope applies and `withTrashed()` is not used on
+  any read path. `GET /api/assets/{id}` for a soft-deleted asset → `404`. The row and
+  its inventory number are kept forever (the number is never reissued).
 - **Written-off** (`is_written_off = true`) = a real asset, disposed of in business
-  terms. Appears in listings normally; filter with `is_written_off=1` / `=0`.
+  terms. Appears in listings normally; filter with `is_written_off=1` / `=0`. It still
+  holds its asset number and stays fully readable.
 
 ### 8.3 `AssetResource` shape
 
@@ -269,7 +274,146 @@ need paging, it gets `per_page` then, consistently with §7.
 
 ---
 
-## 12. Test database convention
+## 12. Write API — asset write & lifecycle (Tahap 5.4)
+
+All routes below sit behind `auth:sanctum` + `auth.active` + **`can:operator`**
+(`routes/api.php`). `operator` **and** `admin` pass (the `operator` Gate already admits
+admins). `viewer` / inactive → `403`; unauthenticated → `401`. Business logic lives in
+`App\Services\Asset\{AssetWriteService, AssetNumberGenerator, AssetMutationRecorder}` —
+controllers stay thin.
+
+| Method | Path | Name | Success | Notes |
+|---|---|---|---|---|
+| `POST` | `/api/assets` | `api.assets.store` | `201` + `{data}` | server allocates `sequence_no`; DB generates `asset_code` |
+| `PUT` / `PATCH` | `/api/assets/{asset}` | `api.assets.update` | `200` + `{data}` | partial (PATCH-style) for both verbs |
+| `DELETE` | `/api/assets/{asset}` | `api.assets.destroy` | `204` (no body) | soft delete only |
+| `POST` | `/api/assets/{asset}/restore` | `api.assets.restore` | `200` + `{data}` | the only route that resolves a trashed asset (`->withTrashed()`) |
+| `POST` | `/api/assets/{asset}/write-off` | `api.assets.write-off` | `200` + `{data}` | `409` if already written-off |
+| `POST` | `/api/assets/{asset}/unwrite-off` | `api.assets.unwrite-off` | `200` + `{data}` | `409` if not written-off |
+
+`update`, `destroy`, `write-off`, `unwrite-off` use the **default** binding — a
+soft-deleted asset is not found → `404`. There are **no** endpoints for mutation logs,
+and none for editing master-data codes.
+
+### 12.1 Create (`POST /api/assets`)
+
+Accepted body: `location_code`, `category_code`, `subcategory_code`, `asset_year`,
+`room_id`, `condition`, `is_written_off`, `written_off_on`, `written_off_note`,
+`quantity`, `brand_model`, `serial_no`, `material`, `purchase_date`, `funding_source`,
+`detail_type`, `capacity_note`, `notes`.
+
+- `sequence_no` and `asset_code` are **`prohibited`** — sending either is a `422`
+  (explicit rejection, not a silent drop). The server allocates the sequence; the
+  database generates `asset_code` (STORED column, never built in PHP).
+- `quantity` defaults to `1` and **must** be `1` (`422` otherwise — no grouped assets).
+- `is_written_off` defaults to `false`. If `true`, `written_off_on` is **required**
+  (`date`, not in the future); `condition` is **not** changed as a side effect.
+- Defaults: `quantity → 1`, `is_written_off → false`. `condition` may be `null`.
+
+Master-data validation (§9):
+
+| Field | Rule |
+|---|---|
+| `location_code` | exists **and** `is_active` |
+| `category_code` | exists **and** `is_active` |
+| `subcategory_code` | composite — `(category_code, subcategory_code)` must exist and be active; never a bare `exists:subcategories,code` |
+| `room_id` | exists, `is_active`, **and** `location_code` = the asset's location (a room from another location → `422`) |
+| `asset_year` | `integer`, `1980 .. currentYear+1` |
+| `condition` | `null` or one of `baik` / `kurang_baik` / `rusak_berat` |
+
+The database composite FKs (`fk_assets_subcategory`, `fk_assets_room`) remain as
+defence-in-depth behind the validation.
+
+### 12.2 Asset numbering
+
+`asset_code = location_code.category_code.subcategory_code.sequence_no.asset_year`
+(e.g. `01.02.001.001.2025`). The generator only ever produces the **sequence_no**.
+
+- **Scope** of a sequence family is `location_code + category_code + subcategory_code`
+  — **NOT** the year. Numbering is **continuous across years**: 2025 → `001,002,003`,
+  2026 → `004,005,006`.
+- The "family" of an existing sequence is its leading numeric run:
+  `005`, `005A`, `005B` → family 5; `0017B` → 17; `0001` → 1. The next number is
+  `MAX(family) + 1` computed **numerically** in MySQL
+  (`CAST(REGEXP_SUBSTR(sequence_no,'^[0-9]+') AS UNSIGNED)`), never lexically
+  (`'1000' < '999'` as strings).
+- New numbers are zero-padded to 3 digits through `999`, then plain: `999 → 1000 → 1001`.
+  Letter suffixes are **historical-only** and never generated.
+- **Soft-deleted rows are counted** — a retired number is never handed out again.
+- Historical Excel sequences are the source of truth and are **never normalised**
+  (`0001`, `005A`, `0017B` stay verbatim). The generator is used **only** for assets
+  created through this write API — the importer never calls it.
+
+### 12.3 Update (`PUT|PATCH /api/assets/{asset}`)
+
+- Partial semantics for both verbs. `sequence_no` and `asset_code` can never change
+  (`prohibited` → `422`). Missing placement keys are backfilled from the current asset
+  so the composite / room↔location rules always see a complete picture.
+- `is_written_off`, `written_off_on`, `written_off_note` are **`prohibited`** — status
+  changes go through the dedicated `write-off` / `unwrite-off` endpoints.
+- Changing `category_code` / `subcategory_code` / `location_code` re-generates
+  `asset_code` at the database (the model is refreshed so the Resource shows the new
+  value); `sequence_no` is untouched.
+- A relocation — a change of `location_code` **and/or** `room_id` — writes one
+  append-only `mutation_logs` row in the **same transaction** (§12.5). A change of only
+  descriptive fields or `condition` writes **no** mutation log.
+
+### 12.4 Soft delete / restore
+
+- `DELETE` performs `SoftDeletes::delete()` only — **never** a hard delete. The row,
+  its number and its mutation history all remain. After delete, `GET` detail → `404`
+  and a second `DELETE` → `404`.
+- `POST …/restore` clears `deleted_at`. **Same** id, `sequence_no` and `asset_code`; no
+  new number consumed, no duplicate created (the trashed row already owns its slot in
+  `uq_assets_number`, which counts trashed rows). Restoring a live asset is a `200`
+  no-op.
+
+### 12.5 Written-off lifecycle
+
+- `POST …/write-off` — body `written_off_on` (required, `date`, not future) +
+  optional `written_off_note`. Server sets `is_written_off = true`. `condition` is not
+  touched. `409` if the asset is already written-off (the existing date is **not**
+  silently overwritten).
+- `POST …/unwrite-off` — no body. Clears `is_written_off`, `written_off_on`,
+  `written_off_note`. `409` if the asset is not written-off.
+- The client can never send `is_written_off` directly to either endpoint (`prohibited`).
+
+### 12.6 Mutation log
+
+`mutation_logs` is **append-only** — no update / delete endpoint, ever. Tahap 5.4
+records exactly one type: **`pindah_ruangan`** (location and/or room change). Each row
+captures `asset_id`, `type`, `mutation_date` (today), `from_location_code` /
+`to_location_code`, `from_room_id` / `to_room_id`, `from_room_label` / `to_room_label`
+(name snapshots — the master room can later be renamed or disabled),
+`condition_before` / `condition_after`, an optional `mutation_note`, `performed_by`,
+`created_at`. It is written inside the asset-update transaction: if the log write fails,
+the asset change rolls back too.
+
+### 12.7 Transaction & concurrency
+
+- Every write is wrapped in `DB::transaction`.
+- Create: the owning `subcategories` row is locked `FOR UPDATE`
+  (`AssetNumberGenerator::lockScope`) before the sequence is read, so concurrent
+  creates in the same `(category, subcategory)` are **serialised** — the second waits
+  for the first to commit, then sees its row.
+- `uq_assets_number` (`location_code, category_code, subcategory_code, sequence_no,
+  asset_year`) is the **final defence**. On a duplicate-key / deadlock / lock-wait race
+  (`1062` / `1213` / `1205`) `AssetWriteService` retries the whole create up to 4 times,
+  re-running the generator against the now-committed state.
+- No new sequence table is introduced — the existing rows are the source of truth.
+- True parallel DB testing is impractical in the PHPUnit harness; the retry path is
+  covered by injecting a generator that returns a colliding value, and the unique
+  index is asserted to hold.
+
+### 12.8 Status codes
+
+`201` create · `200` update / write-off / unwrite-off / restore · `204` delete ·
+`404` unknown or soft-deleted target · `409` write-off/unwrite-off state conflict ·
+`422` validation · `403` role denial · `401` unauthenticated.
+
+---
+
+## 13. Test database convention
 
 - **Development DB:** `inventaris_vidatra` (`.env`) — never touched by the test suite.
 - **Test DB:** `inventaris_vidatra_test` (`phpunit.xml` + `.env.testing`).
@@ -284,14 +428,13 @@ need paging, it gets `per_page` then, consistently with §7.
 
 ---
 
-## 13. Not yet implemented — planned for future stages
+## 14. Not yet implemented — planned for future stages
 
 The following are **conventions only** — no code exists yet:
 
 | Stage | Adds |
 |---|---|
-| 5.4 | asset write API + asset-number generator, `can:operator`, `409` on identity conflict |
-| 5.5 | mutation-log API |
+| 5.5 | mutation-log **read** API + non-relocation mutation types (`perbaikan`, `perubahan_kondisi`, …) |
 | 5.6 | room / room-alias management + import/report HTTP layer |
 | 5.7 | full API feature-test matrix |
 
