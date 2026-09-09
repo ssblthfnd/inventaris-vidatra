@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 
 /**
  * Inventory asset — one row = one physical unit (schema_design.md §2.6, Tahap 4 B3).
@@ -130,16 +131,51 @@ class Asset extends Model
      * `(category_code, subcategory_code) -> subcategories(category_code, code)` and
      * `subcategory_code` alone is not unique across categories (schema_design.md §3.2).
      * This accessor resolves the exact subcategory; it is cached per instance but is
-     * NOT eager-loadable (`with('subcategory')` will not work — the service layer joins
-     * explicitly when it needs to). Property access works: `$asset->subcategory`.
+     * NOT eager-loadable (`with('subcategory')` will not work). For a collection, use
+     * {@see self::loadSubcategoriesFor()} to bulk-resolve without N+1.
+     * Property access works: `$asset->subcategory`.
      *
      * @return Attribute<?Subcategory, never>
      */
     protected function subcategory(): Attribute
     {
-        return Attribute::get(fn (): ?Subcategory => Subcategory::query()
-            ->where('category_code', $this->category_code)
-            ->where('code', $this->subcategory_code)
-            ->first())->shouldCache();
+        return Attribute::get(function (): ?Subcategory {
+            // if a caller bulk-resolved it, reuse that (see loadSubcategoriesFor)
+            if ($this->relationLoaded('subcategoryRef')) {
+                return $this->getRelation('subcategoryRef');
+            }
+
+            return Subcategory::query()
+                ->where('category_code', $this->category_code)
+                ->where('code', $this->subcategory_code)
+                ->first();
+        })->shouldCache();
+    }
+
+    /**
+     * Bulk-resolve the composite subcategory for a collection of assets so that
+     * `$asset->subcategory` costs no extra query per asset (Tahap 5.3 §24).
+     *
+     * `subcategories` is a tiny master table, so all of it is loaded in one query and
+     * indexed by the natural key. Each asset gets a `subcategoryRef` relation slot.
+     *
+     * @param  Collection<int, self>  $assets
+     */
+    public static function loadSubcategoriesFor(Collection $assets): void
+    {
+        if ($assets->isEmpty()) {
+            return;
+        }
+
+        $subcategories = Subcategory::query()
+            ->get()
+            ->keyBy(fn (Subcategory $s): string => $s->category_code.'|'.$s->code);
+
+        $assets->each(function (self $asset) use ($subcategories): void {
+            $asset->setRelation(
+                'subcategoryRef',
+                $subcategories->get($asset->category_code.'|'.$asset->subcategory_code)
+            );
+        });
     }
 }
