@@ -2,10 +2,9 @@
 
 Status: **HTTP/API foundation established (Tahap 5.0), hardened (Tahap 5.2),
 read-only inventory + master-data endpoints (Tahap 5.3), asset write API & lifecycle
-(Tahap 5.4).**
-Still to come: mutation-log read API, non-relocation mutation types, room / room-alias
-management, and the import/report HTTP layer (Tahap 5.5+). Those must follow the
-conventions below.
+(Tahap 5.4), mutation history read API (Tahap 5.5).**
+Still to come: non-relocation mutation types, room / room-alias management, and the
+import/report HTTP layer (Tahap 5.6+). Those must follow the conventions below.
 
 ---
 
@@ -413,7 +412,109 @@ the asset change rolls back too.
 
 ---
 
-## 13. Test database convention
+## 13. Mutation History API (Tahap 5.5)
+
+Read-only history of an asset's mutations. Behind `auth:sanctum` + `auth.active` +
+**`can:viewer`** — every active user reads it (`viewer` / `operator` / `admin` → `200`;
+inactive → `403`; unauthenticated → `401`).
+
+| Method | Path | Name |
+|---|---|---|
+| `GET` | `/api/assets/{asset}/mutations` | `api.assets.mutations.index` |
+
+- **Read-only.** There is deliberately **no** `POST` / `PUT` / `PATCH` / `DELETE` here,
+  and mutation rows are never soft-deleted. `mutation_logs` is append-only and is
+  written **only** by `App\Services\Asset\AssetMutationRecorder` (Tahap 5.4). `POST`
+  to the path → `405`; a `.../mutations/{id}` path → `404`.
+- **Asset-scoped.** Results are `where asset_id = {asset.id}` (`$asset->mutationLogs()`)
+  — another asset's rows are never returned.
+- **Soft-deleted asset → `404`.** Default route binding, no `withTrashed()` — history is
+  not a way around lifecycle visibility.
+- **Empty history → `200`** with `{ "data": [], "meta": { …, "total": 0 } }` — never `404`.
+
+### 13.1 Historical snapshots — do not reconstruct from current master data
+
+> Mutation history reads historical snapshots and must not be reconstructed from
+> current master data.
+
+- `from.room_label` / `to.room_label` are the room **names as they were** when the move
+  happened. They are emitted verbatim from `mutation_logs.*_room_label` and are **never**
+  re-resolved through the `rooms` relation — a room can be renamed or disabled afterwards
+  and the history must still show the original name.
+- `condition_before` / `condition_after` are the event's own snapshots, not the asset's
+  current condition.
+- `performed_by` is the **only** live reference (current identity). It exposes `id` and
+  `name` only — never `email` / `role` / `is_active`. A performer who has since been
+  deactivated is still shown; history is not filtered by `users.is_active`.
+
+### 13.2 Pagination
+
+Same convention as §7: `{ "data": [], "meta": { current_page, last_page, per_page,
+total } }`, no `links`. `per_page` default `20`, validated `integer|min:1|max:100`
+(> 100 → `422`, never clamped). `page` validated `integer|min:1`.
+
+### 13.3 Sorting
+
+`?sort=<col>&direction=<asc|desc>`. `sort` whitelist (server-side; anything else →
+`422`): `mutation_date`, `created_at`, `id`. Default **`sort=mutation_date`,
+`direction=desc`**, with **`id desc` always appended** as a deterministic tie-breaker
+(`mutation_date` is the business date; `created_at` is the technical timestamp — they
+are not mixed).
+
+### 13.4 Filters (all optional, AND)
+
+| Param | Rule | Effect |
+|---|---|---|
+| `mutation_type` | `in:pindah_ruangan` (the only type the system records) | `where type` |
+| `performed_by` | `integer`, `exists:users,id` | `where performed_by` |
+| `date_from` | `date_format:Y-m-d` | `where mutation_date >=` |
+| `date_to` | `date_format:Y-m-d`, and `>= date_from` when both given | `where mutation_date <=` |
+
+Date bounds are **inclusive** (`date_from <= mutation_date <= date_to`). A blank query
+param (`?date_from=`) is treated as absent.
+
+### 13.5 Search — `?q=<term>`
+
+Max 100 chars, case-insensitive partial match via bound `LIKE` with `%` / `_` / `\`
+escaped through the shared `ApiController::escapeLike()`. Columns:
+`from_room_label`, `to_room_label`, `from_location_code`, `to_location_code`,
+`mutation_note` (the `notes` column). Not searched: `performed_by` (no join).
+
+### 13.6 Resource shape (`MutationLogResource`)
+
+```json
+{
+  "id": 12,
+  "mutation_type": "pindah_ruangan",
+  "mutation_date": "2026-09-08",
+  "from": { "location_code": "01", "room_id": 2, "room_label": "Ruangan Personalia & SARPRAS" },
+  "to":   { "location_code": "01", "room_id": 5, "room_label": "Ruangan Keuangan" },
+  "condition_before": "baik",
+  "condition_after": "baik",
+  "mutation_note": null,
+  "performed_by": { "id": 1, "name": "..." },
+  "created_at": "2026-09-08T09:14:00+00:00"
+}
+```
+
+`performed_by` is `null` when the row has no performer. Not exposed: `asset_id`, raw
+`type` / `notes` keys, `updated_at`, `deleted_at`, and any performer field beyond
+`id` + `name`.
+
+### 13.7 N+1
+
+The performer is eager-loaded (`->with('createdBy')`) — one query for the whole page.
+Room **labels are snapshot columns**, so no `rooms` query is issued. Query count does
+not grow with the number of rows on the page.
+
+### 13.8 Not on the asset detail endpoint
+
+`GET /api/assets/{asset}` (§8) is **not** changed — it does not embed mutation history.
+History is paginated and lives on its own endpoint to keep the detail payload light.
+
+---
+
+## 14. Test database convention
 
 - **Development DB:** `inventaris_vidatra` (`.env`) — never touched by the test suite.
 - **Test DB:** `inventaris_vidatra_test` (`phpunit.xml` + `.env.testing`).
@@ -428,14 +529,13 @@ the asset change rolls back too.
 
 ---
 
-## 14. Not yet implemented — planned for future stages
+## 15. Not yet implemented — planned for future stages
 
 The following are **conventions only** — no code exists yet:
 
 | Stage | Adds |
 |---|---|
-| 5.5 | mutation-log **read** API + non-relocation mutation types (`perbaikan`, `perubahan_kondisi`, …) |
-| 5.6 | room / room-alias management + import/report HTTP layer |
+| 5.6 | non-relocation mutation types (`perbaikan`, `perubahan_kondisi`, …); room / room-alias management; import/report HTTP layer |
 | 5.7 | full API feature-test matrix |
 
 Do not document any of these as available endpoints until their stage lands.
