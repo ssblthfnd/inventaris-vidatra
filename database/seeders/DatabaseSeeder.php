@@ -21,5 +21,8 @@ class DatabaseSeeder extends Seeder
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
+
+        // Master data Tahap 1 (finalized) — prasyarat import Tahap 4.
+        $this->call(MasterDataSeeder::class);
     }
 }
