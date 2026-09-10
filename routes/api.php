@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AssetMutationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\SubcategoryController;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Route;
 | Tahap 5.3 — read-only inventory + master-data endpoints  (can:viewer).
 | Tahap 5.4 — asset write API & lifecycle                   (can:operator).
 | Tahap 5.5 — read-only mutation history                    (can:viewer).
+| Tahap 5.6 — read-only dashboard aggregation               (can:viewer).
 |
 */
 
@@ -33,8 +35,12 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
     // --- read API: any active user (viewer / operator / admin) ---
     Route::middleware('can:viewer')->group(function () {
+        Route::get('dashboard', [DashboardController::class, 'index'])->name('api.dashboard');
+
         Route::get('assets', [AssetController::class, 'index'])->name('api.assets.index');
-        Route::get('assets/{asset}', [AssetController::class, 'show'])->name('api.assets.show');
+        // ->withTrashed(): operator/admin can read a soft-deleted asset (to restore it);
+        // AssetController::show() still 404s it for a viewer. (Tahap 5.8.5)
+        Route::get('assets/{asset}', [AssetController::class, 'show'])->name('api.assets.show')->withTrashed();
         Route::get('assets/{asset}/mutations', [AssetMutationController::class, 'index'])
             ->name('api.assets.mutations.index');
 
@@ -57,6 +63,7 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     // --- write API: operator / admin (Gate `operator` already passes admins) ---
     Route::middleware('can:operator')->group(function () {
         Route::post('assets', [AssetController::class, 'store'])->name('api.assets.store');
+        Route::post('assets/batch', [AssetController::class, 'storeBatch'])->name('api.assets.store-batch');
         Route::match(['put', 'patch'], 'assets/{asset}', [AssetController::class, 'update'])->name('api.assets.update');
         Route::delete('assets/{asset}', [AssetController::class, 'destroy'])->name('api.assets.destroy');
 

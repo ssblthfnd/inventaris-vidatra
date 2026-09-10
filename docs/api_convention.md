@@ -2,9 +2,11 @@
 
 Status: **HTTP/API foundation established (Tahap 5.0), hardened (Tahap 5.2),
 read-only inventory + master-data endpoints (Tahap 5.3), asset write API & lifecycle
-(Tahap 5.4), mutation history read API (Tahap 5.5).**
-Still to come: non-relocation mutation types, room / room-alias management, and the
-import/report HTTP layer (Tahap 5.6+). Those must follow the conventions below.
+(Tahap 5.4), mutation history read API (Tahap 5.5), dashboard aggregation API
+(Tahap 5.6), multi-value inventory filters (Tahap 5.8.1).**
+Still to come: non-relocation mutation types, room / room-alias management, filtered
+reporting, and the import/report HTTP layer (Tahap 5.7+). Those must follow the
+conventions below.
 
 ---
 
@@ -192,21 +194,60 @@ endpoints (Tahap 5.4) are in §12.
 
 ### 8.1 `GET /api/assets` — query parameters
 
-**Filters** (all optional, combined with **AND**):
+**Filters** (all optional). Every filter below is **multi-value** since Tahap 5.8.1:
 
-| Param | Rule | Effect |
+| Param | Rule (per value) | Effect |
 |---|---|---|
-| `location_code` | `exists:locations,code` | `where location_code` |
-| `category_code` | `exists:categories,code` | `where category_code` |
-| `subcategory_code` | must exist as a subcategory `code`, **within `category_code` when that is also given** (`code` is not globally unique — schema_design.md §3.2) | `where subcategory_code` |
-| `room_id` | `exists:rooms,id` | `where room_id` |
-| `condition` | one of `baik`, `kurang_baik`, `rusak_berat` (`App\Enums\AssetCondition`) | `where condition` |
-| `is_written_off` | boolean (`1/0/true/false`) | `where is_written_off` |
-| `asset_year` | `integer`, `1980 .. currentYear+1` | `where asset_year` |
+| `location_code` | `exists:locations,code` | `where location_code IN (...)` |
+| `category_code` | `exists:categories,code` | `where category_code IN (...)` |
+| `subcategory_code` | bare code, or category-qualified `CC.SSS` — see §8.1.2 | category-aware `OR` of `(category_code, subcategory_code)` pairs |
+| `room_id` | `exists:rooms,id`; must belong to a selected `location_code` when that filter is present | `where room_id IN (...)` |
+| `condition` | one of `baik`, `kurang_baik`, `rusak_berat` (`App\Enums\AssetCondition`), or the sentinel `unknown` = `condition IS NULL` | `where (condition IN (...) [OR condition IS NULL])` |
+| `is_written_off` | boolean (`1`/`0`) | `where is_written_off = ?` — see §8.1.1 |
+| `asset_year` | `integer`, `1980 .. currentYear+1` | `where asset_year IN (...)` |
 
 `asset_year`'s upper bound is **next calendar year**, not the importer's `2100` — a
 *query* filter for a year further out is meaningless. Absurd values (`-999`, `999999`)
 are rejected `422`.
+
+#### 8.1.1 Multi-value contract
+
+- **Syntax** — the natural Laravel array form: `?category_code[]=02&category_code[]=03`.
+  A bare scalar (`?category_code=02`) is still accepted and normalised to a
+  one-element list, so every pre-5.8.1 request keeps working unchanged.
+- **Semantics** — **OR within one filter, AND between filters.**
+  `?category_code[]=02&category_code[]=03&condition[]=baik` ⇒
+  `(category 02 OR 03) AND (condition baik)`.
+- **Duplicates** — a repeated value in one filter
+  (`?category_code[]=02&category_code[]=02`) is **`422`** (`distinct`), not silently
+  de-duplicated. The `errors` key is the bare filter name (`category_code`), never
+  `category_code.0` — the single-value 5.3 error shape is preserved.
+- **Blank entries** (`?condition[]=`) are dropped before validation.
+- **`condition[]=unknown`** filters `condition IS NULL`. Combined with real values it
+  is `OR`-ed: `?condition[]=baik&condition[]=unknown` ⇒
+  `condition = 'baik' OR condition IS NULL`. The string `unknown` is the only accepted
+  non-enum token (the same term the dashboard API uses for NULL); `yes`/`maybe`/… →
+  `422`.
+- **`is_written_off[]=1&is_written_off[]=0`** — both statuses accepted ⇒ equivalent to
+  *no* status filter (a no-op after validation). One value still filters normally.
+- **Empty result** from a valid filter combination is `200` with `data: []`, never
+  `404`.
+
+#### 8.1.2 `subcategory_code[]` — category-aware
+
+`subcategory_code` is **never** a global `WHERE subcategory_code IN (...)` — `code` is
+not unique across categories (schema_design.md §3.2). Each value is one of:
+
+- a **bare code** (`001`): resolved to every `(category_code, code)` pair that exists,
+  restricted to `category_code[]` when that filter is present;
+- a **category-qualified pair** `CC.SSS` (`02.001`): the exact pair `(02, 001)`. When
+  `category_code[]` is present, the qualified category must be one of its values
+  (else `422`).
+
+The resolved pairs become `WHERE (category_code = ? AND subcategory_code = ?) OR …`,
+so subcategory `001` of category `02` can never match category `03`. Example:
+`?category_code[]=02&category_code[]=03&subcategory_code[]=02.001` returns only the
+category-`02` `001` assets.
 
 **Search** — `?q=<term>`, max 100 chars, case-insensitive partial match (bound `LIKE`,
 `%`/`_`/`\` escaped — never string interpolation) across:
@@ -514,7 +555,66 @@ History is paginated and lives on its own endpoint to keep the detail payload li
 
 ---
 
-## 14. Test database convention
+## 14. Dashboard API (Tahap 5.6)
+
+One read-only aggregation endpoint for the (future) React dashboard. Behind
+`auth:sanctum` + `auth.active` + **`can:viewer`** — every active user (`viewer` /
+`operator` / `admin`) → `200`; inactive → `403`; unauthenticated → `401`.
+
+| Method | Path | Name |
+|---|---|---|
+| `GET` | `/api/dashboard` | `api.dashboard` |
+
+`GET` only — `POST` / `PUT` / `PATCH` / `DELETE` → `405`. **No query params / filters**
+in this stage (it is the global dashboard). All counting is done with database
+aggregation (`COUNT` / `GROUP BY` / conditional `SUM` / `JOIN`) in
+`App\Services\Dashboard\DashboardService` — never `Asset::all()` then group in PHP.
+
+### 14.1 Asset scope
+
+Every count is over **active assets** = the default `assets` query (`deleted_at IS
+NULL`, no `withTrashed()`).
+
+- **Written-off assets are still counted** — `is_written_off = true` is a business
+  status, not a deletion. They appear in `total_assets`, `by_condition`, `by_location`,
+  `by_category`, `by_room`, and are also totalled separately in `summary.written_off`.
+- **Soft-deleted assets are excluded everywhere.**
+
+### 14.2 Response
+
+```json
+{
+  "data": {
+    "summary": {
+      "total_assets": 394,
+      "written_off": 26,
+      "by_condition": { "baik": 378, "kurang_baik": 0, "rusak_berat": 11, "unknown": 5 }
+    },
+    "by_location": [ { "code": "01", "name": "YAYASAN", "asset_count": 394 } ],
+    "by_category": [ { "code": "02", "name": "MEUBELAIR", "asset_count": 186 } ],
+    "by_room":     [ { "id": 5, "name": "Ruangan Keuangan", "location_code": "01", "location_name": "YAYASAN", "asset_count": 53 } ],
+    "recent_mutations": []
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `summary.total_assets` | count of all active assets |
+| `summary.written_off` | active assets with `is_written_off = true` |
+| `summary.by_condition` | active assets grouped by `condition`; **`unknown` = `condition IS NULL`** (NULL is never coerced to another value); the four keys are always present |
+| `by_location` | **every active location**, `is_active = true`, incl. those with `asset_count = 0`; ordered by `code` asc; inactive locations are omitted |
+| `by_category` | **every active category**, same rules; ordered by `code` asc |
+| `by_room` | only rooms that currently hold **≥ 1 active asset** (rooms with `0` are omitted); grouping is location-aware, so same-named rooms in different locations stay separate rows; ordered by `location_code`, then room `name`, then `id`. Includes the room's `is_active` state implicitly — a disabled room that still holds active assets is shown, because those assets are real |
+| `recent_mutations` | the **10** most recent `mutation_logs` across all assets, ordered `mutation_date` desc → `created_at` desc → `id` desc; each row is a `MutationLogResource` (§13.6) — historical room-label snapshots, performer as `{id,name}` only; `[]` when there is no history (still `200`) |
+
+`recent_mutations` reuses `MutationLogResource`; it is **not** a new browsable
+mutation-history endpoint. There is no by-subcategory breakdown (§11 composite-key
+rule untouched). `asset_code` is not rebuilt anywhere.
+
+---
+
+## 15. Test database convention
 
 - **Development DB:** `inventaris_vidatra` (`.env`) — never touched by the test suite.
 - **Test DB:** `inventaris_vidatra_test` (`phpunit.xml` + `.env.testing`).
@@ -529,13 +629,12 @@ History is paginated and lives on its own endpoint to keep the detail payload li
 
 ---
 
-## 15. Not yet implemented — planned for future stages
+## 16. Not yet implemented — planned for future stages
 
 The following are **conventions only** — no code exists yet:
 
 | Stage | Adds |
 |---|---|
-| 5.6 | non-relocation mutation types (`perbaikan`, `perubahan_kondisi`, …); room / room-alias management; import/report HTTP layer |
-| 5.7 | full API feature-test matrix |
+| 5.7 | non-relocation mutation types (`perbaikan`, `perubahan_kondisi`, …); room / room-alias management; import/report HTTP layer; filtered/parameterised reporting; full API feature-test matrix |
 
 Do not document any of these as available endpoints until their stage lands.

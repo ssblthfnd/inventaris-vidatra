@@ -51,6 +51,10 @@ class AssetResource extends JsonResource
             'room_raw_value' => $asset->room_raw_value,
 
             'condition' => $asset->condition?->value,
+            // `is_trashed` = soft-deleted (an erroneous record kept for restore), a
+            // separate concept from `is_written_off` (a real asset, disposed of in
+            // business terms). The raw `deleted_at` timestamp is never exposed.
+            'is_trashed' => $asset->trashed(),
             'is_written_off' => $asset->is_written_off,
             'written_off_on' => $asset->written_off_on?->toDateString(),
             'written_off_note' => $asset->written_off_note,

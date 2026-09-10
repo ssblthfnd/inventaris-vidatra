@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Requests\Api\AssetIndexRequest;
+use App\Http\Requests\Api\BatchStoreAssetRequest;
 use App\Http\Requests\Api\StoreAssetRequest;
 use App\Http\Requests\Api\UpdateAssetRequest;
 use App\Http\Requests\Api\WriteOffAssetRequest;
@@ -36,18 +37,32 @@ class AssetController extends ApiController
 
     public function index(AssetIndexRequest $request): AssetCollection
     {
-        $filters = $request->validated();
-
+        // Multi-value filters: OR *within* one filter, AND *between* filters
+        // (docs/api_convention.md §8.1). Every list comes from the request already
+        // validated + normalised; an empty list means "filter not applied".
         $query = Asset::query()
             ->with(['location', 'category', 'room'])
-            ->when(isset($filters['location_code']), fn (Builder $q) => $q->where('location_code', $filters['location_code']))
-            ->when(isset($filters['category_code']), fn (Builder $q) => $q->where('category_code', $filters['category_code']))
-            ->when(isset($filters['subcategory_code']), fn (Builder $q) => $q->where('subcategory_code', $filters['subcategory_code']))
-            ->when(isset($filters['room_id']), fn (Builder $q) => $q->where('room_id', $filters['room_id']))
-            ->when(isset($filters['condition']), fn (Builder $q) => $q->where('condition', $filters['condition']))
-            ->when(isset($filters['is_written_off']), fn (Builder $q) => $q->where('is_written_off', $request->boolean('is_written_off')))
-            ->when(isset($filters['asset_year']), fn (Builder $q) => $q->where('asset_year', $filters['asset_year']))
-            ->when(isset($filters['q']), fn (Builder $q) => $this->applySearch($q, $filters['q']));
+            ->when($request->locationCodes(), fn (Builder $q, array $codes) => $q->whereIn('location_code', $codes))
+            ->when($request->categoryCodes(), fn (Builder $q, array $codes) => $q->whereIn('category_code', $codes))
+            ->when($request->subcategoryPairs(), fn (Builder $q, array $pairs) => $q->where(function (Builder $inner) use ($pairs): void {
+                foreach ($pairs as [$categoryCode, $subcategoryCode]) {
+                    $inner->orWhere(fn (Builder $w) => $w
+                        ->where('category_code', $categoryCode)
+                        ->where('subcategory_code', $subcategoryCode));
+                }
+            }))
+            ->when($request->roomIds(), fn (Builder $q, array $ids) => $q->whereIn('room_id', $ids))
+            ->when($request->conditionFilter(), fn (Builder $q, array $condition) => $q->where(function (Builder $inner) use ($condition): void {
+                if ($condition['values'] !== []) {
+                    $inner->orWhereIn('condition', $condition['values']);
+                }
+                if ($condition['includeNull']) {
+                    $inner->orWhereNull('condition');
+                }
+            }))
+            ->when($request->assetYears(), fn (Builder $q, array $years) => $q->whereIn('asset_year', $years))
+            ->when($request->writtenOffValue() !== null, fn (Builder $q) => $q->where('is_written_off', $request->writtenOffValue()))
+            ->when($request->validated('q'), fn (Builder $q, string $term) => $this->applySearch($q, $term));
 
         $query->orderBy($request->sortColumn(), $request->sortDirection())->orderBy('id');
 
@@ -58,8 +73,14 @@ class AssetController extends ApiController
         return new AssetCollection($assets);
     }
 
-    public function show(Asset $asset): AssetResource
+    public function show(Request $request, Asset $asset): AssetResource
     {
+        // The route resolves soft-deleted assets (`->withTrashed()`) so operator/admin
+        // can view + restore them; a viewer must still see a plain 404 (Tahap 5.8.5).
+        if ($asset->trashed() && ! $request->user()?->canWriteInventory()) {
+            abort(404);
+        }
+
         $asset->load(['location', 'category', 'room']);
 
         return new AssetResource($asset);
@@ -72,6 +93,25 @@ class AssetController extends ApiController
         $asset = $service->create($request->validated(), $request->user());
 
         return $this->assetResponse($asset)->setStatusCode(Response::HTTP_CREATED);
+    }
+
+    /**
+     * Batch create — `count` identical assets in one atomic transaction (Tahap 5.8.4).
+     * Each asset is a separate row with its own server-generated sequence /
+     * `asset_code` and `quantity = 1`.
+     */
+    public function storeBatch(BatchStoreAssetRequest $request, AssetWriteService $service): JsonResponse
+    {
+        $count = $request->assetCount();
+        $created = $service->createBatch($request->assetTemplate(), $count, $request->user());
+
+        return AssetResource::collection($created)
+            ->additional([
+                'message' => "{$count} aset berhasil dibuat.",
+                'count' => $count,
+            ])
+            ->response()
+            ->setStatusCode(Response::HTTP_CREATED);
     }
 
     public function update(UpdateAssetRequest $request, Asset $asset, AssetWriteService $service): JsonResponse

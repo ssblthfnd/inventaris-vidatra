@@ -33,6 +33,10 @@ class WriteOffAssetRequest extends FormRequest
     {
         return [
             'is_written_off.prohibited' => 'Status ditentukan oleh endpoint ini; kirim hanya written_off_on dan written_off_note.',
+            'written_off_on.required' => 'Tanggal write-off wajib diisi.',
+            'written_off_on.date' => 'Tanggal write-off tidak valid.',
+            'written_off_on.before_or_equal' => 'Tanggal write-off tidak boleh di masa depan.',
+            'written_off_note.max' => 'Catatan write-off maksimal 255 karakter.',
         ];
     }
 }

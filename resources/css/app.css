@@ -7,3 +7,14 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+/*
+ * Reserve the vertical-scrollbar gutter at all times so the usable viewport width
+ * is identical whether or not the active page scrolls. Without this, navigating
+ * between a page that scrolls (e.g. Dashboard) and one that does not (e.g. an
+ * empty Inventory result) changes `clientWidth` by the scrollbar width and nudges
+ * every centered (`mx-auto`) element sideways.
+ */
+html {
+    scrollbar-gutter: stable;
+}

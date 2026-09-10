@@ -6,6 +6,7 @@ use App\Models\Asset;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -64,6 +65,61 @@ class AssetWriteService
                 $asset->save();
 
                 return $asset->refresh();
+            });
+        });
+    }
+
+    /**
+     * Create many identical assets in ONE transaction (Tahap 5.8.4).
+     *
+     *  - Every record has `quantity = 1` — the batch is `count` separate physical
+     *    units, never `quantity = count`.
+     *  - Each asset's `sequence_no` comes from the SAME {@see AssetNumberGenerator}
+     *    used by single create: `lockScope()` is taken once for the whole batch, then
+     *    `next()` is called per asset. Because the loop runs inside one transaction on
+     *    one connection, each `next()` sees the rows the previous iterations inserted,
+     *    so the numbers come out consecutive with no gaps and no separate counter.
+     *  - Atomic: any failure rolls the whole batch back to 0 assets. A
+     *    duplicate-key / deadlock race retries the whole batch against committed state.
+     *
+     * @param  array<string, mixed>  $data  validated per-asset template (no `count`)
+     * @return Collection<int, Asset> the created assets, fresh
+     */
+    public function createBatch(array $data, int $count, User $actor): Collection
+    {
+        return $this->withDuplicateRetry(function () use ($data, $count, $actor): Collection {
+            return DB::transaction(function () use ($data, $count, $actor): Collection {
+                $this->numbers->lockScope($data['category_code'], $data['subcategory_code']);
+
+                $ids = [];
+                for ($i = 0; $i < $count; $i++) {
+                    $asset = new Asset(Arr::only($data, self::WRITABLE));
+                    $asset->sequence_no = $this->numbers->next(
+                        $data['location_code'],
+                        $data['category_code'],
+                        $data['subcategory_code'],
+                    );
+                    $asset->quantity = 1;
+                    $asset->is_written_off = false;
+                    $asset->written_off_on = null;
+                    $asset->written_off_note = null;
+                    $asset->created_by = $actor->id;
+                    $asset->updated_by = $actor->id;
+                    $asset->save();
+
+                    $ids[] = $asset->id;
+                }
+
+                // one bulk reload so `asset_code` (DB generated column) is populated
+                $created = Asset::query()
+                    ->with(['location', 'category', 'room'])
+                    ->whereIn('id', $ids)
+                    ->orderBy('id')
+                    ->get();
+
+                Asset::loadSubcategoriesFor($created);
+
+                return $created;
             });
         });
     }

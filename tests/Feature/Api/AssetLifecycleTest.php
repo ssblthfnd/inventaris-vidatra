@@ -116,14 +116,38 @@ class AssetLifecycleTest extends TestCase
 
     /* ------------------------------------------------------------------ soft delete (§36) */
 
-    public function test_delete_soft_deletes_and_hides_from_read_api(): void
+    public function test_delete_soft_deletes_and_hides_from_the_active_list(): void
     {
         $asset = $this->existingAsset('001');
 
         $this->deleteJson("/api/assets/{$asset->id}")->assertNoContent();
 
         $this->assertSoftDeleted('assets', ['id' => $asset->id]);
+        // the active inventory list never shows a soft-deleted asset
         $this->getJson('/api/assets')->assertOk()->assertJsonPath('meta.total', 0);
+    }
+
+    public function test_operator_can_still_read_a_soft_deleted_asset_to_restore_it(): void
+    {
+        // Tahap 5.8.5: the detail route resolves trashed assets for write-capable users.
+        $asset = $this->existingAsset('001');
+        $code = $asset->asset_code;
+        $this->deleteJson("/api/assets/{$asset->id}")->assertNoContent();
+
+        $this->getJson("/api/assets/{$asset->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $asset->id)
+            ->assertJsonPath('data.asset_code', $code)
+            ->assertJsonPath('data.is_trashed', true)
+            ->assertJsonPath('data.is_written_off', false);
+    }
+
+    public function test_viewer_still_gets_404_for_a_soft_deleted_asset(): void
+    {
+        $asset = $this->existingAsset('001');
+        $this->deleteJson("/api/assets/{$asset->id}")->assertNoContent();
+
+        Sanctum::actingAs($this->viewer());
         $this->getJson("/api/assets/{$asset->id}")->assertStatus(404);
     }
 
