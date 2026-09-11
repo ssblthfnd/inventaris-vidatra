@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 
 /**
@@ -5,7 +6,32 @@ import { Link } from 'react-router-dom';
  * an asset without a spreadsheet's worth of columns. The asset code is a link to the
  * detail page (Tahap 5.8.2); `listSearch` is carried in navigation state so "Kembali"
  * restores the exact filtered list.
+ *
+ * Row selection (Tahap 5.8.6) is opt-in via `selectable` — a viewer never sees the
+ * checkbox column at all, keeping their view strictly read-only. Selection only ever
+ * covers the rows currently rendered (the visible page); the header checkbox reflects
+ * that page only, never the full filtered result set.
  */
+
+function HeaderCheckbox({ checked, indeterminate, onChange, disabled }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      disabled={disabled}
+      aria-label={checked ? 'Batalkan pilih semua di halaman ini' : 'Pilih semua di halaman ini'}
+      className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+    />
+  );
+}
 
 const CONDITION = {
   baik: { label: 'Baik', dot: 'bg-emerald-500' },
@@ -34,10 +60,10 @@ function StatusCell({ writtenOff }) {
   return <span className="text-gray-500">Aktif</span>;
 }
 
-function SkeletonRows({ rows = 8 }) {
-  return Array.from({ length: rows }).map((_, i) => (
+function SkeletonRows({ columns = 6 }) {
+  return Array.from({ length: 8 }).map((_, i) => (
     <tr key={i} className="border-t border-gray-100">
-      {Array.from({ length: 6 }).map((__, j) => (
+      {Array.from({ length: columns }).map((__, j) => (
         <td key={j} className="px-4 py-3">
           <span className="block h-3 w-full max-w-[8rem] animate-pulse rounded bg-gray-100" />
         </td>
@@ -46,13 +72,38 @@ function SkeletonRows({ rows = 8 }) {
   ));
 }
 
-export default function InventoryTable({ assets, loading, refreshing, listSearch = '' }) {
+export default function InventoryTable({
+  assets,
+  loading,
+  refreshing,
+  listSearch = '',
+  selectable = false,
+  selectedIds = null,
+  onToggleRow = () => {},
+  onToggleAll = () => {},
+}) {
+  const columns = selectable ? 7 : 6;
+  const selectableCount = assets.length;
+  const selectedCount = selectable ? assets.filter((a) => selectedIds.has(a.id)).length : 0;
+  const allSelected = selectableCount > 0 && selectedCount === selectableCount;
+  const someSelected = selectedCount > 0 && !allSelected;
+
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-400">
+              {selectable && (
+                <th className="w-10 px-4 py-3">
+                  <HeaderCheckbox
+                    checked={allSelected}
+                    indeterminate={someSelected}
+                    onChange={onToggleAll}
+                    disabled={loading || selectableCount === 0}
+                  />
+                </th>
+              )}
               <th className="px-4 py-3">Kode Aset</th>
               <th className="px-4 py-3">Aset</th>
               <th className="px-4 py-3">Kategori</th>
@@ -65,10 +116,21 @@ export default function InventoryTable({ assets, loading, refreshing, listSearch
             className={refreshing ? 'opacity-60 transition-opacity' : 'transition-opacity'}
           >
             {loading ? (
-              <SkeletonRows />
+              <SkeletonRows columns={columns} />
             ) : (
               assets.map((asset) => (
                 <tr key={asset.id} className="border-t border-gray-100 hover:bg-gray-50/60">
+                  {selectable && (
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(asset.id)}
+                        onChange={() => onToggleRow(asset.id)}
+                        aria-label={`Pilih aset ${asset.asset_code}`}
+                        className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <Link
                       to={`/inventory/${asset.id}`}

@@ -118,7 +118,7 @@ class AssetMutationLogTest extends TestCase
         $this->app->bind(AssetMutationRecorder::class, function () {
             return new class extends AssetMutationRecorder
             {
-                public function recordRelocation(Asset $asset, array $before, array $after, User $actor, ?string $note = null): MutationLog
+                public function recordRelocation(Asset $asset, array $before, array $after, User $actor, ?string $note = null, ?string $batchOperationId = null): MutationLog
                 {
                     throw new RuntimeException('boom');
                 }

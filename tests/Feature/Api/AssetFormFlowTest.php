@@ -124,16 +124,43 @@ class AssetFormFlowTest extends TestCase
         $this->assertSame('renovasi', $logs[0]->notes);
     }
 
-    public function test_pure_descriptive_edit_via_put_records_no_mutation(): void
+    public function test_pure_descriptive_edit_via_put_records_an_edit_mutation(): void
     {
+        // Tahap 5.8.8: a descriptive-only edit (no room/location change) is now
+        // audited as a generic EDIT event, not silently skipped.
         Sanctum::actingAs($this->operator());
         $room = $this->room('ZL');
-        $asset = $this->existingAsset('001', overrides: ['room_id' => $room->id]);
+        $asset = $this->existingAsset('001', overrides: [
+            'room_id' => $room->id, 'brand_model' => 'original', 'condition' => 'baik',
+        ]);
 
         $this->putJson("/api/assets/{$asset->id}", [
             'brand_model' => 'changed',
             'notes' => 'note only',
             'condition' => 'rusak_berat',
+        ])->assertOk();
+
+        $log = MutationLog::query()->where('asset_id', $asset->id)->sole();
+        $this->assertSame('EDIT', $log->event_type->value);
+        $this->assertNull($log->type);
+        $this->assertSame('original', $log->before_snapshot['brand_model']);
+        $this->assertSame('changed', $log->after_snapshot['brand_model']);
+        $this->assertSame('baik', $log->before_snapshot['condition']);
+        $this->assertSame('rusak_berat', $log->after_snapshot['condition']);
+    }
+
+    public function test_pure_no_op_edit_via_put_records_no_mutation(): void
+    {
+        Sanctum::actingAs($this->operator());
+        $room = $this->room('ZL');
+        $asset = $this->existingAsset('001', overrides: [
+            'room_id' => $room->id, 'brand_model' => 'same', 'condition' => 'baik',
+        ]);
+
+        // resubmits the exact same values already on the asset
+        $this->putJson("/api/assets/{$asset->id}", [
+            'brand_model' => 'same',
+            'condition' => 'baik',
         ])->assertOk();
 
         $this->assertSame(0, MutationLog::query()->where('asset_id', $asset->id)->count());

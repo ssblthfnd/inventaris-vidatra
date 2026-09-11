@@ -41,8 +41,13 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // ->withTrashed(): operator/admin can read a soft-deleted asset (to restore it);
         // AssetController::show() still 404s it for a viewer. (Tahap 5.8.5)
         Route::get('assets/{asset}', [AssetController::class, 'show'])->name('api.assets.show')->withTrashed();
+        // ->withTrashed() (Tahap 5.8.9): history is meaningful for a deleted asset too —
+        // unlike show()'s deliberate viewer restriction above, EVERY active role
+        // (including viewer) can read a trashed asset's mutation history. Read-only;
+        // grants no lifecycle/mutation permission.
         Route::get('assets/{asset}/mutations', [AssetMutationController::class, 'index'])
-            ->name('api.assets.mutations.index');
+            ->name('api.assets.mutations.index')
+            ->withTrashed();
 
         Route::get('locations', [LocationController::class, 'index'])->name('api.locations.index');
         Route::get('locations/{location}', [LocationController::class, 'show'])->name('api.locations.show');
@@ -64,7 +69,9 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     Route::middleware('can:operator')->group(function () {
         Route::post('assets', [AssetController::class, 'store'])->name('api.assets.store');
         Route::post('assets/batch', [AssetController::class, 'storeBatch'])->name('api.assets.store-batch');
+        Route::patch('assets/batch', [AssetController::class, 'batchUpdate'])->name('api.assets.update-batch');
         Route::match(['put', 'patch'], 'assets/{asset}', [AssetController::class, 'update'])->name('api.assets.update');
+        Route::delete('assets/batch', [AssetController::class, 'batchDestroy'])->name('api.assets.destroy-batch');
         Route::delete('assets/{asset}', [AssetController::class, 'destroy'])->name('api.assets.destroy');
 
         // restore resolves a soft-deleted asset — the only route that does

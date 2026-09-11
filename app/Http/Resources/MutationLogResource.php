@@ -21,6 +21,12 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * The performer is the only *live* reference (current identity). Only `id` + `name`
  * are exposed — never email / role / `is_active`, and a since-deactivated performer
  * is still shown (history stays historical).
+ *
+ * Tahap 5.8.8 adds `event_type` / `before_snapshot` / `after_snapshot` /
+ * `batch_operation_id` — purely additive, on top of the Tahap 5.5 shape above.
+ * `mutation_type` keeps meaning exactly what it always did (only ever
+ * `pindah_ruangan`, null for every other event); `event_type` is the generic
+ * classification populated for every event, room moves included.
  */
 class MutationLogResource extends JsonResource
 {
@@ -55,6 +61,12 @@ class MutationLogResource extends JsonResource
             'performed_by' => $this->performer($log->createdBy),
 
             'created_at' => $log->created_at?->toIso8601String(),
+
+            // Tahap 5.8.8 — generic audit foundation, additive fields.
+            'event_type' => $log->event_type?->value,
+            'batch_operation_id' => $log->batch_operation_id,
+            'before_snapshot' => $log->before_snapshot,
+            'after_snapshot' => $log->after_snapshot,
         ];
     }
 

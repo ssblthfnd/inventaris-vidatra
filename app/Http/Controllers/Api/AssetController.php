@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Requests\Api\AssetIndexRequest;
+use App\Http\Requests\Api\BatchDeleteAssetRequest;
 use App\Http\Requests\Api\BatchStoreAssetRequest;
+use App\Http\Requests\Api\BatchUpdateAssetRequest;
 use App\Http\Requests\Api\StoreAssetRequest;
 use App\Http\Requests\Api\UpdateAssetRequest;
 use App\Http\Requests\Api\WriteOffAssetRequest;
@@ -121,16 +123,46 @@ class AssetController extends ApiController
         return $this->assetResponse($asset);
     }
 
-    public function destroy(Asset $asset, AssetWriteService $service): Response
+    /**
+     * Batch edit — the safe descriptive fields only, across many assets in one
+     * atomic transaction (Tahap 5.8.6). See {@see AssetWriteService::batchUpdate()}.
+     */
+    public function batchUpdate(BatchUpdateAssetRequest $request, AssetWriteService $service): JsonResponse
     {
-        $service->softDelete($asset);
+        $result = $service->batchUpdate($request->assetIds(), $request->changes(), $request->user());
+
+        return response()->json([
+            'message' => $this->batchUpdateMessage($result),
+            ...$result,
+        ]);
+    }
+
+    public function destroy(Request $request, Asset $asset, AssetWriteService $service): Response
+    {
+        $service->softDelete($asset, $request->user());
 
         return response()->noContent(); // 204
     }
 
-    public function restore(Asset $asset, AssetWriteService $service): JsonResponse
+    /**
+     * Batch soft delete (Tahap 5.8.7). Unlike the single-asset endpoint (204 No
+     * Content), this returns 200 with `{message, requested, deleted}` — the same
+     * shape choice `batchUpdate` already made — so the frontend can flash an
+     * accurate count without a second round trip.
+     */
+    public function batchDestroy(BatchDeleteAssetRequest $request, AssetWriteService $service): JsonResponse
     {
-        $asset = $service->restore($asset);
+        $result = $service->batchSoftDelete($request->assetIds(), $request->user());
+
+        return response()->json([
+            'message' => "{$result['deleted']} aset dipindahkan ke Trash.",
+            ...$result,
+        ]);
+    }
+
+    public function restore(Request $request, Asset $asset, AssetWriteService $service): JsonResponse
+    {
+        $asset = $service->restore($asset, $request->user());
 
         return $this->assetResponse($asset);
     }
@@ -156,6 +188,24 @@ class AssetController extends ApiController
         $asset->load(['location', 'category', 'room']);
 
         return (new AssetResource($asset))->response();
+    }
+
+    /**
+     * @param  array{requested: int, updated: int, unchanged: int}  $result
+     */
+    private function batchUpdateMessage(array $result): string
+    {
+        ['requested' => $requested, 'updated' => $updated, 'unchanged' => $unchanged] = $result;
+
+        if ($updated === 0) {
+            return "{$requested} aset diproses. Tidak ada perubahan karena nilainya sudah sama.";
+        }
+
+        if ($unchanged === 0) {
+            return "{$requested} aset berhasil diperbarui.";
+        }
+
+        return "{$requested} aset diproses. {$updated} aset berubah, {$unchanged} aset tidak mengalami perubahan.";
     }
 
     private function applySearch(Builder $query, string $term): void

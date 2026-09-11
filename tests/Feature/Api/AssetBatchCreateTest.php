@@ -250,16 +250,25 @@ class AssetBatchCreateTest extends TestCase
         $this->assertSame(30, Asset::query()->distinct()->count('asset_code'));
     }
 
-    public function test_batch_does_not_touch_import_rows_or_mutation_logs(): void
+    public function test_batch_does_not_touch_import_rows_and_records_one_create_event_per_asset(): void
     {
         Sanctum::actingAs($this->operator());
         $importRows = ImportRow::query()->count();
 
-        $this->postJson('/api/assets/batch', $this->payload(['count' => 10]))->assertStatus(201);
+        $response = $this->postJson('/api/assets/batch', $this->payload(['count' => 10]))->assertStatus(201);
+        $ids = collect($response->json('data'))->pluck('id');
 
         $this->assertSame($importRows, ImportRow::query()->count());
-        $this->assertSame(0, MutationLog::query()->count());
         $this->assertSame(0, Asset::query()->whereNotNull('import_row_id')->count());
+
+        // Tahap 5.8.8: batch create records one CREATE event per asset, all sharing
+        // one batch_operation_id.
+        $logs = MutationLog::query()->whereIn('asset_id', $ids)->get();
+        $this->assertCount(10, $logs);
+        $this->assertTrue($logs->every(fn (MutationLog $l) => $l->event_type->value === 'CREATE'));
+        $this->assertNull($logs->first()->before_snapshot);
+        $this->assertCount(1, $logs->pluck('batch_operation_id')->unique());
+        $this->assertNotNull($logs->first()->batch_operation_id);
     }
 
     public function test_batch_does_not_modify_pre_existing_assets(): void

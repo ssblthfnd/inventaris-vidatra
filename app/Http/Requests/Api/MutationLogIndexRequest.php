@@ -2,16 +2,21 @@
 
 namespace App\Http\Requests\Api;
 
+use App\Enums\MutationEventType;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Query validation for `GET /api/assets/{asset}/mutations` (Tahap 5.5).
+ * Query validation for `GET /api/assets/{asset}/mutations` (Tahap 5.5; `event_type`
+ * filter added Tahap 5.8.8).
  *
  * Read-only. `mutation_type` is validated against the values the system actually
- * produces (Tahap 5.4 only ever writes `pindah_ruangan`). `per_page` is rejected
- * above 100 — never silently clamped, consistent with the asset list (§5.3).
+ * produces via the legacy column (Tahap 5.4 only ever writes `pindah_ruangan`) — kept
+ * exactly as-is for backward compatibility. `event_type` is the new, generic filter
+ * covering every canonical event {@see MutationEventType} adds on top of that.
+ * `per_page` is rejected above 100 — never silently clamped, consistent with the
+ * asset list (§5.3).
  */
 class MutationLogIndexRequest extends FormRequest
 {
@@ -52,6 +57,7 @@ class MutationLogIndexRequest extends FormRequest
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
 
             'mutation_type' => ['nullable', 'string', Rule::in(self::KNOWN_TYPES)],
+            'event_type' => ['nullable', 'string', Rule::enum(MutationEventType::class)],
             'performed_by' => ['nullable', 'integer', Rule::exists('users', 'id')],
 
             'date_from' => ['nullable', 'date_format:Y-m-d'],

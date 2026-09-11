@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import MultiSelectFilter from '../components/MultiSelectFilter';
+import BatchDeleteDialog from '../components/inventory/BatchDeleteDialog';
+import BatchEditModal from '../components/inventory/BatchEditModal';
 import InventoryTable from '../components/inventory/InventoryTable';
 import { api, ApiError } from '../lib/api';
 import {
@@ -79,6 +81,20 @@ export default function Inventory() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
+
+  /* ---------------------------------------------------------------- batch selection */
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [flash, setFlash] = useState('');
+  const [flashTone, setFlashTone] = useState('success'); // 'success' | 'error'
+
+  // Selection only ever covers the current result set. Any change to the query
+  // (search/filter/sort/page) invalidates it rather than silently keeping stale ids
+  // for rows that may no longer be visible.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [apiQuery]);
 
   const patchState = useCallback(
     (patch, { resetPage = true } = {}) => {
@@ -277,6 +293,71 @@ export default function Inventory() {
   const meta = result?.meta;
   const assets = result?.data ?? [];
 
+  const toggleRow = (id) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelectedIds((current) => {
+      const allSelected = assets.length > 0 && assets.every((a) => current.has(a.id));
+      if (allSelected) return new Set();
+      return new Set(assets.map((a) => a.id));
+    });
+  };
+
+  const selectedAssets = useMemo(
+    () => assets.filter((a) => selectedIds.has(a.id)),
+    [assets, selectedIds],
+  );
+
+  const handleBatchSuccess = (res) => {
+    setShowBatchModal(false);
+    setSelectedIds(new Set());
+    setFlashTone('success');
+    setFlash(res?.message || 'Aset berhasil diperbarui.');
+    setRetryKey((k) => k + 1);
+  };
+
+  const handleDeleteSuccess = (res) => {
+    setShowDeleteDialog(false);
+    setSelectedIds(new Set());
+    setFlashTone('success');
+    setFlash(res?.message || 'Aset dipindahkan ke Trash.');
+    setRetryKey((k) => k + 1);
+  };
+
+  const handleDeleteStale = (message) => {
+    setShowDeleteDialog(false);
+    setSelectedIds(new Set());
+    setFlashTone('error');
+    setFlash(message);
+    setRetryKey((k) => k + 1);
+  };
+
+  useEffect(() => {
+    if (!flash) return undefined;
+    const t = setTimeout(() => setFlash(''), 5000);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  // Pagination edge case: a batch delete (or any mutation) can empty out the
+  // current page entirely (e.g. deleting all 10 assets on the last page). Laravel's
+  // paginator doesn't clamp an out-of-range page itself, so step back to the real
+  // last page rather than leaving the user stranded on a blank page.
+  useEffect(() => {
+    if (!result?.meta) return;
+    const { current_page: currentPage, last_page: lastPage, total } = result.meta;
+    if (total > 0 && currentPage > lastPage) {
+      patchState({ page: lastPage }, { resetPage: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
   /* ---------------------------------------------------------------- render */
   return (
     <div className="space-y-5">
@@ -306,6 +387,49 @@ export default function Inventory() {
           </div>
         )}
       </header>
+
+      {flash && (
+        <div
+          role="status"
+          className={
+            flashTone === 'error'
+              ? 'rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800'
+              : 'rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-800'
+          }
+        >
+          {flash}
+        </div>
+      )}
+
+      {/* batch selection toolbar */}
+      {isOperator && selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-900 bg-gray-900 px-3.5 py-2.5 text-sm text-white">
+          <span className="font-medium">{selectedIds.size} aset dipilih</span>
+          <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBatchModal(true)}
+              className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100"
+            >
+              Edit massal
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDeleteDialog(true)}
+              className="rounded-md border border-red-500 bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+            >
+              Hapus
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="rounded-md border border-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Batal pilih
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* search + filters */}
       <div className="space-y-3">
@@ -494,6 +618,10 @@ export default function Inventory() {
             loading={phase === 'loading'}
             refreshing={refreshing}
             listSearch={searchParams.toString()}
+            selectable={isOperator}
+            selectedIds={selectedIds}
+            onToggleRow={toggleRow}
+            onToggleAll={toggleAll}
           />
 
           {meta && meta.total > 0 && meta.last_page > 1 && (
@@ -531,6 +659,27 @@ export default function Inventory() {
             </nav>
           )}
         </>
+      )}
+
+      {isOperator && (
+        <BatchEditModal
+          open={showBatchModal}
+          assets={selectedAssets}
+          roomsByLocation={md.roomsByLocation}
+          ensureRooms={md.ensureRooms}
+          onClose={() => setShowBatchModal(false)}
+          onSuccess={handleBatchSuccess}
+        />
+      )}
+
+      {isOperator && (
+        <BatchDeleteDialog
+          open={showDeleteDialog}
+          assets={selectedAssets}
+          onClose={() => setShowDeleteDialog(false)}
+          onSuccess={handleDeleteSuccess}
+          onStale={handleDeleteStale}
+        />
       )}
     </div>
   );

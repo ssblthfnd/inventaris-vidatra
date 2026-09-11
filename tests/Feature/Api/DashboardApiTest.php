@@ -306,7 +306,11 @@ class DashboardApiTest extends TestCase
         $row = $this->getJson(self::URL)->assertOk()->json('data.recent_mutations.0');
 
         $this->assertSame(
-            ['id', 'mutation_type', 'mutation_date', 'from', 'to', 'condition_before', 'condition_after', 'mutation_note', 'performed_by', 'created_at'],
+            [
+                'id', 'mutation_type', 'mutation_date', 'from', 'to', 'condition_before', 'condition_after',
+                'mutation_note', 'performed_by', 'created_at',
+                'event_type', 'batch_operation_id', 'before_snapshot', 'after_snapshot',
+            ],
             array_keys($row),
         );
         $this->assertSame('Ruang A', $row['from']['room_label']);

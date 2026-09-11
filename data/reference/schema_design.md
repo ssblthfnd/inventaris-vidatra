@@ -329,14 +329,16 @@ penempatan ruangan saat ini, kondisi, penghapusan bisnis, dan atribut deskriptif
 
 ### 2.7 `mutation_logs`
 
-**Tujuan:** histori perubahan aset (pindah ruangan, perbaikan, penghapusan, perubahan kondisi, dll).
-**Append-only.** Harus tetap terbaca walau ruangan dinonaktifkan / user dihapus (P8).
+**Tujuan:** histori perubahan aset — append-only audit foundation (generik sejak Tahap
+5.8.8; awalnya hanya pindah ruangan di Tahap 5.4). **Append-only.** Harus tetap terbaca
+walau ruangan dinonaktifkan / user dihapus (P8).
 
 | kolom | tipe MySQL | NN/NULL | default | keterangan |
 |---|---|---|---|---|
 | `id` | `BIGINT UNSIGNED` | NN | auto_increment | **PK**. |
 | `asset_id` | `BIGINT UNSIGNED` | NN | — | **FK → `assets.id`** `ON DELETE RESTRICT`. Histori tidak boleh yatim. |
-| `type` | `ENUM('pindah_ruangan','perbaikan','penghapusan','perubahan_kondisi','lainnya')` | NN | — | Jenis mutasi. |
+| `type` | `ENUM('pindah_ruangan','perbaikan','penghapusan','perubahan_kondisi','lainnya')` | **NULL** (sejak 5.8.8; sebelumnya NN) | `NULL` | Penanda LEGACY pindah-ruangan saja — hanya pernah diisi `'pindah_ruangan'`. Tidak pernah diperluas ke event baru (lihat `event_type`). |
+| `event_type` | `ENUM('CREATE','EDIT','MOVE_ROOM','WRITE_OFF','UNWRITE_OFF','SOFT_DELETE','RESTORE','BATCH_EDIT','BATCH_DELETE')` | NULL | `NULL` | **(Tahap 5.8.8)** Klasifikasi generik — diisi untuk SETIAP baris yang ditulis aplikasi, termasuk pindah ruangan (`MOVE_ROOM`). NULL hanya pada baris legacy/fixture yang ditulis manual di luar recorder. |
 | `mutation_date` | `DATE` | NN | — | Tanggal kejadian fisik. |
 | `from_location_code` | `CHAR(2)` | NULL | `NULL` | **FK → `locations.code`** `ON DELETE RESTRICT`. |
 | `to_location_code` | `CHAR(2)` | NULL | `NULL` | **FK → `locations.code`** `ON DELETE RESTRICT`. |
@@ -344,9 +346,12 @@ penempatan ruangan saat ini, kondisi, penghapusan bisnis, dan atribut deskriptif
 | `to_room_id` | `BIGINT UNSIGNED` | NULL | `NULL` | Ruangan tujuan. |
 | `from_room_label` | `VARCHAR(150)` | NULL | `NULL` | **Snapshot** nama ruangan asal saat kejadian (master room dapat berubah/deactivated di masa depan). |
 | `to_room_label` | `VARCHAR(150)` | NULL | `NULL` | **Snapshot** nama ruangan tujuan saat kejadian. |
-| `condition_before` | `ENUM('baik','kurang_baik','rusak_berat')` | NULL | `NULL` | Untuk `type='perubahan_kondisi'`. |
+| `condition_before` | `ENUM('baik','kurang_baik','rusak_berat')` | NULL | `NULL` | Snapshot kondisi sebelum event — diisi untuk SEMUA `event_type` sejak 5.8.8, tidak hanya pindah ruangan. |
 | `condition_after` | `ENUM('baik','kurang_baik','rusak_berat')` | NULL | `NULL` | — |
-| `notes` | `TEXT` | NULL | `NULL` | Keterangan. |
+| `notes` | `TEXT` | NULL | `NULL` | Keterangan / metadata bebas (mis. `mutation_note` pada pindah ruangan). |
+| `before_snapshot` | `JSON` | NULL | `NULL` | **(Tahap 5.8.8)** Snapshot lengkap state aset yang relevan SEBELUM event (`AssetMutationRecorder::snapshot()`); `NULL` untuk `event_type=CREATE` (belum ada state sebelumnya). |
+| `after_snapshot` | `JSON` | NULL | `NULL` | **(Tahap 5.8.8)** Snapshot lengkap SETELAH event — bentuk sama dengan `before_snapshot`. |
+| `batch_operation_id` | `UUID` (`CHAR(36)`) | NULL | `NULL` | **(Tahap 5.8.8)** Menyatukan seluruh event per-asset yang berasal dari SATU request batch HTTP (batch create/edit/delete). `NULL` untuk operasi individual. |
 | `performed_by` | `BIGINT UNSIGNED` | NULL | `NULL` | **FK → `users.id`** `ON DELETE SET NULL`. Log tetap ada bila user dihapus. |
 | `created_at` | `TIMESTAMP` | NN | `CURRENT_TIMESTAMP` | Waktu pencatatan (≠ `mutation_date`). |
 
@@ -366,6 +371,8 @@ penempatan ruangan saat ini, kondisi, penghapusan bisnis, dan atribut deskriptif
 - **IX:**
   - `ix_mutation_logs_asset (asset_id, mutation_date)` — timeline per aset
   - `ix_mutation_logs_type (type)`
+  - `ix_mutation_logs_event_type (event_type)` — **(Tahap 5.8.8)** filter per jenis event generik
+  - `ix_mutation_logs_batch_operation (batch_operation_id)` — **(Tahap 5.8.8)** lookup seluruh event dalam satu batch
   - `ix_mutation_logs_from_room (from_room_id)` · `ix_mutation_logs_to_room (to_room_id)` — mutasi per ruangan (composite FK index leftmost-nya `*_location_code`, jadi index tunggal ini tetap perlu)
   - `ix_mutation_logs_performed_by (performed_by)`
   - `ix_mutation_logs_date (mutation_date)`
@@ -376,11 +383,22 @@ penempatan ruangan saat ini, kondisi, penghapusan bisnis, dan atribut deskriptif
   3. Composite FK `(…_location_code, …_room_id) → rooms(location_code, id)` → ruangan asal/tujuan **konsisten dengan lokasinya**.
   4. Snapshot `from_room_label`/`to_room_label` → log tetap terbaca benar walau ruangan **di-rename**.
   5. `performed_by ON DELETE SET NULL` → log tetap ada walau user pelaku dihapus.
-- **Kapan baris dibuat (konsep):**
-  - Pindah ruangan → `type='pindah_ruangan'`, isi from/to (room + location + label).
-  - Ubah `condition` aset → `type='perubahan_kondisi'`, isi `condition_before/after`.
-  - Set `is_written_off=1` → `type='penghapusan'`, isi `written_off_on` di aset + log.
-  - Perbaikan → `type='perbaikan'`.
+- **Kapan baris dibuat — implementasi aktual (Tahap 5.8.8), menggantikan rencana awal
+  di atas (`perbaikan`/`penghapusan`/`perubahan_kondisi` pada `type` tidak pernah
+  dipakai untuk event baru — lihat catatan `type` vs `event_type` di atas):**
+  - Create aset (individual/batch) → `event_type='CREATE'`, `before_snapshot=NULL`.
+  - Pindah ruangan (individual/batch) → `event_type='MOVE_ROOM'` (`BATCH_EDIT` bila
+    lewat batch edit), **`type='pindah_ruangan'` tetap diisi** (kompatibilitas), isi
+    from/to (room + location + label).
+  - Edit field deskriptif lain (individual/batch, bukan ruangan) →
+    `event_type='EDIT'` / `'BATCH_EDIT'`, `type=NULL`.
+  - Write-off / batal write-off → `event_type='WRITE_OFF'` / `'UNWRITE_OFF'`.
+  - Soft delete (individual/batch) → `event_type='SOFT_DELETE'` / `'BATCH_DELETE'`.
+  - Restore → `event_type='RESTORE'`. Restore pada aset yang sudah aktif (no-op) tidak
+    membuat baris.
+  - Request yang tidak benar-benar mengubah apa pun (before/after snapshot identik)
+    tidak membuat baris — dicegah lewat perbandingan snapshot, bukan dirty-tracking
+    Eloquent mentah (`updated_by` selalu berubah saat `save()`).
   - **Import awal tidak** membuat mutation_logs (keadaan awal, bukan mutasi).
 
 ---

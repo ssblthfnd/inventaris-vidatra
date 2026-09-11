@@ -8,13 +8,15 @@ use App\Models\Asset;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Read-only mutation history for one asset (Tahap 5.5).
+ * Read-only mutation history for one asset (Tahap 5.5; trashed-asset access Tahap 5.8.9).
  *
  *   GET /api/assets/{asset}/mutations   (can:viewer)
  *
  *  - Scoped to the bound asset via `asset_id` — never returns another asset's logs.
- *  - Uses the default route binding: a soft-deleted asset is a `404` (history is not a
- *    way around lifecycle visibility). No `withTrashed()`.
+ *  - The route resolves a soft-deleted asset (`->withTrashed()`) — history stays
+ *    readable after an asset is trashed, for EVERY active role (viewer included),
+ *    unlike `AssetController::show()`'s deliberate viewer restriction. Purely a read
+ *    path: it grants no lifecycle/mutation permission.
  *  - Append-only: there is deliberately no store / update / destroy here. Mutation rows
  *    are written only by `App\Services\Asset\AssetMutationRecorder` (Tahap 5.4).
  *  - N+1-free: the performer is eager-loaded; room *labels* are snapshot columns and
@@ -38,6 +40,7 @@ class AssetMutationController extends ApiController
         $query = $asset->mutationLogs()
             ->with('createdBy')
             ->when(isset($filters['mutation_type']), fn (Builder $q) => $q->where('type', $filters['mutation_type']))
+            ->when(isset($filters['event_type']), fn (Builder $q) => $q->where('event_type', $filters['event_type']))
             ->when(isset($filters['performed_by']), fn (Builder $q) => $q->where('performed_by', $filters['performed_by']))
             ->when(isset($filters['date_from']), fn (Builder $q) => $q->where('mutation_date', '>=', $filters['date_from']))
             ->when(isset($filters['date_to']), fn (Builder $q) => $q->where('mutation_date', '<=', $filters['date_to']))

@@ -100,14 +100,24 @@ class MutationHistoryApiTest extends TestCase
         $this->getJson('/api/assets/999999/mutations')->assertStatus(404);
     }
 
-    public function test_soft_deleted_asset_is_404(): void
+    public function test_soft_deleted_asset_history_is_readable_not_404(): void
     {
+        // Tahap 5.8.9: unlike GET /api/assets/{asset} (which still 404s a trashed
+        // asset for a viewer), history stays readable for every active role — it's
+        // meaningful precisely because the asset was deleted.
         Sanctum::actingAs($this->viewer());
         $asset = $this->asset();
         $this->log($asset);
         $asset->delete();
 
-        $this->getJson($this->url($asset))->assertStatus(404);
+        $this->getJson($this->url($asset))->assertOk()->assertJsonPath('meta.total', 1);
+    }
+
+    public function test_unknown_asset_id_on_a_trashed_lookup_is_still_404(): void
+    {
+        Sanctum::actingAs($this->viewer());
+
+        $this->getJson('/api/assets/999999/mutations')->assertStatus(404);
     }
 
     public function test_asset_with_no_history_returns_200_and_an_empty_page(): void
@@ -458,12 +468,15 @@ class MutationHistoryApiTest extends TestCase
         ]))->assertStatus(201)->json('data');
 
         $this->patchJson("/api/assets/{$created['id']}", ['room_id' => $roomB->id])->assertOk();
-        // asset condition changes AFTER the move
+        // asset condition changes AFTER the move (Tahap 5.8.8: this now records its
+        // own separate EDIT event — filter to the room-move event specifically to
+        // isolate ITS condition snapshot from the later EDIT's).
         $this->patchJson("/api/assets/{$created['id']}", ['condition' => 'rusak_berat'])->assertOk();
 
         Sanctum::actingAs($this->viewer());
-        $this->getJson("/api/assets/{$created['id']}/mutations")
+        $this->getJson("/api/assets/{$created['id']}/mutations?mutation_type=pindah_ruangan")
             ->assertOk()
+            ->assertJsonPath('meta.total', 1)
             ->assertJsonPath('data.0.condition_before', 'baik')
             ->assertJsonPath('data.0.condition_after', 'baik');
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
+import AssetHistorySection from '../components/asset-detail/AssetHistorySection';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import { api, ApiError } from '../lib/api';
 
@@ -176,6 +177,10 @@ export default function AssetDetail() {
   const [woDate, setWoDate] = useState(todayISO());
   const [woNote, setWoNote] = useState('');
 
+  // bump after every successful lifecycle action so AssetHistorySection reloads —
+  // a history-refresh failure never implies the lifecycle action itself failed.
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
   const from = location.state?.from;
   const backTo = typeof from === 'string' && from ? `/inventory?${from}` : '/inventory';
 
@@ -234,6 +239,7 @@ export default function AssetDetail() {
       if (next) setAsset(next);
       else setAttempt((n) => n + 1); // fall back to the full reload path
       setFlash(successMsg);
+      setHistoryRefreshKey((n) => n + 1);
     } catch (e) {
       setBusy(false);
       if (e instanceof ApiError) {
@@ -488,6 +494,8 @@ export default function AssetDetail() {
           </div>
         )}
       </div>
+
+      <AssetHistorySection assetId={asset.id} refreshSignal={historyRefreshKey} />
 
       {/* ---- lifecycle dialogs ---- */}
       <LifecycleConfirmDialog

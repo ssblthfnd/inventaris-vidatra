@@ -395,8 +395,10 @@ defence-in-depth behind the validation.
   `asset_code` at the database (the model is refreshed so the Resource shows the new
   value); `sequence_no` is untouched.
 - A relocation — a change of `location_code` **and/or** `room_id` — writes one
-  append-only `mutation_logs` row in the **same transaction** (§12.5). A change of only
-  descriptive fields or `condition` writes **no** mutation log.
+  append-only `mutation_logs` row in the **same transaction** (§12.5), `event_type =
+  MOVE_ROOM` (Tahap 5.8.8). A change of only descriptive fields or `condition` writes
+  a generic `event_type = EDIT` row instead (Tahap 5.8.8) — never both for one
+  request. A no-op request (resubmitting identical values) writes **no** row at all.
 
 ### 12.4 Soft delete / restore
 
@@ -421,13 +423,30 @@ defence-in-depth behind the validation.
 ### 12.6 Mutation log
 
 `mutation_logs` is **append-only** — no update / delete endpoint, ever. Tahap 5.4
-records exactly one type: **`pindah_ruangan`** (location and/or room change). Each row
-captures `asset_id`, `type`, `mutation_date` (today), `from_location_code` /
+records exactly one legacy type: **`pindah_ruangan`** (location and/or room change),
+still written to the `type` column exactly as before for backward compatibility. Each
+row captures `asset_id`, `type`, `mutation_date` (today), `from_location_code` /
 `to_location_code`, `from_room_id` / `to_room_id`, `from_room_label` / `to_room_label`
 (name snapshots — the master room can later be renamed or disabled),
 `condition_before` / `condition_after`, an optional `mutation_note`, `performed_by`,
 `created_at`. It is written inside the asset-update transaction: if the log write fails,
 the asset change rolls back too.
+
+**Tahap 5.8.8 — generic audit foundation.** Every asset-changing operation (create,
+edit, write-off, unwrite-off, soft delete, restore, batch edit, batch delete) now
+writes one `mutation_logs` row through the same `AssetMutationRecorder`, classified by
+a new `event_type` column: `CREATE`, `EDIT`, `MOVE_ROOM`, `WRITE_OFF`, `UNWRITE_OFF`,
+`SOFT_DELETE`, `RESTORE`, `BATCH_EDIT`, `BATCH_DELETE` (`App\Enums\MutationEventType`).
+`type` (the legacy column) is left `NULL` for every event that isn't a room move — it
+is never repurposed or force-mapped onto a non-matching legacy value. Every row also
+gets `before_snapshot` / `after_snapshot` (full relevant-asset-state JSON — see
+`AssetMutationRecorder::snapshot()` for the exact field list) and an optional
+`batch_operation_id` (a UUID shared by every per-asset event one batch HTTP request
+produces; `NULL` for individual operations). A batch-driven room move is classified
+`BATCH_EDIT`, not `MOVE_ROOM` — but still sets the legacy `type='pindah_ruangan'`, so
+the original relocation ledger and its `mutation_type` filter stay correct. No mutation
+row is ever written for a request that changes nothing (snapshot-equality, not raw
+Eloquent dirty-tracking, decides this — see the recorder's doc block).
 
 ### 12.7 Transaction & concurrency
 
@@ -506,7 +525,8 @@ are not mixed).
 
 | Param | Rule | Effect |
 |---|---|---|
-| `mutation_type` | `in:pindah_ruangan` (the only type the system records) | `where type` |
+| `mutation_type` | `in:pindah_ruangan` (the only legacy type the system records) | `where type` |
+| `event_type` | one of `App\Enums\MutationEventType`'s cases (Tahap 5.8.8) | `where event_type` |
 | `performed_by` | `integer`, `exists:users,id` | `where performed_by` |
 | `date_from` | `date_format:Y-m-d` | `where mutation_date >=` |
 | `date_to` | `date_format:Y-m-d`, and `>= date_from` when both given | `where mutation_date <=` |
@@ -534,9 +554,19 @@ escaped through the shared `ApiController::escapeLike()`. Columns:
   "condition_after": "baik",
   "mutation_note": null,
   "performed_by": { "id": 1, "name": "..." },
-  "created_at": "2026-09-08T09:14:00+00:00"
+  "created_at": "2026-09-08T09:14:00+00:00",
+  "event_type": "MOVE_ROOM",
+  "batch_operation_id": null,
+  "before_snapshot": { "...": "full relevant-asset-state snapshot, see AssetMutationRecorder::snapshot()" },
+  "after_snapshot": { "...": "same shape as before_snapshot" }
 }
 ```
+
+The last four fields were added in Tahap 5.8.8 — purely additive on top of the Tahap
+5.5 shape above. `mutation_type` / `from` / `to` / `condition_before` /
+`condition_after` keep meaning exactly what they always did (populated only for a
+room move); `event_type` / `before_snapshot` / `after_snapshot` are populated for
+every event, room moves included.
 
 `performed_by` is `null` when the row has no performer. Not exposed: `asset_id`, raw
 `type` / `notes` keys, `updated_at`, `deleted_at`, and any performer field beyond

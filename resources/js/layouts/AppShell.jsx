@@ -9,11 +9,14 @@ const ROLE_LABELS = {
   viewer: 'Viewer',
 };
 
-/** Navigation. "Mutasi" arrives in a later Tahap. */
+/**
+ * Navigation. Asset mutation/audit history is shown inline on Asset Detail
+ * ("Riwayat Perubahan", Tahap 5.8.9) — there is no separate global history page,
+ * so no corresponding sidebar entry exists here.
+ */
 const NAV = [
   { label: 'Dashboard', to: '/dashboard', ready: true },
   { label: 'Inventaris', to: '/inventory', ready: true },
-  { label: 'Mutasi', to: null, ready: false },
 ];
 
 function NavItems({ onNavigate }) {
