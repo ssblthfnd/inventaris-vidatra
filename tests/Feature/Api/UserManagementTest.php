@@ -280,6 +280,47 @@ class UserManagementTest extends TestCase
             ->assertJsonValidationErrors('password');
     }
 
+    /**
+     * Tahap 6.6 (M-5): the policy was raised from min(8) to min(12) — this
+     * specifically locks in the NEW boundary (an 8-11 char password used to be
+     * accepted and no longer is), distinct from `test_short_password_is_rejected`
+     * above, which already covered a password short under the OLD policy too.
+     */
+    public function test_password_between_eight_and_eleven_characters_is_now_rejected(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $this->postJson('/api/users', $this->validCreatePayload(['password' => 'eleven-ch1', 'password_confirmation' => 'eleven-ch1']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('password');
+    }
+
+    public function test_a_twelve_character_password_is_accepted(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $this->postJson('/api/users', $this->validCreatePayload(['password' => 'exactly12chr', 'password_confirmation' => 'exactly12chr']))
+            ->assertStatus(201);
+    }
+
+    public function test_reset_password_endpoint_follows_the_same_minimum_length_policy(): void
+    {
+        Sanctum::actingAs($this->admin());
+        $target = $this->operator();
+
+        $this->postJson("/api/users/{$target->id}/reset-password", [
+            'password' => 'short-pass',
+            'password_confirmation' => 'short-pass',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('password');
+
+        $this->postJson("/api/users/{$target->id}/reset-password", [
+            'password' => 'long-enough-pass-1',
+            'password_confirmation' => 'long-enough-pass-1',
+        ])->assertOk();
+    }
+
     public function test_mass_assignment_cannot_set_password_via_update(): void
     {
         Sanctum::actingAs($this->admin());

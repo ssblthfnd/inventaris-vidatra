@@ -33,7 +33,9 @@ use Illuminate\Support\Facades\Route;
 */
 
 // --- guest ---
-Route::post('login', [AuthController::class, 'login'])->name('api.login');
+// throttle:login (Tahap 6.6, H-1) — see AppServiceProvider::configureLoginRateLimiter()
+// for the dual email+IP / IP-only limit design.
+Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login')->name('api.login');
 
 // --- authenticated + active ---
 Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
@@ -57,7 +59,8 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // grants no lifecycle/mutation permission.
         Route::get('assets/{asset}/mutations', [AssetMutationController::class, 'index'])
             ->name('api.assets.mutations.index')
-            ->withTrashed();
+            ->withTrashed()
+            ->whereNumber('asset');
 
         Route::get('locations', [LocationController::class, 'index'])->name('api.locations.index');
         Route::get('locations/{location}', [LocationController::class, 'show'])->name('api.locations.show');
@@ -80,17 +83,26 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::post('assets', [AssetController::class, 'store'])->name('api.assets.store');
         Route::post('assets/batch', [AssetController::class, 'storeBatch'])->name('api.assets.store-batch');
         Route::patch('assets/batch', [AssetController::class, 'batchUpdate'])->name('api.assets.update-batch');
-        Route::match(['put', 'patch'], 'assets/{asset}', [AssetController::class, 'update'])->name('api.assets.update');
+        // ->whereNumber('asset') (Tahap 6.6, M-6): applied consistently to every
+        // assets/{asset} route now, not just the GET show route — previously only
+        // that one had it, so a non-numeric/negative id on these write routes fell
+        // through to a DIFFERENT route (none of which excluded it), producing a
+        // confusing 405 "Method Not Allowed" instead of a clean 404 (the audit's
+        // live probe: `PUT /api/assets/-1` -> 405). Eloquent binding still 404s a
+        // genuinely-missing numeric id exactly as before — this only rejects
+        // non-numeric input earlier and more consistently.
+        Route::match(['put', 'patch'], 'assets/{asset}', [AssetController::class, 'update'])->name('api.assets.update')->whereNumber('asset');
         Route::delete('assets/batch', [AssetController::class, 'batchDestroy'])->name('api.assets.destroy-batch');
-        Route::delete('assets/{asset}', [AssetController::class, 'destroy'])->name('api.assets.destroy');
+        Route::delete('assets/{asset}', [AssetController::class, 'destroy'])->name('api.assets.destroy')->whereNumber('asset');
 
         // restore resolves a soft-deleted asset — the only route that does
         Route::post('assets/{asset}/restore', [AssetController::class, 'restore'])
             ->withTrashed()
+            ->whereNumber('asset')
             ->name('api.assets.restore');
 
-        Route::post('assets/{asset}/write-off', [AssetController::class, 'writeOff'])->name('api.assets.write-off');
-        Route::post('assets/{asset}/unwrite-off', [AssetController::class, 'unwriteOff'])->name('api.assets.unwrite-off');
+        Route::post('assets/{asset}/write-off', [AssetController::class, 'writeOff'])->name('api.assets.write-off')->whereNumber('asset');
+        Route::post('assets/{asset}/unwrite-off', [AssetController::class, 'unwriteOff'])->name('api.assets.unwrite-off')->whereNumber('asset');
 
         // Mutation revert/undo (Tahap 6.5). `{mutation}` binds a `MutationLog` row
         // directly (that table is append-only, never soft-deleted, so no
@@ -104,7 +116,7 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // Printable label PDF (Tahap 6.0; ?size=small|medium|large added Tahap 6.0.2,
         // default small). No ->withTrashed(): a soft-deleted asset is not something
         // the app prints a fresh label for (see AssetLabelController).
-        Route::get('assets/{asset}/label', [AssetLabelController::class, 'show'])->name('api.assets.label.show');
+        Route::get('assets/{asset}/label', [AssetLabelController::class, 'show'])->name('api.assets.label.show')->whereNumber('asset');
         Route::post('assets/batch/label', [AssetLabelController::class, 'batch'])->name('api.assets.label.batch');
 
         // Excel export (Tahap 6.2) — reuses the exact `GET /api/assets` filter

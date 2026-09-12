@@ -288,6 +288,81 @@ class AssetExportServiceTest extends TestCase
         $this->assertStringEndsWith('.xlsx', $filename);
     }
 
+    /* ------------------------------------------------------------------ formula injection (Tahap 6.6, L-3) */
+
+    /**
+     * Regression test locking in a property the Stage 6.6 Pass 1 audit verified
+     * MANUALLY (live export + raw XLSX XML inspection): every user-controlled
+     * cell is written via `setCellValueExplicit(..., DataType::TYPE_STRING)`,
+     * so a value starting with `=`/`+`/`-`/`@` is never reinterpreted as a
+     * spreadsheet FORMULA when the file is opened — it stays literal text.
+     * Asserts this via PhpSpreadsheet's own `Cell::getDataType()` (the
+     * authoritative, API-level way to tell a formula cell from a string cell —
+     * a formula cell's type is `DataType::TYPE_FORMULA` and it carries a
+     * calculated/cached value distinct from its raw formula text; a string
+     * cell's type is `DataType::TYPE_STRING` with no such distinction), NOT by
+     * merely inspecting the character content. Uses the test database only —
+     * no data of any kind is left behind (in-memory Spreadsheet, RefreshDatabase).
+     */
+    public function test_formula_injection_payloads_in_user_controlled_fields_are_stored_as_literal_strings(): void
+    {
+        $this->scope('01', '02', '001');
+        $payloads = [
+            'brand_model' => '=1+1',
+            'serial_no' => '+2+3',
+            'material' => '-3+3+cmd',
+            'notes' => '@SUM(A1:A2)',
+            'detail_type' => '=HYPERLINK("https://example.test","x")',
+        ];
+        $this->existingAsset('001', 2020, $payloads, '01', '02', '001');
+
+        $sheet = $this->service()->build(Asset::with(['location', 'category', 'room'])->get())->getActiveSheet();
+
+        // brand_model=G, serial_no=H, material=I, notes(category 02)=Q — all on
+        // row 8 (FIRST_DATA_ROW); detail_type has no column for category 02
+        // (Meubelair — see CategoryColumnMap), so only the four above apply.
+        $cellsToCheck = ['G8' => '=1+1', 'H8' => '+2+3', 'I8' => '-3+3+cmd', 'Q8' => '@SUM(A1:A2)'];
+
+        foreach ($cellsToCheck as $coord => $expectedValue) {
+            $cell = $sheet->getCell($coord);
+            $this->assertNotSame(
+                DataType::TYPE_FORMULA,
+                $cell->getDataType(),
+                "{$coord} was stored as a FORMULA, not a literal string — formula injection risk."
+            );
+            $this->assertSame(DataType::TYPE_STRING, $cell->getDataType(), "{$coord} must be an explicit string cell.");
+            $this->assertSame($expectedValue, $cell->getValue(), "{$coord}'s text content must survive verbatim.");
+        }
+    }
+
+    /**
+     * Belt-and-braces: also verifies via the SAME raw-XML technique the Pass 1
+     * audit used manually — the cell must never carry a `<f>` (formula)
+     * element once written to a real .xlsx file, which is what determines
+     * whether Excel itself would execute it on open.
+     */
+    public function test_formula_injection_payload_has_no_formula_element_in_the_saved_xlsx_xml(): void
+    {
+        $this->scope('01', '02', '001');
+        $this->existingAsset('001', 2020, ['brand_model' => '=1+1'], '01', '02', '001');
+
+        $spreadsheet = $this->service()->build(Asset::with(['location', 'category', 'room'])->get());
+        $path = tempnam(sys_get_temp_dir(), 'formula-injection-').'.xlsx';
+        (new Xlsx($spreadsheet))->save($path);
+        $spreadsheet->disconnectWorksheets();
+
+        $zip = new \ZipArchive;
+        $zip->open($path);
+        $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+        unlink($path);
+
+        $this->assertNotFalse($sheetXml);
+        preg_match('/<c r="G8"[^>]*>.*?<\/c>/s', $sheetXml, $matches);
+        $this->assertNotEmpty($matches, 'Cell G8 not found in the saved worksheet XML.');
+        $this->assertStringNotContainsString('<f>', $matches[0], 'Cell G8 has a <f> formula element.');
+    }
+
     /* ------------------------------------------------------------------ round-trip (documented asymmetry) */
 
     /**

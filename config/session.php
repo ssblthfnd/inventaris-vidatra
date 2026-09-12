@@ -51,6 +51,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Note on SESSION_SECURE_COOKIE (Tahap 6.6, M-3)
+    |--------------------------------------------------------------------------
+    |
+    | Left unset in .env — it now defaults to "secure" automatically whenever
+    | APP_ENV=production (see the `secure` key below), so a production deploy
+    | doesn't depend on remembering to set yet another env var. Local dev
+    | (APP_ENV=local, plain HTTP) and the test suite (APP_ENV=testing) are
+    | untouched by this — the default only turns on for `production`. An
+    | explicit SESSION_SECURE_COOKIE value, if ever set, always wins.
+    |
+    */
+
+    /*
+    |--------------------------------------------------------------------------
     | Session File Location
     |--------------------------------------------------------------------------
     |
@@ -169,7 +183,7 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    'secure' => env('SESSION_SECURE_COOKIE', env('APP_ENV') === 'production'),
 
     /*
     |--------------------------------------------------------------------------

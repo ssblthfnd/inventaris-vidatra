@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureActiveUser;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -27,6 +28,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.active' => EnsureActiveUser::class,
         ]);
+
+        // Tahap 6.6 (M-1 / M-4) — baseline security response headers on every
+        // request, web (SPA shell) and api alike. `append()` (not `web()`/
+        // `api()`) adds it once to the shared global stack both groups run
+        // through, rather than duplicating it into each group separately.
+        $middleware->append(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Every /api/* request (and anything expecting JSON) gets a JSON error body —

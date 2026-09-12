@@ -462,4 +462,58 @@ class MutationRevertTest extends TestCase
 
         $this->assertSame($before + 1, MutationLog::count());
     }
+
+    /* ================================================================== mass assignment (Tahap 6.6) */
+
+    /**
+     * Regression test for the Stage 6.6 Pass 1 audit's live probe: a crafted
+     * body with `before_snapshot`/`after_snapshot`/`reverted_mutation_id`/
+     * `performed_by` was confirmed to have zero effect, because
+     * `MutationRevertController::revert()` never reads the request body at
+     * all — snapshots come exclusively from the DB-stored `MutationLog` row
+     * and a freshly-computed live asset snapshot, and the actor comes
+     * exclusively from `$request->user()` (the session), never from input.
+     * Locks in that property so it can't silently regress.
+     */
+    public function test_revert_ignores_malicious_body_fields_entirely(): void
+    {
+        $asset = $this->existingAsset('001', overrides: ['condition' => 'baik']);
+        $operator = $this->operator();
+        $attacker = $this->operator();
+        Sanctum::actingAs($operator);
+
+        $this->putJson("/api/assets/{$asset->id}", ['condition' => 'kurang_baik'])->assertOk();
+        $original = $this->latestLogFor($asset);
+
+        Sanctum::actingAs($attacker);
+        $response = $this->postJson("/api/mutations/{$original->id}/revert", [
+            'before_snapshot' => ['condition' => 'rusak_berat'],
+            'after_snapshot' => ['condition' => 'kurang_baik'],
+            'reverted_mutation_id' => 999999,
+            'performed_by' => $operator->id,
+            'event_type' => 'CREATE',
+            'asset_id' => 999999,
+        ])->assertOk();
+
+        // The restored value came from the REAL stored before_snapshot ('baik'),
+        // never the attacker-supplied 'rusak_berat'.
+        $this->assertSame('baik', $asset->fresh()->condition->value);
+
+        $revertLog = MutationLog::query()->where('reverted_mutation_id', $original->id)->first();
+        $this->assertNotNull($revertLog);
+        // Correctly linked to the REAL original mutation, never the attacker's
+        // fake id (999999).
+        $this->assertSame($original->id, $revertLog->reverted_mutation_id);
+        // The actor is whoever the SESSION says it is (the attacker, since they
+        // made the call) — never spoofable to a different user via the body.
+        $this->assertSame($attacker->id, $revertLog->performed_by);
+        $this->assertNotSame($operator->id, $revertLog->performed_by);
+        // event_type is always REVERT for an individual revert — never the
+        // attacker-supplied 'CREATE'.
+        $this->assertSame(MutationEventType::Revert, $revertLog->event_type);
+        // asset_id is always the mutation's REAL asset — never the attacker's
+        // fake 999999.
+        $this->assertSame($asset->id, $revertLog->asset_id);
+        $response->assertJsonPath('new_mutations.0.reverted_mutation_id', $original->id);
+    }
 }

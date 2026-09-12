@@ -32,7 +32,9 @@ class ResetUserPasswordRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'password' => ['required', 'string', 'confirmed', Password::min(8)],
+            // Tahap 6.6 (M-5) — same policy as StoreUserRequest; see its own
+            // comment for why min(12) length-only, no uncompromised().
+            'password' => ['required', 'string', 'confirmed', Password::min(12)],
         ];
     }
 
