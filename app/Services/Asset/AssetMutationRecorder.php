@@ -145,6 +145,42 @@ class AssetMutationRecorder
     }
 
     /**
+     * Records a revert (Tahap 6.5) — always a generic recorder call, never
+     * `recordRelocation()`, even when the mutation being reverted was itself a
+     * room move: the revert's OWN kind is `REVERT`/`BATCH_REVERT`
+     * ({@see MutationEventType::isRevertable()}'s docblock), never the
+     * original event type again, so history can never confuse "a room move"
+     * with "a revert that happened to restore a room". `reverted_mutation_id`
+     * is what actually links this row to the mutation it undoes.
+     *
+     * @param  array<string, mixed>  $before  fresh current-state snapshot, captured immediately before restoring
+     * @param  array<string, mixed>  $after  fresh snapshot, captured immediately after restoring
+     */
+    public function recordRevert(
+        Asset $asset,
+        MutationLog $reverted,
+        array $before,
+        array $after,
+        User $actor,
+        ?string $batchOperationId = null,
+    ): MutationLog {
+        return $this->write([
+            'asset_id' => $asset->id,
+            'type' => null,
+            'mutation_date' => now()->toDateString(),
+            'condition_before' => $before['condition'] ?? null,
+            'condition_after' => $after['condition'] ?? null,
+            'notes' => null,
+            'performed_by' => $actor->id,
+            'event_type' => $batchOperationId !== null ? MutationEventType::BatchRevert : MutationEventType::Revert,
+            'before_snapshot' => $before,
+            'after_snapshot' => $after,
+            'batch_operation_id' => $batchOperationId,
+            'reverted_mutation_id' => $reverted->id,
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $attributes
      */
     private function write(array $attributes): MutationLog

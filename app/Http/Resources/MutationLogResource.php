@@ -67,6 +67,23 @@ class MutationLogResource extends JsonResource
             'batch_operation_id' => $log->batch_operation_id,
             'before_snapshot' => $log->before_snapshot,
             'after_snapshot' => $log->after_snapshot,
+
+            // Tahap 6.5 — revert/undo, additive fields.
+            // `reverted_mutation_id`: set only on a REVERT/BATCH_REVERT row itself —
+            // which original mutation it undid.
+            'reverted_mutation_id' => $log->reverted_mutation_id,
+            // `is_revertable`: structural only (supported event type + snapshots
+            // present) — does NOT mean "not already reverted", see below.
+            'is_revertable' => $log->isRevertable(),
+            // `already_reverted`: sourced from the transient attribute
+            // AssetMutationController::index() bulk-preloads onto each row to avoid
+            // an N+1 query; conservatively `false` (not "unknown") for any OTHER
+            // consumer of this resource (e.g. the dashboard's recent-mutations list)
+            // that never preloads it — those callers show no revert action anyway.
+            'already_reverted' => (bool) ($log->already_reverted ?? false),
+            // `can_revert`: the single field the UI actually needs to decide whether
+            // to show a "Revert" button at all.
+            'can_revert' => $log->isRevertable() && ! ($log->already_reverted ?? false),
         ];
     }
 

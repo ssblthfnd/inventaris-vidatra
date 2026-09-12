@@ -1,12 +1,15 @@
 import { api } from './api';
 
 /**
- * Mutation/audit history helpers for the Asset Detail page (Tahap 5.8.9).
+ * Mutation/audit history helpers for the Asset Detail page (Tahap 5.8.9;
+ * revert/undo added Tahap 6.5).
  *
- * `GET /api/assets/{asset}/mutations` is the ONLY history endpoint — this file is a
- * thin, typed-in-spirit wrapper around it plus pure presentation helpers (event
- * labels, field labels, before/after diffing). No history is ever computed from
- * anything other than the API response; nothing here talks to the database.
+ * `GET /api/assets/{asset}/mutations` is the only READ endpoint here, and
+ * `POST /api/mutations/{mutation}/revert` (Tahap 6.5) the only mutating one —
+ * this file is a thin, typed-in-spirit wrapper around both plus pure
+ * presentation helpers (event labels, field labels, before/after diffing). No
+ * history is ever computed from anything other than the API response;
+ * nothing here talks to the database.
  */
 
 /** Canonical event_type (Tahap 5.8.8) -> Indonesian label. */
@@ -20,6 +23,8 @@ export const EVENT_LABELS = {
   RESTORE: 'Aset dipulihkan',
   BATCH_EDIT: 'Perubahan massal',
   BATCH_DELETE: 'Penghapusan massal',
+  REVERT: 'Revert',
+  BATCH_REVERT: 'Revert massal',
 };
 
 /** Legacy `mutation_type` fallback, for the rare row with no `event_type` at all. */
@@ -146,6 +151,31 @@ export function statusTransition(eventType) {
     return { label: 'Status', before: 'Trash', after: 'Aktif' };
   }
   return null;
+}
+
+/**
+ * The REVERSE of {@see statusTransition} — "what the revert confirmation
+ * dialog should show" (current status -> status it will restore), for the
+ * two event types whose only changed field is `deleted_at` (skipped by
+ * {@see diffSnapshots} for the same "unreadable raw timestamp" reason).
+ * `null` for every event type that isn't a lifecycle transition.
+ */
+export function revertStatusTransition(eventType) {
+  if (eventType === 'SOFT_DELETE' || eventType === 'BATCH_DELETE') {
+    return { label: 'Status', current: 'Trash', restored: 'Aktif' };
+  }
+  if (eventType === 'RESTORE') {
+    return { label: 'Status', current: 'Aktif', restored: 'Trash' };
+  }
+  return null;
+}
+
+/**
+ * `POST /api/mutations/{mutation}/revert` (Tahap 6.5) — the only mutating
+ * call in this file.
+ */
+export function revertMutation(mutationId) {
+  return api.post(`/api/mutations/${encodeURIComponent(mutationId)}/revert`);
 }
 
 /**

@@ -310,6 +310,8 @@ class DashboardApiTest extends TestCase
                 'id', 'mutation_type', 'mutation_date', 'from', 'to', 'condition_before', 'condition_after',
                 'mutation_note', 'performed_by', 'created_at',
                 'event_type', 'batch_operation_id', 'before_snapshot', 'after_snapshot',
+                // Tahap 6.5 — revert/undo, additive fields (see MutationLogResource).
+                'reverted_mutation_id', 'is_revertable', 'already_reverted', 'can_revert',
             ],
             array_keys($row),
         );

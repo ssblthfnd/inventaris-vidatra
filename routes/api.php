@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\ImportTemplateController;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\MutationRevertController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\SubcategoryController;
@@ -90,6 +91,15 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
         Route::post('assets/{asset}/write-off', [AssetController::class, 'writeOff'])->name('api.assets.write-off');
         Route::post('assets/{asset}/unwrite-off', [AssetController::class, 'unwriteOff'])->name('api.assets.unwrite-off');
+
+        // Mutation revert/undo (Tahap 6.5). `{mutation}` binds a `MutationLog` row
+        // directly (that table is append-only, never soft-deleted, so no
+        // `->withTrashed()` is needed here) — the mutation being reverted may be the
+        // very SOFT_DELETE that trashed its asset (reverting it means restoring);
+        // MutationRevertService itself loads the asset `withTrashed()` and does the
+        // real per-field conflict check.
+        Route::post('mutations/{mutation}/revert', [MutationRevertController::class, 'revert'])
+            ->name('api.mutations.revert');
 
         // Printable label PDF (Tahap 6.0; ?size=small|medium|large added Tahap 6.0.2,
         // default small). No ->withTrashed(): a soft-deleted asset is not something

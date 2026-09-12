@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import RevertConfirmDialog from './RevertConfirmDialog';
 import { ApiError } from '../../lib/api';
 import {
   createSummary,
@@ -21,6 +22,14 @@ import {
  * `refreshSignal` lets the parent (AssetDetail) ask this section to reload after a
  * lifecycle action succeeds (write-off / unwrite-off / delete / restore) without a
  * full page reload — pass a value that changes (e.g. an incrementing counter).
+ *
+ * Tahap 6.5 — revert/undo: each event card gets a "Revert" action when the API
+ * says `can_revert` (operator/admin only — `isOperator` gates it client-side,
+ * same "UI-only convenience" philosophy as everywhere else in this app; the
+ * backend's own `can:operator` gate is what actually enforces it). A
+ * successful revert refreshes this section's own history AND calls
+ * `onReverted(assets)` so the parent can patch the asset it's showing without
+ * a full page reload.
  */
 
 function HistorySkeleton() {
@@ -55,7 +64,7 @@ function historyErrorMessage(e) {
   return 'Riwayat perubahan tidak dapat dimuat.';
 }
 
-function HistoryEventCard({ event }) {
+function HistoryEventCard({ event, isOperator, onRevertClick }) {
   const label = eventLabel(event);
   const isCreate = event.event_type === 'CREATE';
   const { before, after } = getEventSnapshots(event);
@@ -71,12 +80,30 @@ function HistoryEventCard({ event }) {
         className="absolute left-2 top-[1.35rem] h-2 w-2 rounded-full bg-gray-900"
         aria-hidden="true"
       />
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="font-medium text-gray-900">{label}</p>
-        {isBatch && (
-          <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-200">
-            Perubahan massal
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium text-gray-900">{label}</p>
+          {isBatch && (
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-200">
+              Perubahan massal
+            </span>
+          )}
+          {event.already_reverted && (
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-200">
+              Sudah di-revert
+            </span>
+          )}
+        </div>
+        {/* Prefer not showing an actionable button when the operation cannot be
+            performed at all — never a disabled button with no explanation. */}
+        {isOperator && event.can_revert && (
+          <button
+            type="button"
+            onClick={() => onRevertClick(event)}
+            className="shrink-0 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-gray-400"
+          >
+            Revert
+          </button>
         )}
       </div>
       <p className="mt-0.5 text-xs text-gray-500">
@@ -105,13 +132,16 @@ function HistoryEventCard({ event }) {
   );
 }
 
-export default function AssetHistorySection({ assetId, refreshSignal }) {
+export default function AssetHistorySection({ assetId, refreshSignal, isOperator = false, onReverted }) {
   const [phase, setPhase] = useState('loading'); // loading | ready | error
   const [events, setEvents] = useState([]);
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  const [revertTarget, setRevertTarget] = useState(null); // the event being confirmed
+  const [flash, setFlash] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -152,6 +182,19 @@ export default function AssetHistorySection({ assetId, refreshSignal }) {
 
   const hasMore = meta && meta.current_page < meta.last_page;
 
+  useEffect(() => {
+    if (!flash) return undefined;
+    const t = setTimeout(() => setFlash(''), 5000);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  const handleRevertSuccess = (res) => {
+    setRevertTarget(null);
+    setFlash(res?.message || 'Mutasi berhasil di-revert.');
+    setRetryKey((k) => k + 1); // reload this asset's own history
+    onReverted?.(res?.assets ?? []);
+  };
+
   return (
     <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="border-b border-gray-100 px-4 py-3">
@@ -160,6 +203,15 @@ export default function AssetHistorySection({ assetId, refreshSignal }) {
       </div>
 
       <div className="p-4">
+        {flash && (
+          <div
+            role="status"
+            className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-800"
+          >
+            {flash}
+          </div>
+        )}
+
         {phase === 'loading' && <HistorySkeleton />}
 
         {phase === 'error' && (
@@ -183,7 +235,12 @@ export default function AssetHistorySection({ assetId, refreshSignal }) {
           <>
             <ol className="space-y-3">
               {events.map((event) => (
-                <HistoryEventCard key={event.id} event={event} />
+                <HistoryEventCard
+                  key={event.id}
+                  event={event}
+                  isOperator={isOperator}
+                  onRevertClick={setRevertTarget}
+                />
               ))}
             </ol>
             {hasMore && (
@@ -201,6 +258,13 @@ export default function AssetHistorySection({ assetId, refreshSignal }) {
           </>
         )}
       </div>
+
+      <RevertConfirmDialog
+        open={revertTarget !== null}
+        event={revertTarget}
+        onClose={() => setRevertTarget(null)}
+        onSuccess={handleRevertSuccess}
+      />
     </section>
   );
 }

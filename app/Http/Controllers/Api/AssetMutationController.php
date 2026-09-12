@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Requests\Api\MutationLogIndexRequest;
 use App\Http\Resources\MutationLogCollection;
+use App\Http\Resources\MutationLogResource;
 use App\Models\Asset;
+use App\Models\MutationLog;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 /**
  * Read-only mutation history for one asset (Tahap 5.5; trashed-asset access Tahap 5.8.9).
@@ -54,7 +57,34 @@ class AssetMutationController extends ApiController
 
         $logs = $query->paginate($request->perPage())->withQueryString();
 
+        $this->preloadAlreadyReverted($logs->getCollection());
+
         return new MutationLogCollection($logs);
+    }
+
+    /**
+     * Bulk-preloads `already_reverted` (Tahap 6.5) as a transient attribute on
+     * each row in ONE query, instead of {@see MutationLog::alreadyReverted()}
+     * being called per row (which would N+1 the page). See
+     * {@see MutationLogResource} for how it's consumed.
+     *
+     * @param  Collection<int, MutationLog>  $logs
+     */
+    private function preloadAlreadyReverted($logs): void
+    {
+        if ($logs->isEmpty()) {
+            return;
+        }
+
+        $revertedIds = MutationLog::query()
+            ->whereIn('reverted_mutation_id', $logs->pluck('id'))
+            ->pluck('reverted_mutation_id')
+            ->all();
+
+        $logs->each(fn (MutationLog $log) => $log->setAttribute(
+            'already_reverted',
+            in_array($log->id, $revertedIds, true),
+        ));
     }
 
     private function applySearch(Builder $query, string $term): void

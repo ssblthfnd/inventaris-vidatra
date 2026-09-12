@@ -526,7 +526,15 @@ export default function AssetDetail() {
         )}
       </div>
 
-      <AssetHistorySection assetId={asset.id} refreshSignal={historyRefreshKey} />
+      <AssetHistorySection
+        assetId={asset.id}
+        refreshSignal={historyRefreshKey}
+        isOperator={isOperator}
+        onReverted={(reverted) => {
+          const updated = reverted.find((a) => a.id === asset.id);
+          if (updated) setAsset(updated);
+        }}
+      />
 
       {/* ---- lifecycle dialogs ---- */}
       <LifecycleConfirmDialog

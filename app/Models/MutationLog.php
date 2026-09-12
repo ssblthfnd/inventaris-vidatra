@@ -45,6 +45,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'before_snapshot',
     'after_snapshot',
     'batch_operation_id',
+    'reverted_mutation_id',
 ])]
 class MutationLog extends Model
 {
@@ -99,5 +100,47 @@ class MutationLog extends Model
     public function toRoom(): BelongsTo
     {
         return $this->belongsTo(Room::class, 'to_room_id');
+    }
+
+    /**
+     * The original mutation THIS row reverts (Tahap 6.5) — only ever set on a
+     * `REVERT`/`BATCH_REVERT` row. Null for every ordinary mutation.
+     *
+     * @return BelongsTo<MutationLog, $this>
+     */
+    public function revertedMutation(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'reverted_mutation_id');
+    }
+
+    /**
+     * Structural revertability: a supported event type with both snapshots
+     * present. Does NOT check whether it has already been reverted — see
+     * {@see self::alreadyReverted()} for that — the two are deliberately
+     * separate questions ("can this kind of mutation ever be reverted" vs
+     * "has this specific one already been").
+     *
+     * A handful of real historical rows predate Tahap 5.8.8 (backfilled
+     * `event_type` but no snapshot JSON — see `AssetMutationRecorder`) and are
+     * correctly excluded here: there is no reliable before/after state to
+     * safely reconstruct, so guessing one would violate the stage's explicit
+     * "mark non-revertable rather than guess" instruction.
+     */
+    public function isRevertable(): bool
+    {
+        return $this->event_type?->isRevertable() === true
+            && $this->before_snapshot !== null
+            && $this->after_snapshot !== null;
+    }
+
+    /**
+     * Whether some OTHER row already reverted this one. A real query (not
+     * cached) — callers that need this for many rows at once (e.g. a history
+     * list) should bulk-preload it instead of calling this per row (see the
+     * asset mutation history controller's own bulk-preload helper).
+     */
+    public function alreadyReverted(): bool
+    {
+        return static::query()->where('reverted_mutation_id', $this->id)->exists();
     }
 }
