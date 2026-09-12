@@ -3,10 +3,12 @@ import { Link, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import MultiSelectFilter from '../components/MultiSelectFilter';
+import PrintLabelMenu from '../components/PrintLabelMenu';
 import BatchDeleteDialog from '../components/inventory/BatchDeleteDialog';
 import BatchEditModal from '../components/inventory/BatchEditModal';
 import InventoryTable from '../components/inventory/InventoryTable';
 import { api, ApiError } from '../lib/api';
+import { printBatchLabels } from '../lib/labels';
 import {
   buildQuery,
   emptyState,
@@ -88,6 +90,7 @@ export default function Inventory() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [flash, setFlash] = useState('');
   const [flashTone, setFlashTone] = useState('success'); // 'success' | 'error'
+  const [printingLabel, setPrintingLabel] = useState(false);
 
   // Selection only ever covers the current result set. Any change to the query
   // (search/filter/sort/page) invalidates it rather than silently keeping stale ids
@@ -331,6 +334,18 @@ export default function Inventory() {
     setRetryKey((k) => k + 1);
   };
 
+  const handlePrintLabels = async (size) => {
+    setPrintingLabel(true);
+    try {
+      await printBatchLabels([...selectedIds], size);
+    } catch (e) {
+      setFlashTone('error');
+      setFlash(e?.message || 'Gagal membuat label. Coba lagi.');
+    } finally {
+      setPrintingLabel(false);
+    }
+  };
+
   const handleDeleteStale = (message) => {
     setShowDeleteDialog(false);
     setSelectedIds(new Set());
@@ -413,6 +428,12 @@ export default function Inventory() {
             >
               Edit massal
             </button>
+            <PrintLabelMenu
+              onSelect={handlePrintLabels}
+              busy={printingLabel}
+              align="right"
+              buttonClassName="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+            />
             <button
               type="button"
               onClick={() => setShowDeleteDialog(true)}

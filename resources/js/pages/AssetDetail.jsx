@@ -4,7 +4,9 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import AssetHistorySection from '../components/asset-detail/AssetHistorySection';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
+import PrintLabelMenu from '../components/PrintLabelMenu';
 import { api, ApiError } from '../lib/api';
+import { printAssetLabel } from '../lib/labels';
 
 /**
  * Asset Detail page — `/inventory/:assetId` (Tahap 5.8.2, lifecycle Tahap 5.8.5).
@@ -181,6 +183,11 @@ export default function AssetDetail() {
   // a history-refresh failure never implies the lifecycle action itself failed.
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
+  // label PDF generation (Tahap 6.0) — not a lifecycle dialog, just a background
+  // download; only needs its own busy flag + inline error.
+  const [labelBusy, setLabelBusy] = useState(false);
+  const [labelError, setLabelError] = useState('');
+
   const from = location.state?.from;
   const backTo = typeof from === 'string' && from ? `/inventory?${from}` : '/inventory';
 
@@ -297,6 +304,18 @@ export default function AssetDetail() {
       'Aset berhasil dipulihkan.',
     );
 
+  const doPrintLabel = async (size) => {
+    setLabelBusy(true);
+    setLabelError('');
+    try {
+      await printAssetLabel(assetId, size);
+    } catch (e) {
+      setLabelError(e?.message || 'Gagal membuat label. Coba lagi.');
+    } finally {
+      setLabelBusy(false);
+    }
+  };
+
   if (phase === 'loading') return <DetailSkeleton />;
 
   if (phase === 'notfound') {
@@ -382,6 +401,12 @@ export default function AssetDetail() {
             >
               Hapus Aset
             </button>
+            <PrintLabelMenu
+              onSelect={doPrintLabel}
+              busy={labelBusy}
+              align="right"
+              buttonClassName={`${actionBtn} border-gray-300 text-gray-700 hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-60`}
+            />
           </div>
         )}
 
@@ -399,6 +424,12 @@ export default function AssetDetail() {
       {flash && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
           {flash}
+        </div>
+      )}
+
+      {labelError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800">
+          {labelError}
         </div>
       )}
 

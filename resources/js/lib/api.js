@@ -25,7 +25,7 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = fn;
 }
 
-function readCookie(name) {
+export function readCookie(name) {
   const match = document.cookie.match(
     new RegExp('(?:^|;\\s*)' + name.replace(/([.*+?^${}()|[\]\\])/g, '\\$1') + '=([^;]*)'),
   );
@@ -37,7 +37,7 @@ function readCookie(name) {
  * Laravel `web` route, so the cookie is normally already set on page load — we only
  * hit `/sanctum/csrf-cookie` when it is missing, or when forced after a 419.
  */
-async function ensureCsrfCookie(force = false) {
+export async function ensureCsrfCookie(force = false) {
   if (!force && readCookie('XSRF-TOKEN')) return;
   await fetch('/sanctum/csrf-cookie', {
     credentials: 'include',

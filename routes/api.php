@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AssetController;
+use App\Http\Controllers\Api\AssetLabelController;
 use App\Http\Controllers\Api\AssetMutationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
@@ -81,5 +82,11 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
         Route::post('assets/{asset}/write-off', [AssetController::class, 'writeOff'])->name('api.assets.write-off');
         Route::post('assets/{asset}/unwrite-off', [AssetController::class, 'unwriteOff'])->name('api.assets.unwrite-off');
+
+        // Printable label PDF (Tahap 6.0; ?size=small|medium|large added Tahap 6.0.2,
+        // default small). No ->withTrashed(): a soft-deleted asset is not something
+        // the app prints a fresh label for (see AssetLabelController).
+        Route::get('assets/{asset}/label', [AssetLabelController::class, 'show'])->name('api.assets.label.show');
+        Route::post('assets/batch/label', [AssetLabelController::class, 'batch'])->name('api.assets.label.batch');
     });
 });

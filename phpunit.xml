@@ -42,6 +42,13 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="SANCTUM_STATEFUL_DOMAINS" value="localhost"/>
+        <!--
+          Tahap 6.0 — asset-label QR codes. A dedicated non-localhost placeholder
+          domain for automated tests only; never printed on a production label
+          (see config/inventory.php). Tests asserting the "not configured" error
+          path override this back to null at runtime.
+        -->
+        <env name="INVENTORY_QR_BASE_URL" value="https://qr.inventaris-vidatra.test"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
