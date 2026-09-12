@@ -8,8 +8,11 @@ import AssetDetail from './pages/AssetDetail';
 import AssetForm from './pages/AssetForm';
 import BatchAssetForm from './pages/BatchAssetForm';
 import Dashboard from './pages/Dashboard';
+import Imports from './pages/Imports';
 import Inventory from './pages/Inventory';
 import Login from './pages/Login';
+import Reports from './pages/Reports';
+import Users from './pages/Users';
 import GuestRoute from './routes/GuestRoute';
 import ProtectedRoute from './routes/ProtectedRoute';
 
@@ -40,6 +43,9 @@ function App() {
             <Route path="/inventory/batch" element={<BatchAssetForm />} />
             <Route path="/inventory/:assetId" element={<AssetDetail />} />
             <Route path="/inventory/:assetId/edit" element={<AssetForm mode="edit" />} />
+            <Route path="/imports" element={<Imports />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/users" element={<Users />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

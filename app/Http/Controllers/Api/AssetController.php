@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\FiltersAssets;
 use App\Http\Requests\Api\AssetIndexRequest;
 use App\Http\Requests\Api\BatchDeleteAssetRequest;
 use App\Http\Requests\Api\BatchStoreAssetRequest;
@@ -13,7 +14,6 @@ use App\Http\Resources\AssetCollection;
 use App\Http\Resources\AssetResource;
 use App\Models\Asset;
 use App\Services\Asset\AssetWriteService;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -35,36 +35,16 @@ use Illuminate\Http\Response;
  */
 class AssetController extends ApiController
 {
-    private const SEARCHABLE = ['asset_code', 'sequence_no', 'brand_model', 'serial_no', 'material', 'notes'];
+    use FiltersAssets;
 
     public function index(AssetIndexRequest $request): AssetCollection
     {
         // Multi-value filters: OR *within* one filter, AND *between* filters
         // (docs/api_convention.md §8.1). Every list comes from the request already
-        // validated + normalised; an empty list means "filter not applied".
-        $query = Asset::query()
-            ->with(['location', 'category', 'room'])
-            ->when($request->locationCodes(), fn (Builder $q, array $codes) => $q->whereIn('location_code', $codes))
-            ->when($request->categoryCodes(), fn (Builder $q, array $codes) => $q->whereIn('category_code', $codes))
-            ->when($request->subcategoryPairs(), fn (Builder $q, array $pairs) => $q->where(function (Builder $inner) use ($pairs): void {
-                foreach ($pairs as [$categoryCode, $subcategoryCode]) {
-                    $inner->orWhere(fn (Builder $w) => $w
-                        ->where('category_code', $categoryCode)
-                        ->where('subcategory_code', $subcategoryCode));
-                }
-            }))
-            ->when($request->roomIds(), fn (Builder $q, array $ids) => $q->whereIn('room_id', $ids))
-            ->when($request->conditionFilter(), fn (Builder $q, array $condition) => $q->where(function (Builder $inner) use ($condition): void {
-                if ($condition['values'] !== []) {
-                    $inner->orWhereIn('condition', $condition['values']);
-                }
-                if ($condition['includeNull']) {
-                    $inner->orWhereNull('condition');
-                }
-            }))
-            ->when($request->assetYears(), fn (Builder $q, array $years) => $q->whereIn('asset_year', $years))
-            ->when($request->writtenOffValue() !== null, fn (Builder $q) => $q->where('is_written_off', $request->writtenOffValue()))
-            ->when($request->validated('q'), fn (Builder $q, string $term) => $this->applySearch($q, $term));
+        // validated + normalised; an empty list means "filter not applied". The
+        // filter chain itself lives in FiltersAssets (Tahap 6.2) so the export
+        // endpoint can reuse the exact same query instead of a second one.
+        $query = $this->assetsMatchingFilters($request);
 
         $query->orderBy($request->sortColumn(), $request->sortDirection())->orderBy('id');
 
@@ -206,17 +186,5 @@ class AssetController extends ApiController
         }
 
         return "{$requested} aset diproses. {$updated} aset berubah, {$unchanged} aset tidak mengalami perubahan.";
-    }
-
-    private function applySearch(Builder $query, string $term): void
-    {
-        $like = '%'.$this->escapeLike($term).'%';
-
-        $query->where(function (Builder $q) use ($like): void {
-            foreach (self::SEARCHABLE as $column) {
-                $q->orWhere($column, 'like', $like);
-            }
-            $q->orWhereHas('room', fn (Builder $r) => $r->where('name', 'like', $like));
-        });
     }
 }

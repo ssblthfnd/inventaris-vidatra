@@ -20,6 +20,11 @@ namespace App\Import\Parsing;
  */
 final class CategoryColumnMap
 {
+    /** The only categories with a per-column mapping above — also the single source
+     *  of truth for which categories Tahap 6.1's template generator may produce a
+     *  workbook for (see App\Services\Import\ImportTemplateService). */
+    public const KNOWN_CATEGORIES = ['02', '03', '06'];
+
     /**
      * @return array{
      *   detail_type_col: ?string,
@@ -71,6 +76,6 @@ final class CategoryColumnMap
 
     public static function isKnownCategory(string $categoryCode): bool
     {
-        return in_array($categoryCode, ['02', '03', '06'], true);
+        return in_array($categoryCode, self::KNOWN_CATEGORIES, true);
     }
 }

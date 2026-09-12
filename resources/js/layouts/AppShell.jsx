@@ -17,12 +17,21 @@ const ROLE_LABELS = {
 const NAV = [
   { label: 'Dashboard', to: '/dashboard', ready: true },
   { label: 'Inventaris', to: '/inventory', ready: true },
+  { label: 'Import Excel', to: '/imports', ready: true },
+  { label: 'Laporan', to: '/reports', ready: true },
+  // Tahap 6.4 — unlike every other item above (always visible, gated only on
+  // the page itself), this one is admin-only in the NAV LIST too, per the
+  // stage's explicit requirement: a viewer/operator must not even see it.
+  { label: 'Pengguna', to: '/users', ready: true, adminOnly: true },
 ];
 
 function NavItems({ onNavigate }) {
+  const { isAdmin } = useAuth();
+  const items = NAV.filter((item) => !item.adminOnly || isAdmin);
+
   return (
     <nav className="flex flex-col gap-1 p-3">
-      {NAV.map((item) =>
+      {items.map((item) =>
         item.ready ? (
           <NavLink
             key={item.label}

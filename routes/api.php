@@ -1,14 +1,19 @@
 <?php
 
 use App\Http\Controllers\Api\AssetController;
+use App\Http\Controllers\Api\AssetExportController;
 use App\Http\Controllers\Api\AssetLabelController;
 use App\Http\Controllers\Api\AssetMutationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\ImportController;
+use App\Http\Controllers\Api\ImportTemplateController;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\SubcategoryController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -41,7 +46,10 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('assets', [AssetController::class, 'index'])->name('api.assets.index');
         // ->withTrashed(): operator/admin can read a soft-deleted asset (to restore it);
         // AssetController::show() still 404s it for a viewer. (Tahap 5.8.5)
-        Route::get('assets/{asset}', [AssetController::class, 'show'])->name('api.assets.show')->withTrashed();
+        // ->whereNumber('asset') (Tahap 6.2): asset ids are always numeric — this is
+        // what lets the literal `assets/export` route below win over this wildcard
+        // instead of Eloquent trying (and failing) to bind an Asset with id "export".
+        Route::get('assets/{asset}', [AssetController::class, 'show'])->name('api.assets.show')->withTrashed()->whereNumber('asset');
         // ->withTrashed() (Tahap 5.8.9): history is meaningful for a deleted asset too —
         // unlike show()'s deliberate viewer restriction above, EVERY active role
         // (including viewer) can read a trashed asset's mutation history. Read-only;
@@ -88,5 +96,40 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // the app prints a fresh label for (see AssetLabelController).
         Route::get('assets/{asset}/label', [AssetLabelController::class, 'show'])->name('api.assets.label.show');
         Route::post('assets/batch/label', [AssetLabelController::class, 'batch'])->name('api.assets.label.batch');
+
+        // Excel export (Tahap 6.2) — reuses the exact `GET /api/assets` filter
+        // vocabulary (AssetIndexRequest) via FiltersAssets; see AssetExportController.
+        Route::get('assets/export', [AssetExportController::class, 'export'])->name('api.assets.export');
+
+        // Reporting / rekap inventaris (Tahap 6.3) — `can:operator`, unlike
+        // `GET /api/dashboard` above which is `can:viewer`; a viewer is forbidden
+        // here per this stage's explicit requirement. Same filter vocabulary as
+        // `GET /api/assets` / `GET /api/assets/export` (AssetIndexRequest via
+        // FiltersAssets); see ReportController.
+        Route::get('reports/inventory', [ReportController::class, 'index'])->name('api.reports.inventory');
+
+        // Import Excel UI (Tahap 6.1) — operator/admin only, viewer forbidden. A thin
+        // HTTP layer over the pre-existing App\Import staging/promotion pipeline (see
+        // ImportController); NEVER a second importer. `imports/template` is registered
+        // BEFORE `imports/{batch}` so the literal path wins over the wildcard.
+        Route::get('imports/template', [ImportTemplateController::class, 'show'])->name('api.imports.template');
+        Route::get('imports', [ImportController::class, 'index'])->name('api.imports.index');
+        Route::post('imports', [ImportController::class, 'store'])->name('api.imports.store');
+        Route::get('imports/{batch}', [ImportController::class, 'show'])->name('api.imports.show');
+        Route::get('imports/{batch}/rows', [ImportController::class, 'rows'])->name('api.imports.rows');
+        Route::post('imports/{batch}/promote', [ImportController::class, 'promote'])->name('api.imports.promote');
+        Route::get('imports/{batch}/report', [ImportController::class, 'report'])->name('api.imports.report');
+    });
+
+    // --- user management (Tahap 6.4) — admin only; operator gets 403 here ---
+    Route::middleware('can:admin')->group(function () {
+        Route::get('users', [UserController::class, 'index'])->name('api.users.index');
+        Route::post('users', [UserController::class, 'store'])->name('api.users.store');
+        Route::get('users/{user}', [UserController::class, 'show'])->name('api.users.show');
+        Route::match(['put', 'patch'], 'users/{user}', [UserController::class, 'update'])->name('api.users.update');
+        // No DELETE route — see UserController's docblock for why (nullOnDelete
+        // audit-attribution FKs; deactivation is the only lifecycle mechanism).
+        Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])
+            ->name('api.users.reset-password');
     });
 });

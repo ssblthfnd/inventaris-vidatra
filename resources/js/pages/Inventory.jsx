@@ -6,8 +6,10 @@ import MultiSelectFilter from '../components/MultiSelectFilter';
 import PrintLabelMenu from '../components/PrintLabelMenu';
 import BatchDeleteDialog from '../components/inventory/BatchDeleteDialog';
 import BatchEditModal from '../components/inventory/BatchEditModal';
+import ExportMenu from '../components/inventory/ExportMenu';
 import InventoryTable from '../components/inventory/InventoryTable';
 import { api, ApiError } from '../lib/api';
+import { downloadAssetExport } from '../lib/exports';
 import { printBatchLabels } from '../lib/labels';
 import {
   buildQuery,
@@ -91,6 +93,7 @@ export default function Inventory() {
   const [flash, setFlash] = useState('');
   const [flashTone, setFlashTone] = useState('success'); // 'success' | 'error'
   const [printingLabel, setPrintingLabel] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   // Selection only ever covers the current result set. Any change to the query
   // (search/filter/sort/page) invalidates it rather than silently keeping stale ids
@@ -346,6 +349,18 @@ export default function Inventory() {
     }
   };
 
+  const handleExport = async (query) => {
+    setExportingExcel(true);
+    try {
+      await downloadAssetExport(query);
+    } catch (e) {
+      setFlashTone('error');
+      setFlash(e?.message || 'Gagal membuat file export. Coba lagi.');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   const handleDeleteStale = (message) => {
     setShowDeleteDialog(false);
     setSelectedIds(new Set());
@@ -399,6 +414,15 @@ export default function Inventory() {
             >
               <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Banyak Aset
             </Link>
+            <ExportMenu
+              currentQuery={apiQuery}
+              currentCount={result?.meta?.total ?? 0}
+              hasActiveFilters={filterActive}
+              onSelect={handleExport}
+              busy={exportingExcel}
+              align="right"
+              buttonClassName="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            />
           </div>
         )}
       </header>
