@@ -28,6 +28,9 @@ class AppServiceProvider extends ServiceProvider
         // No-op for local/testing/staging; see DeploymentSafety's own docblock.
         DeploymentSafety::assertDebugSafety((string) config('app.env'), (bool) config('app.debug'));
 
+        // Tahap 6.7.1 — S67-10: refuse to boot production with LOG_LEVEL=debug.
+        DeploymentSafety::assertLogLevelSafety((string) config('app.env'), (string) config('logging.level'));
+
         $this->configureLoginRateLimiter();
     }
 

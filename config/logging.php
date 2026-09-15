@@ -22,6 +22,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Configured Log Level
+    |--------------------------------------------------------------------------
+    |
+    | Tahap 6.7.1 (S67-10) — every channel below already reads its own
+    | `env('LOG_LEVEL', 'debug')` independently (untouched, no behavior
+    | change). This key exists ONLY so `App\Support\DeploymentSafety` can
+    | read the configured level via `config()` — which survives
+    | `artisan config:cache` — rather than calling `env()` directly outside
+    | a config file, which returns null once config is cached.
+    |
+    */
+
+    'level' => env('LOG_LEVEL', 'debug'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Deprecations Log Channel
     |--------------------------------------------------------------------------
     |

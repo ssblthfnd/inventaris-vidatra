@@ -399,7 +399,7 @@ export default function Inventory() {
           </p>
         </div>
         {isOperator && (
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
             <Link
               to="/inventory/new"
               state={{ from: searchParams.toString() }}
