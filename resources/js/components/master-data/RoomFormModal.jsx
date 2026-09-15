@@ -8,9 +8,10 @@ import { controlClass } from '../../lib/assetFields';
  * Create/edit room modal (Tahap 6.8.1), one component for both via `mode`
  * (mirrors `UserFormModal`'s own `mode="create"|"edit"` convention).
  *
- * Location is only selectable on create (from the existing active-only
- * `useMasterData().locations` list — never free text); on edit it is shown
- * read-only, since the backend rejects a `location_code` change outright.
+ * Location is only selectable on create (from the `locations` prop, which
+ * `RoomsPanel` passes as its active-only subset — never free text); on edit
+ * it is shown read-only, since the backend rejects a `location_code` change
+ * outright.
  */
 export default function RoomFormModal({ open, mode, room, locations, onClose, onSuccess }) {
   const isEdit = mode === 'edit';

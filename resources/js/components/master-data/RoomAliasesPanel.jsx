@@ -19,9 +19,18 @@ const SEARCH_DEBOUNCE_MS = 350;
  * List is a plain unpaginated `{ data: [...] }` collection from
  * `GET /api/room-aliases` (no `is_active` concept for aliases — see the
  * backend docblock), filterable by `location_code`, `room_id`, `q`.
+ *
+ * Fetches its own admin-scoped location list (`?include_inactive=1`) once,
+ * same reasoning and shape as `SubcategoriesPanel`'s category list and
+ * `RoomsPanel`'s location list: the location FILTER dropdown here shows
+ * every location (active + inactive, so an admin can browse aliases under a
+ * since-deactivated location), while only the ACTIVE subset is passed to
+ * `RoomAliasFormModal` for the create-mode location selector — a new alias
+ * can never be created under an inactive location.
  */
 export default function RoomAliasesPanel() {
-  const { locations, roomsByLocation, ensureRooms } = useMasterData();
+  const { roomsByLocation, ensureRooms } = useMasterData();
+  const [locations, setLocations] = useState([]);
 
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
@@ -40,6 +49,22 @@ export default function RoomAliasesPanel() {
   const [deleteTarget, setDeleteTarget] = useState(null); // alias
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get('/api/locations?include_inactive=1')
+      .then((res) => {
+        if (alive) setLocations(res?.data ?? []);
+      })
+      .catch(() => {
+        /* the location filter/selector simply stays empty; the list below
+           still loads and surfaces its own error independently */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setQ(qInput), SEARCH_DEBOUNCE_MS);
@@ -89,6 +114,7 @@ export default function RoomAliasesPanel() {
 
   const aliases = result?.data ?? [];
   const roomFilterOptions = roomsByLocation[locationCode] ?? [];
+  const activeLocations = locations.filter((l) => l.is_active);
 
   const handleLocationFilterChange = (value) => {
     setLocationCode(value);
@@ -278,7 +304,7 @@ export default function RoomAliasesPanel() {
         open={formModal !== null}
         mode={formModal?.mode}
         alias={formModal?.alias}
-        locations={locations}
+        locations={activeLocations}
         roomsByLocation={roomsByLocation}
         ensureRooms={ensureRooms}
         onClose={() => setFormModal(null)}

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react';
 import LifecycleConfirmDialog from '../LifecycleConfirmDialog';
 import RoomFormModal from './RoomFormModal';
 import { api, ApiError } from '../../lib/api';
-import { useMasterData } from '../../lib/useMasterData';
 
 const SEARCH_DEBOUNCE_MS = 350;
 
@@ -16,9 +15,17 @@ const SEARCH_DEBOUNCE_MS = 350;
  * `GET /api/rooms` admin endpoint (active AND inactive, every location) —
  * deliberately no pagination UI, matching every other master-data list in
  * this app (docs/api_convention.md).
+ *
+ * Fetches its own admin-scoped location list (`?include_inactive=1`) once,
+ * same reasoning and shape as `SubcategoriesPanel`'s category list: the
+ * location FILTER dropdown here shows every location (active + inactive, so
+ * an admin can browse rooms under a since-deactivated location), while only
+ * the ACTIVE subset is passed to `RoomFormModal` for the create-mode
+ * location selector — a new room can never be created under an inactive
+ * location. One fetch, two derived views; no second network round trip.
  */
 export default function RoomsPanel() {
-  const { locations } = useMasterData();
+  const [locations, setLocations] = useState([]);
 
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
@@ -36,6 +43,22 @@ export default function RoomsPanel() {
   const [statusTarget, setStatusTarget] = useState(null); // room (toggle confirm)
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusError, setStatusError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get('/api/locations?include_inactive=1')
+      .then((res) => {
+        if (alive) setLocations(res?.data ?? []);
+      })
+      .catch(() => {
+        /* the location filter/selector simply stays empty; the list below
+           still loads and surfaces its own error independently */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setQ(qInput), SEARCH_DEBOUNCE_MS);
@@ -79,6 +102,7 @@ export default function RoomsPanel() {
   }, [flash]);
 
   const rooms = result?.data ?? [];
+  const activeLocations = locations.filter((l) => l.is_active);
 
   const handleFormSuccess = (res, action) => {
     setFormModal(null);
@@ -252,7 +276,7 @@ export default function RoomsPanel() {
         open={formModal !== null}
         mode={formModal?.mode}
         room={formModal?.room}
-        locations={locations}
+        locations={activeLocations}
         onClose={() => setFormModal(null)}
         onSuccess={handleFormSuccess}
       />
