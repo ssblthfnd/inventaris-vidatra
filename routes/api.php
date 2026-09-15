@@ -181,4 +181,16 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::post('rooms', [RoomController::class, 'store'])->name('api.rooms.store');
         Route::match(['put', 'patch'], 'rooms/{room}', [RoomController::class, 'update'])->name('api.rooms.update');
     });
+
+    // --- location master-data management (Tahap 6.8.3) — admin only ---
+    // Unlike rooms, no separate GET route: the existing `GET /locations` above
+    // gained an opt-in `?include_inactive=1` (honoured only for `can:admin`)
+    // instead — see LocationController's docblock for why. No DELETE: same
+    // is_active-only lifecycle precedent as every other Tahap 6.8 entity
+    // except room aliases.
+    Route::middleware('can:admin')->group(function () {
+        Route::post('locations', [LocationController::class, 'store'])->name('api.locations.store');
+        Route::match(['put', 'patch'], 'locations/{location}', [LocationController::class, 'update'])
+            ->name('api.locations.update');
+    });
 });
