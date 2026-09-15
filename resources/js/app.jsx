@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Imports from './pages/Imports';
 import Inventory from './pages/Inventory';
 import Login from './pages/Login';
+import MasterData from './pages/MasterData';
 import Reports from './pages/Reports';
 import Users from './pages/Users';
 import GuestRoute from './routes/GuestRoute';
@@ -46,6 +47,7 @@ function App() {
             <Route path="/imports" element={<Imports />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/users" element={<Users />} />
+            <Route path="/master-data" element={<MasterData />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

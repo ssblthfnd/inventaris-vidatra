@@ -23,6 +23,8 @@ const NAV = [
   // the page itself), this one is admin-only in the NAV LIST too, per the
   // stage's explicit requirement: a viewer/operator must not even see it.
   { label: 'Pengguna', to: '/users', ready: true, adminOnly: true },
+  // Tahap 6.8.1 — same admin-only-in-the-nav-list treatment as 'Pengguna' above.
+  { label: 'Master Data', to: '/master-data', ready: true, adminOnly: true },
 ];
 
 function NavItems({ onNavigate }) {

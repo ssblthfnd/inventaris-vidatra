@@ -154,4 +154,15 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])
             ->name('api.users.reset-password');
     });
+
+    // --- room master-data management (Tahap 6.8.1) — admin only ---
+    // A separate `GET /rooms` (flat, all locations, active AND inactive) rather
+    // than changing the existing viewer-facing `index()`/`show()` above — see
+    // RoomController's docblock. No DELETE: deactivation (`is_active`) is the
+    // only lifecycle mechanism, same precedent as user management.
+    Route::middleware('can:admin')->group(function () {
+        Route::get('rooms', [RoomController::class, 'adminIndex'])->name('api.rooms.admin-index');
+        Route::post('rooms', [RoomController::class, 'store'])->name('api.rooms.store');
+        Route::match(['put', 'patch'], 'rooms/{room}', [RoomController::class, 'update'])->name('api.rooms.update');
+    });
 });
