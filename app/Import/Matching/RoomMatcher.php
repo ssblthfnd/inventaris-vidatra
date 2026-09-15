@@ -14,6 +14,19 @@ use Illuminate\Support\Facades\DB;
  *
  * NEVER queries rooms/aliases without a location scope. NEVER creates a room, an alias,
  * or a "Lainnya" bucket. NO fuzzy matching.
+ *
+ * Tahap 6.8.2 (Part B): both `names` and `aliases` below are scoped to ACTIVE
+ * rooms only — this governs NEW import matching alone. An inactive room (or
+ * an alias pointing at one) simply stops resolving here, which `RowValidator`
+ * already treats as `room_unmapped` (a warning, never silently reassigned) —
+ * no new import status was invented. This has ZERO effect on existing/
+ * historical assets: `Asset::room()` and every read endpoint resolve rooms
+ * by `room_id` directly, never through this matcher, so a historical asset
+ * whose room later goes inactive keeps displaying correctly (see
+ * `FiltersAssets`, `AssetResource`). Deactivating a room never touches this
+ * matcher's cache in-process; a fresh cache is built per artisan/HTTP
+ * lifecycle (`forgetCache()` exists for the rare case a single long-lived
+ * process needs to re-read after a change).
  */
 final class RoomMatcher
 {
@@ -56,12 +69,23 @@ final class RoomMatcher
         }
 
         $names = [];
-        foreach (DB::table('rooms')->where('location_code', $locationCode)->get(['id', 'name']) as $room) {
+        foreach (
+            DB::table('rooms')
+                ->where('location_code', $locationCode)
+                ->where('is_active', true)
+                ->get(['id', 'name']) as $room
+        ) {
             $names[ValueNormalizer::roomMatchKey($room->name)] = (int) $room->id;
         }
 
         $aliases = [];
-        foreach (DB::table('room_aliases')->where('location_code', $locationCode)->get(['room_id', 'match_key']) as $alias) {
+        foreach (
+            DB::table('room_aliases')
+                ->join('rooms', 'room_aliases.room_id', '=', 'rooms.id')
+                ->where('room_aliases.location_code', $locationCode)
+                ->where('rooms.is_active', true)
+                ->get(['room_aliases.room_id', 'room_aliases.match_key']) as $alias
+        ) {
             $aliases[$alias->match_key] = (int) $alias->room_id;
         }
 

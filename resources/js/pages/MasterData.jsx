@@ -1,4 +1,5 @@
 import { useAuth } from '../auth/AuthContext';
+import RoomAliasesPanel from '../components/master-data/RoomAliasesPanel';
 import RoomsPanel from '../components/master-data/RoomsPanel';
 import { CenteredState } from '../lib/assetFields';
 
@@ -7,11 +8,17 @@ import { CenteredState } from '../lib/assetFields';
  * visible in nav to admin only, page also self-gates" pattern as `Users.jsx`
  * (backend `can:admin` stays authoritative regardless).
  *
- * Tahap 6.8.1 implements only the Ruangan (Rooms) section. Locations,
- * Categories/Subcategories and Room Aliases are deliberately NOT built yet —
- * this page is kept as a thin container so a later stage can add them
- * (e.g. as tabs) without this stage inventing tab-switching UI for sections
- * that don't exist yet.
+ * Tahap 6.8.1 added the Ruangan (Rooms) section; Tahap 6.8.2 adds Alias
+ * Ruangan (Room Aliases) below it — both are plain stacked sections on this
+ * one page, not tabs (the page still has only two sections; a tab switcher
+ * would be premature UI for that). Note: `RoomAliasesPanel`'s own backend
+ * routes are `can:operator`, but this whole PAGE stays `isAdmin`-gated for
+ * now — an operator cannot reach it today even though the API would allow
+ * their alias writes. Widening page access to operators is a frontend-only
+ * decision for a future stage to make deliberately, not a side effect of
+ * this one. Locations, Categories/Subcategories are deliberately still NOT
+ * built — this page remains a thin container for whichever section a later
+ * stage adds next.
  */
 export default function MasterData() {
   const { isAdmin } = useAuth();
@@ -28,13 +35,14 @@ export default function MasterData() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Master Data</h1>
         <p className="mt-1 text-sm text-gray-500">Kelola data referensi aplikasi.</p>
       </header>
 
       <RoomsPanel />
+      <RoomAliasesPanel />
     </div>
   );
 }

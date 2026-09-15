@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ImportTemplateController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MutationRevertController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\RoomAliasController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\SubcategoryController;
 use App\Http\Controllers\Api\UserController;
@@ -76,6 +77,12 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('locations/{location}/rooms', [RoomController::class, 'index'])
             ->name('api.locations.rooms.index');
         Route::get('rooms/{room}', [RoomController::class, 'show'])->name('api.rooms.show');
+
+        // Room aliases (Tahap 6.8.2) — read is viewer-open like every other
+        // master-data list; write is `can:operator` below (see
+        // RoomAliasController's docblock for why aliases differ from the
+        // rest of Tahap 6.8's admin-only master data).
+        Route::get('room-aliases', [RoomAliasController::class, 'index'])->name('api.room-aliases.index');
     });
 
     // --- write API: operator / admin (Gate `operator` already passes admins) ---
@@ -141,6 +148,15 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('imports/{batch}/rows', [ImportController::class, 'rows'])->name('api.imports.rows');
         Route::post('imports/{batch}/promote', [ImportController::class, 'promote'])->name('api.imports.promote');
         Route::get('imports/{batch}/report', [ImportController::class, 'report'])->name('api.imports.report');
+
+        // Room aliases (Tahap 6.8.2) — write side; read is `can:viewer` above.
+        // Real DELETE (unlike every other master-data entity in Tahap 6.8):
+        // RoomAlias is a leaf table with no dependents, see RoomAliasController.
+        Route::post('room-aliases', [RoomAliasController::class, 'store'])->name('api.room-aliases.store');
+        Route::match(['put', 'patch'], 'room-aliases/{roomAlias}', [RoomAliasController::class, 'update'])
+            ->name('api.room-aliases.update');
+        Route::delete('room-aliases/{roomAlias}', [RoomAliasController::class, 'destroy'])
+            ->name('api.room-aliases.destroy');
     });
 
     // --- user management (Tahap 6.4) — admin only; operator gets 403 here ---
