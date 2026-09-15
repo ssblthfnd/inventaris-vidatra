@@ -1,11 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 
-const CATEGORY_OPTIONS = [
-  { code: '02', label: 'Meubelair' },
-  { code: '03', label: 'Elektronik' },
-  { code: '06', label: 'Alat Kebersihan' },
-];
-
 /**
  * "Export Excel" trigger + a transient menu (Tahap 6.2) — not a permanent export
  * configuration panel, matching `PrintLabelMenu`'s own "no persistent selector"
@@ -17,8 +11,18 @@ const CATEGORY_OPTIONS = [
  * (and its busy/error state) belongs to the caller via `onSelect(query)`, where
  * `query` is a ready-to-use `GET /api/assets/export` query string (or `''` for
  * "no filter, everything").
+ *
+ * Tahap 6.8.4: the per-category quick-export buttons are driven by `categories`
+ * (the caller's own already-fetched `useMasterData().categories`, active-only)
+ * instead of a hardcoded list — `AssetExportService` genuinely supports
+ * exporting any category (it falls back to a generic column layout for one it
+ * doesn't have a specific mapping for), so unlike the import TEMPLATE selector
+ * in `lib/imports.js` (which is hard-limited to categories with a known Excel
+ * column layout), export has no such restriction and can safely offer every
+ * active category. No new fetch here — reuses whatever the page already loaded.
  */
 export default function ExportMenu({
+  categories,
   currentQuery,
   currentCount,
   hasActiveFilters,
@@ -100,7 +104,7 @@ export default function ExportMenu({
             <span className="text-xs text-gray-400">Mengabaikan filter yang sedang aktif</span>
           </button>
 
-          {CATEGORY_OPTIONS.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat.code}
               type="button"
@@ -108,7 +112,7 @@ export default function ExportMenu({
               onClick={() => pick(`category_code[]=${cat.code}`)}
               className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
             >
-              <span>{cat.label}</span>
+              <span>{cat.name}</span>
               <span className="text-xs text-gray-400">{cat.code}</span>
             </button>
           ))}

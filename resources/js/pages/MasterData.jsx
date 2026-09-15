@@ -1,7 +1,9 @@
 import { useAuth } from '../auth/AuthContext';
+import CategoriesPanel from '../components/master-data/CategoriesPanel';
 import LocationsPanel from '../components/master-data/LocationsPanel';
 import RoomAliasesPanel from '../components/master-data/RoomAliasesPanel';
 import RoomsPanel from '../components/master-data/RoomsPanel';
+import SubcategoriesPanel from '../components/master-data/SubcategoriesPanel';
 import { CenteredState } from '../lib/assetFields';
 
 /**
@@ -10,18 +12,17 @@ import { CenteredState } from '../lib/assetFields';
  * (backend `can:admin` stays authoritative regardless).
  *
  * Tahap 6.8.1 added Ruangan (Rooms); Tahap 6.8.2 added Alias Ruangan (Room
- * Aliases); Tahap 6.8.3 adds Lokasi (Locations). All three are plain stacked
- * sections on this one page, not tabs — ordered top-down by structural
- * dependency (Lokasi -> Ruangan -> Alias Ruangan), matching how an admin
- * would actually work through onboarding a new location. A tab switcher
- * remains premature UI for three sections that read fine stacked. Note:
+ * Aliases); Tahap 6.8.3 added Lokasi (Locations); Tahap 6.8.4 adds Kategori
+ * and Subkategori. All five are plain stacked sections on this one page, not
+ * tabs — ordered top-down by structural dependency (Lokasi -> Kategori ->
+ * Subkategori -> Ruangan -> Alias Ruangan), matching how an admin would
+ * actually work through onboarding new master data. A tab switcher remains
+ * premature UI for five sections that read fine stacked. Note:
  * `RoomAliasesPanel`'s own backend routes are `can:operator`, but this whole
  * PAGE stays `isAdmin`-gated for now — an operator cannot reach it today
  * even though the API would allow their alias writes. Widening page access
  * to operators is a frontend-only decision for a future stage to make
- * deliberately, not a side effect of this one. Categories/Subcategories are
- * deliberately still NOT built — this page remains a thin container for
- * whichever section a later stage adds next.
+ * deliberately, not a side effect of this one.
  */
 export default function MasterData() {
   const { isAdmin } = useAuth();
@@ -45,6 +46,8 @@ export default function MasterData() {
       </header>
 
       <LocationsPanel />
+      <CategoriesPanel />
+      <SubcategoriesPanel />
       <RoomsPanel />
       <RoomAliasesPanel />
     </div>

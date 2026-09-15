@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
 import ImportRowsTable from '../components/imports/ImportRowsTable';
@@ -6,8 +6,8 @@ import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import { ApiError } from '../lib/api';
 import { CenteredState } from '../lib/assetFields';
 import {
-  IMPORT_CATEGORY_OPTIONS,
   IMPORT_STATUS_OPTIONS,
+  IMPORT_TEMPLATE_CATEGORY_CODES,
   downloadImportTemplate,
   getImportBatch,
   getImportRows,
@@ -15,6 +15,7 @@ import {
   promoteImportBatch,
   uploadImportFile,
 } from '../lib/imports';
+import { useMasterData } from '../lib/useMasterData';
 
 /**
  * Import Excel UI (Tahap 6.1) — `/imports`, operator/admin only.
@@ -54,8 +55,27 @@ function SummaryTile({ label, value, tone = 'default' }) {
 
 export default function Imports() {
   const { isOperator } = useAuth();
+  const { categories } = useMasterData();
 
-  const [category, setCategory] = useState(IMPORT_CATEGORY_OPTIONS[0].value);
+  // Tahap 6.8.4: codes are the fixed backend constant (which categories the
+  // template generator actually knows a column layout for); names/labels
+  // and availability (only currently-ACTIVE categories) come live from
+  // master data — no hardcoded category name lives in this page anymore.
+  const templateCategoryOptions = useMemo(
+    () =>
+      categories
+        .filter((c) => IMPORT_TEMPLATE_CATEGORY_CODES.includes(c.code))
+        .map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` })),
+    [categories],
+  );
+
+  const [category, setCategory] = useState('');
+  useEffect(() => {
+    if (category === '' && templateCategoryOptions.length > 0) {
+      setCategory(templateCategoryOptions[0].value);
+    }
+  }, [category, templateCategoryOptions]);
+
   const [templateBusy, setTemplateBusy] = useState(false);
   const [templateError, setTemplateError] = useState('');
 
@@ -134,6 +154,7 @@ export default function Imports() {
   );
 
   const handleDownloadTemplate = async () => {
+    if (!category) return;
     setTemplateBusy(true);
     setTemplateError('');
     try {
@@ -244,10 +265,11 @@ export default function Imports() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            disabled={templateBusy}
+            disabled={templateBusy || templateCategoryOptions.length === 0}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900 disabled:bg-gray-50"
           >
-            {IMPORT_CATEGORY_OPTIONS.map((opt) => (
+            {templateCategoryOptions.length === 0 && <option value="">Memuat kategori…</option>}
+            {templateCategoryOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -256,7 +278,7 @@ export default function Imports() {
           <button
             type="button"
             onClick={handleDownloadTemplate}
-            disabled={templateBusy}
+            disabled={templateBusy || !category}
             className="rounded-lg border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {templateBusy ? 'Menyiapkan Template…' : 'Download Template Excel'}

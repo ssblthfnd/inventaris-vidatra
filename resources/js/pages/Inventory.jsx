@@ -415,6 +415,7 @@ export default function Inventory() {
               <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Banyak Aset
             </Link>
             <ExportMenu
+              categories={md.categories}
               currentQuery={apiQuery}
               currentCount={result?.meta?.total ?? 0}
               hasActiveFilters={filterActive}

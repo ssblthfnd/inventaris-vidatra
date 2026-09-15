@@ -17,11 +17,19 @@ export const IMPORT_STATUS_OPTIONS = [
   { value: 'duplicate', label: 'Duplikat' },
 ];
 
-export const IMPORT_CATEGORY_OPTIONS = [
-  { value: '02', label: '02 — Meubelair' },
-  { value: '03', label: '03 — Elektronik' },
-  { value: '06', label: '06 — Alat Kebersihan' },
-];
+/**
+ * Tahap 6.8.4: this is NOT master data and must stay a fixed constant — it
+ * mirrors the backend's `App\Import\Parsing\CategoryColumnMap::KNOWN_CATEGORIES`
+ * exactly, the fixed set of categories `ImportTemplateService` actually knows
+ * a physical Excel column layout for (`ImportTemplateRequest` rejects any
+ * other value with a 422). Creating a new category in Master Data must NOT
+ * imply a new import-template format, so this list intentionally does not
+ * grow just because more categories exist — only the category NAMES shown
+ * next to these codes are master-data-driven (see `Imports.jsx`, which joins
+ * this against `useMasterData().categories` for live names and to hide a
+ * code if that category is currently inactive).
+ */
+export const IMPORT_TEMPLATE_CATEGORY_CODES = ['02', '03', '06'];
 
 async function parseErrorPayload(response) {
   let payload = null;

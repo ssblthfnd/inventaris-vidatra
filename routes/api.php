@@ -193,4 +193,25 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::match(['put', 'patch'], 'locations/{location}', [LocationController::class, 'update'])
             ->name('api.locations.update');
     });
+
+    // --- category master-data management (Tahap 6.8.4) — admin only ---
+    // Same opt-in `?include_inactive=1` pattern as locations — see
+    // CategoryController's docblock. No DELETE.
+    Route::middleware('can:admin')->group(function () {
+        Route::post('categories', [CategoryController::class, 'store'])->name('api.categories.store');
+        Route::match(['put', 'patch'], 'categories/{category}', [CategoryController::class, 'update'])
+            ->name('api.categories.update');
+    });
+
+    // --- subcategory master-data management (Tahap 6.8.4) — admin only ---
+    // A separate `GET /subcategories` (flat, all categories, active AND
+    // inactive) rather than changing the existing nested `index()` — same
+    // pattern as rooms, see SubcategoryController's docblock. No DELETE.
+    Route::middleware('can:admin')->group(function () {
+        Route::get('subcategories', [SubcategoryController::class, 'adminIndex'])
+            ->name('api.subcategories.admin-index');
+        Route::post('subcategories', [SubcategoryController::class, 'store'])->name('api.subcategories.store');
+        Route::match(['put', 'patch'], 'subcategories/{subcategory}', [SubcategoryController::class, 'update'])
+            ->name('api.subcategories.update');
+    });
 });
