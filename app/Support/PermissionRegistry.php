@@ -63,19 +63,23 @@ final class PermissionRegistry
      * Stage 6.9 R5 — unit_admin's ACTUAL intended set, now that these
      * abilities are wired into real routes/policies. Deliberately NOT
      * {@see FULL_INVENTORY_AND_ROOMS}: unit_admin gets every scoped
-     * inventory write ability, but explicitly none of `assets.import`,
-     * `assets.export`, or `rooms.manage` (room master-data management) —
-     * those stay super_admin/admin/operator-only per Stage 6.9 R5 §2/§13.
+     * inventory write ability, but explicitly none of `assets.export`
+     * or `rooms.manage` (room master-data management) — those stay
+     * super_admin/admin/operator-only per Stage 6.9 R5 §2/§13.
      * (R1 originally reused FULL_INVENTORY_AND_ROOMS + rooms.manage for
      * unit_admin here, harmlessly, since none of these abilities were wired
      * to anything yet; R5 corrects it now that they are.)
+     *
+     * Stage 6.9 R6 adds `assets.import` — location-scoped (see
+     * `ImportManager`/`AssetPromoter`) — while `assets.export` stays
+     * excluded; export scope is explicitly a later phase.
      *
      * @var list<string>
      */
     private const UNIT_ADMIN_INVENTORY = [
         'assets.view', 'assets.create', 'assets.edit', 'assets.batchEdit', 'assets.delete',
         'assets.writeOff', 'assets.restore', 'assets.revert', 'assets.moveRoom',
-        'assets.report',
+        'assets.import', 'assets.report',
         'dashboard.view', 'rooms.view',
     ];
 

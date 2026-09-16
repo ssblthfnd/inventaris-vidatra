@@ -157,9 +157,27 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
             ->name('api.mutations.revert');
     });
 
-    // --- everything else that was, and remains, operator/admin only: labels,
-    // export, import, room aliases — Stage 6.9 R5 deliberately does NOT touch
-    // these gates, so unit_admin stays fully blocked from all of them. ---
+    // --- import (Tahap 6.1; Stage 6.9 R6) — `can:assets.import`, NOT
+    // `can:operator`: admits `unit_admin` too, location-scoped (staging and
+    // promotion both independently enforce it — see ImportManager /
+    // AssetPromoter). `imports` (the cross-batch history LIST) deliberately
+    // stays on `can:operator` below — unit_admin does not get a global
+    // import-history browser in this phase. `imports/template` is
+    // registered BEFORE `imports/{batch}` so the literal path wins over the
+    // wildcard. ---
+    Route::middleware('can:assets.import')->group(function () {
+        Route::get('imports/template', [ImportTemplateController::class, 'show'])->name('api.imports.template');
+        Route::post('imports', [ImportController::class, 'store'])->name('api.imports.store');
+        Route::get('imports/{batch}', [ImportController::class, 'show'])->name('api.imports.show');
+        Route::get('imports/{batch}/rows', [ImportController::class, 'rows'])->name('api.imports.rows');
+        Route::post('imports/{batch}/promote', [ImportController::class, 'promote'])->name('api.imports.promote');
+        Route::get('imports/{batch}/report', [ImportController::class, 'report'])->name('api.imports.report');
+    });
+
+    // --- everything else that was, and remains, operator/admin only:
+    // labels, export, import HISTORY LIST, room aliases — Stage 6.9 R5/R6
+    // deliberately do NOT touch these gates, so unit_admin stays fully
+    // blocked from all of them. ---
     Route::middleware('can:operator')->group(function () {
         // Printable label PDF (Tahap 6.0; ?size=small|medium|large added Tahap 6.0.2,
         // default small). No ->withTrashed(): a soft-deleted asset is not something
@@ -169,21 +187,14 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
         // Excel export (Tahap 6.2) — reuses the exact `GET /api/assets` filter
         // vocabulary (AssetIndexRequest) via FiltersAssets; see AssetExportController.
-        // Deliberately left on `can:operator` (Stage 6.9 R4 does not add export
+        // Deliberately left on `can:operator` (Stage 6.9 R4/R6 do not add export
         // scope) — unit_admin stays fully blocked from export here, unchanged.
         Route::get('assets/export', [AssetExportController::class, 'export'])->name('api.assets.export');
 
-        // Import Excel UI (Tahap 6.1) — operator/admin only, viewer forbidden. A thin
-        // HTTP layer over the pre-existing App\Import staging/promotion pipeline (see
-        // ImportController); NEVER a second importer. `imports/template` is registered
-        // BEFORE `imports/{batch}` so the literal path wins over the wildcard.
-        Route::get('imports/template', [ImportTemplateController::class, 'show'])->name('api.imports.template');
+        // Import history LIST (Tahap 6.1) — every batch across every user/
+        // location; deliberately NOT scoped for unit_admin (Stage 6.9 R6 §
+        // "Scope Control") — see ImportController's docblock.
         Route::get('imports', [ImportController::class, 'index'])->name('api.imports.index');
-        Route::post('imports', [ImportController::class, 'store'])->name('api.imports.store');
-        Route::get('imports/{batch}', [ImportController::class, 'show'])->name('api.imports.show');
-        Route::get('imports/{batch}/rows', [ImportController::class, 'rows'])->name('api.imports.rows');
-        Route::post('imports/{batch}/promote', [ImportController::class, 'promote'])->name('api.imports.promote');
-        Route::get('imports/{batch}/report', [ImportController::class, 'report'])->name('api.imports.report');
 
         // Room aliases (Tahap 6.8.2) — write side; read is `can:viewer` above.
         // Real DELETE (unlike every other master-data entity in Tahap 6.8):

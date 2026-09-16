@@ -10,6 +10,8 @@ use App\Import\Promotion\AssetPromoter;
 use App\Import\Validation\DuplicateChecker;
 use App\Import\Validation\MasterData;
 use App\Import\Validation\RowValidator;
+use App\Models\User;
+use App\Support\LocationScope;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -22,6 +24,17 @@ use RuntimeException;
  *
  * Promotion (import_rows -> assets) is delegated to {@see AssetPromoter}. There is NEVER a
  * direct Excel -> assets path.
+ *
+ * Stage 6.9 R6 — `stageFile()`'s optional `$actor` enforces location scope
+ * for `unit_admin`: after every row is parsed/inserted exactly as before, if
+ * ANY row resolved to a location outside the actor's scope, the whole batch
+ * is forced to `status = 'failed'` — never partially promotable — and each
+ * out-of-scope row is marked accordingly (see `rejectOutOfScopeRows()`).
+ * `promoteBatch()`'s optional `$actor` is threaded to {@see AssetPromoter},
+ * which independently re-checks scope against the CURRENT actor at
+ * promotion time — see that class's docblock for why staging-time and
+ * promotion-time checks are both necessary. `$actor === null` (the CLI
+ * commands' path) means unrestricted, matching a global role.
  */
 final class ImportManager
 {
@@ -29,16 +42,16 @@ final class ImportManager
         private readonly RowParser $parser,
         private readonly RoomMatcher $roomMatcher,
         private readonly AssetPromoter $promoter,
-    ) {
-    }
+    ) {}
 
     /**
      * Stage + validate one workbook into a fresh import batch.
      *
      * @return array{batch_id:int, sheet:string, location_code:?string, category_code:?string,
-     *               total:int, valid:int, warning:int, error:int, skipped_rows:int, status:string}
+     *               total:int, valid:int, warning:int, error:int, skipped_rows:int, status:string,
+     *               scope_rejected:bool}
      */
-    public function stageFile(string $path, ?int $uploadedBy = null): array
+    public function stageFile(string $path, ?int $uploadedBy = null, ?User $actor = null): array
     {
         $scanner = new SheetScanner($path);
 
@@ -58,8 +71,8 @@ final class ImportManager
             throw new RuntimeException("No data rows found in [{$path}] (sheet [{$scanner->sheetName}]).");
         }
 
-        $master = new MasterData();
-        $duplicates = new DuplicateChecker();
+        $master = new MasterData;
+        $duplicates = new DuplicateChecker;
         $validator = new RowValidator($master, $duplicates);
         $this->roomMatcher->forgetCache();
 
@@ -129,6 +142,24 @@ final class ImportManager
         $counts = $this->recomputeCounts($batchId);
         $status = ($counts['total'] > 0 && $counts['error'] === $counts['total']) ? 'failed' : 'validated';
 
+        // Stage 6.9 R6 — a location-scoped actor (unit_admin) uploading ANY
+        // row that resolved to a location outside their scope forces the
+        // WHOLE batch non-promotable, regardless of how many other rows are
+        // otherwise perfectly valid. Global actors (isGlobal() === true, the
+        // $actor === null CLI path included) are completely unaffected —
+        // this block is a no-op for them, byte-identical to before R6.
+        $scopeRejected = false;
+        if ($actor !== null) {
+            $scope = LocationScope::for($actor);
+            if (! $scope->isGlobal()) {
+                $scopeRejected = $this->rejectOutOfScopeRows($batchId, $scope);
+                if ($scopeRejected) {
+                    $counts = $this->recomputeCounts($batchId);
+                    $status = 'failed';
+                }
+            }
+        }
+
         DB::table('import_batches')->where('id', $batchId)->update([
             'status' => $status,
             'total_rows' => $counts['total'],
@@ -149,15 +180,104 @@ final class ImportManager
             'error' => $counts['error'],
             'skipped_rows' => $skippedRows,
             'status' => $status,
+            'scope_rejected' => $scopeRejected,
         ];
+    }
+
+    /**
+     * Stage 6.9 R6 — marks every row in this batch whose resolved
+     * `location_code` is outside `$scope` as an `error` carrying a
+     * `location_out_of_scope` message, and redacts any pre-existing
+     * duplicate-detection detail on that SAME row (it's about to be
+     * unconditionally rejected anyway, so there's no legitimate reason for
+     * the actor to learn a cross-unit asset's id/identity through it — see
+     * `redactDuplicateDetail()`). Rows with no resolved location at all are
+     * intentionally left alone here: they already carry `location_missing`/
+     * `invalid_location` errors from {@see RowValidator}, independent of
+     * actor scope, and are already non-promotable for every role.
+     *
+     * @return bool whether any row was out of scope (the caller uses this to
+     *              decide whether to force the batch's status to `failed`)
+     */
+    private function rejectOutOfScopeRows(int $batchId, LocationScope $scope): bool
+    {
+        $outOfScopeCodes = DB::table('import_rows')
+            ->where('import_batch_id', $batchId)
+            ->whereNotNull('location_code')
+            ->distinct()
+            ->pluck('location_code')
+            ->reject(fn (string $code): bool => $scope->allows($code))
+            ->values()
+            ->all();
+
+        if ($outOfScopeCodes === []) {
+            return false;
+        }
+
+        $rows = DB::table('import_rows')
+            ->where('import_batch_id', $batchId)
+            ->whereIn('location_code', $outOfScopeCodes)
+            ->get(['id', 'validation_messages']);
+
+        foreach ($rows as $row) {
+            $messages = $this->redactDuplicateDetail(
+                json_decode((string) $row->validation_messages, true) ?: []
+            );
+            $messages[] = [
+                'code' => 'location_out_of_scope',
+                'severity' => 'error',
+                'field' => 'location_code',
+                'message' => 'Lokasi baris ini berada di luar unit yang menjadi wewenang Anda.',
+            ];
+
+            DB::table('import_rows')->where('id', $row->id)->update([
+                'validation_status' => 'error',
+                'validation_messages' => json_encode($messages, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                'duplicate_of_asset_id' => null,
+                'updated_at' => now(),
+            ]);
+        }
+
+        return true;
+    }
+
+    /**
+     * Stage 6.9 R6 — a row about to be rejected for being out of the actor's
+     * scope may ALSO have matched an existing asset during normal duplicate
+     * detection ({@see DuplicateChecker}) — and since duplicate identity
+     * includes `location_code`, that existing asset is, by construction, in
+     * the SAME (out-of-scope) location, never the actor's own. Its id and
+     * the `duplicate_existing_asset` message text (which embeds that id
+     * verbatim) are stripped here so an unauthorized actor can never learn
+     * a cross-unit asset's identity merely by uploading a file that happens
+     * to collide with it. `duplicate_in_batch` (no asset id involved at
+     * all) is left untouched — it discloses nothing about `assets`.
+     *
+     * @param  list<array{code:string,severity:string,field:?string,message:string}>  $messages
+     * @return list<array{code:string,severity:string,field:?string,message:string}>
+     */
+    private function redactDuplicateDetail(array $messages): array
+    {
+        return array_values(array_map(function (array $m): array {
+            if ($m['code'] !== 'duplicate_existing_asset') {
+                return $m;
+            }
+
+            return [
+                'code' => $m['code'],
+                'severity' => $m['severity'],
+                'field' => $m['field'],
+                'message' => 'business identity duplicates an existing asset (details withheld: row is outside your unit).',
+            ];
+        }, $messages));
     }
 
     /**
      * @return array{promoted:int, skipped_already:int, failed:int, errors:list<array{row:int,message:string}>}
      */
-    public function promoteBatch(int $batchId): array
+    public function promoteBatch(int $batchId, ?User $actor = null): array
     {
-        return $this->promoter->promoteBatch($batchId);
+        return $this->promoter->promoteBatch($batchId, $actor);
     }
 
     public function existingNonRolledBackBatches(string $filename, string $sheet): int

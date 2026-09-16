@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Models\Asset;
+use App\Models\ImportBatch;
 use App\Models\User;
 use App\Policies\AssetPolicy;
+use App\Policies\ImportBatchPolicy;
 use App\Support\PermissionRegistry;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -61,5 +63,9 @@ class AuthServiceProvider extends ServiceProvider
         // Illuminate ServiceProvider, not Laravel's Foundation Auth base class,
         // so policy resolution is registered explicitly here.
         Gate::policy(Asset::class, AssetPolicy::class);
+
+        // Stage 6.9 R6 — single-resource import-batch authorization
+        // (App\Policies\ImportBatchPolicy).
+        Gate::policy(ImportBatch::class, ImportBatchPolicy::class);
     }
 }

@@ -4,6 +4,9 @@ namespace App\Import\Promotion;
 
 use App\Import\Parsing\ParsedRow;
 use App\Import\Validation\DuplicateChecker;
+use App\Models\User;
+use App\Support\LocationScope;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
@@ -18,6 +21,16 @@ use Throwable;
  *  - `asset_code` is NEVER written — it is a DB generated column.
  *  - NO mutation_logs are created (initial inventory = initial state, §31).
  *  - Existing-asset duplicate is re-checked inside the transaction (final-state check, §29).
+ *
+ * Stage 6.9 R6 — `$actor` is authorized against every location this batch's
+ * PROMOTABLE rows represent, BEFORE the promotion loop below touches a
+ * single row. This is deliberately independent of whatever check
+ * `ImportManager::stageFile()` ran at staging time: the actor calling
+ * `promoteBatch()` may be a different user entirely from whoever staged it
+ * (a colleague, or the same unit_admin after a location reassignment), so
+ * "was this batch created by an authorized actor" is not a substitute for
+ * "is the CURRENT actor authorized for this data, right now". `$actor ===
+ * null` (the CLI command's path) means unrestricted, matching a global role.
  */
 final class AssetPromoter
 {
@@ -28,7 +41,7 @@ final class AssetPromoter
     /**
      * @return array{promoted:int, skipped_already:int, failed:int, errors:list<array{row:int,message:string}>}
      */
-    public function promoteBatch(int $batchId): array
+    public function promoteBatch(int $batchId, ?User $actor = null): array
     {
         $batch = DB::table('import_batches')->find($batchId);
         if ($batch === null) {
@@ -38,6 +51,27 @@ final class AssetPromoter
             throw new RuntimeException(
                 "Batch {$batchId} is [{$batch->status}] — validate it before promotion."
             );
+        }
+
+        if ($actor !== null) {
+            $scope = LocationScope::for($actor);
+            if (! $scope->isGlobal()) {
+                $promotableLocationCodes = DB::table('import_rows')
+                    ->where('import_batch_id', $batchId)
+                    ->whereIn('validation_status', ['valid', 'warning'])
+                    ->whereNull('promoted_asset_id')
+                    ->whereNotNull('location_code')
+                    ->distinct()
+                    ->pluck('location_code');
+
+                foreach ($promotableLocationCodes as $code) {
+                    if (! $scope->allows($code)) {
+                        throw new AuthorizationException(
+                            "Batch {$batchId} contains promotable data outside your assigned location."
+                        );
+                    }
+                }
+            }
         }
 
         $result = ['promoted' => 0, 'skipped_already' => 0, 'failed' => 0, 'errors' => []];

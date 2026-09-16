@@ -11,6 +11,7 @@ use App\Import\ImportManager;
 use App\Import\Promotion\AssetPromoter;
 use App\Import\Reporting\ImportReporter;
 use App\Models\ImportBatch;
+use App\Policies\ImportBatchPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -20,12 +21,19 @@ use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
- * Import Excel UI (Tahap 6.1), `can:operator` — a thin HTTP layer over the EXISTING
- * staging pipeline. Every actual import decision (parsing, room matching, validation,
- * duplicate detection, promotion) is made by {@see ImportManager} / its collaborators,
- * exactly as it is for `php artisan inventory:import` / `inventory:promote`. This
- * controller adds no import logic of its own — only upload handling, pagination,
- * and read shaping.
+ * Import Excel UI (Tahap 6.1). Stage 6.9 R6 regates `store`/`show`/`rows`/
+ * `promote`/`report` from `can:operator` to `can:assets.import` — so
+ * `unit_admin` can reach them too — but `index` (the cross-batch history
+ * list) deliberately stays `can:operator`: unit_admin has no need to browse
+ * every OTHER user's import history, and this phase does not invent a
+ * "which batches may this actor list" scheme for it. A thin HTTP layer over
+ * the EXISTING staging pipeline either way — every actual import decision
+ * (parsing, room matching, validation, duplicate detection, promotion) is
+ * made by {@see ImportManager} / its collaborators, exactly as it is for
+ * `php artisan inventory:import` / `inventory:promote`. This controller
+ * adds no import logic of its own — only upload handling, pagination,
+ * read shaping, and (R6) the per-batch ownership check via
+ * {@see ImportBatchPolicy} for the single-batch endpoints.
  */
 class ImportController extends ApiController
 {
@@ -34,6 +42,8 @@ class ImportController extends ApiController
         'validated' => 'File berhasil diunggah dan divalidasi.',
         'failed' => 'File diunggah, namun seluruh baris berstatus Error dan tidak dapat dipromosikan.',
     ];
+
+    private const SCOPE_REJECTED_MESSAGE = 'File berisi data di luar unit yang menjadi wewenang Anda dan tidak dapat diproses.';
 
     /**
      * Import history — every batch, newest first (Tahap 6.1's "Import History").
@@ -68,7 +78,7 @@ class ImportController extends ApiController
         $absolutePath = Storage::disk('local')->path($storedRelativePath);
 
         try {
-            $summary = $manager->stageFile($absolutePath, $request->user()->id);
+            $summary = $manager->stageFile($absolutePath, $request->user()->id, $request->user());
         } catch (RuntimeException $e) {
             Storage::disk('local')->deleteDirectory($directory);
             Log::warning('Import staging failed', ['file' => $originalName, 'error' => $e->getMessage()]);
@@ -76,6 +86,15 @@ class ImportController extends ApiController
             throw ValidationException::withMessages([
                 'file' => ['File Excel tidak dapat diproses. Pastikan file menggunakan format dan struktur kolom yang benar (lihat template import), lalu coba lagi.'],
             ]);
+        }
+
+        // Stage 6.9 R6 — the batch (and its rows) stay in the database
+        // either way (audit/history, per the approved design), but a
+        // location-scoped upload containing out-of-scope data gets a clear
+        // rejection response rather than the normal 201 — never silently
+        // treated the same as an ordinary "all rows errored" file.
+        if ($summary['scope_rejected']) {
+            abort(403, self::SCOPE_REJECTED_MESSAGE);
         }
 
         $batch = ImportBatch::with(['category', 'uploadedBy'])->findOrFail($summary['batch_id']);
@@ -90,8 +109,16 @@ class ImportController extends ApiController
      * One batch's own summary — the counters {@see ImportManager} /
      * {@see AssetPromoter} already maintain, nothing recomputed.
      */
-    public function show(ImportBatch $batch): ImportBatchResource
+    public function show(Request $request, ImportBatch $batch): ImportBatchResource
     {
+        // Stage 6.9 R6 — a unit_admin may only view a batch THEY uploaded
+        // (App\Policies\ImportBatchPolicy); 404, not 403, matching this
+        // app's read-path convention of never confirming a resource exists
+        // to a caller who isn't allowed to see it.
+        if ($request->user()->cannot('view', $batch)) {
+            abort(404);
+        }
+
         $batch->load(['category', 'uploadedBy']);
 
         return new ImportBatchResource($batch);
@@ -104,6 +131,10 @@ class ImportController extends ApiController
      */
     public function rows(ImportRowIndexRequest $request, ImportBatch $batch): ImportRowCollection
     {
+        if ($request->user()->cannot('view', $batch)) {
+            abort(404);
+        }
+
         $query = $batch->importRows()->with('matchedRoom')->orderBy('row_number');
 
         $status = $request->status();
@@ -127,10 +158,21 @@ class ImportController extends ApiController
      * Idempotent: re-promoting an already-imported batch just reports
      * `skipped_already` for rows it already created.
      */
-    public function promote(ImportBatch $batch, ImportManager $manager): JsonResponse
+    public function promote(Request $request, ImportBatch $batch, ImportManager $manager): JsonResponse
     {
+        // Stage 6.9 R6 — deliberately NOT an ImportBatchPolicy (ownership)
+        // check here, unlike show()/rows()/report() above: promotion
+        // authority is LOCATION-based, not ownership-based — a different
+        // unit_admin who shares the SAME location as whoever staged this
+        // batch is legitimately allowed to promote it too (multiple
+        // unit_admins per unit is an explicitly supported Stage 6.9
+        // scenario since R1). AssetPromoter re-checks the CURRENT actor's
+        // location scope independently below (AuthorizationException,
+        // uncaught here on purpose — Laravel's default handler turns it
+        // into a 403, matching every other scope violation in this app; it
+        // is NOT a RuntimeException, so the catch below never intercepts it).
         try {
-            $result = $manager->promoteBatch($batch->id);
+            $result = $manager->promoteBatch($batch->id, $request->user());
         } catch (RuntimeException $e) {
             throw ValidationException::withMessages(['batch' => [$e->getMessage()]]);
         }
@@ -147,8 +189,12 @@ class ImportController extends ApiController
      * Read-only data-quality / consistency report for one batch
      * ({@see ImportReporter} — the SAME class `php artisan inventory:report` uses).
      */
-    public function report(ImportBatch $batch): JsonResponse
+    public function report(Request $request, ImportBatch $batch): JsonResponse
     {
+        if ($request->user()->cannot('view', $batch)) {
+            abort(404);
+        }
+
         $reporter = new ImportReporter([$batch->id]);
 
         return response()->json([
