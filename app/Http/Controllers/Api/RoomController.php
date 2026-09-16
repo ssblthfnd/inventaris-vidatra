@@ -7,6 +7,7 @@ use App\Http\Requests\Api\UpdateRoomRequest;
 use App\Http\Resources\RoomResource;
 use App\Models\Location;
 use App\Models\Room;
+use App\Support\LocationScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -14,25 +15,34 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 /**
  * Master data: rooms.
  *
- * `index()`/`show()` (Tahap 5.3) are read-only, active-only, and untouched by
- * Tahap 6.8.1 — every existing viewer/operator/admin behaviour on
+ * `index()`/`show()` (Tahap 5.3) are read-only, active-only. Every existing
+ * global-role (viewer/operator/admin/super_admin) behaviour on
  * `GET /api/locations/{location}/rooms` and `GET /api/rooms/{room}` stays
  * exactly as it was (see `tests/Feature/Api/MasterDataReadApiTest.php`).
+ * Stage 6.9 R4 adds one thing on top: a `unit_admin` requesting a location/
+ * room outside their own assigned location gets the SAME 404 an inactive
+ * location/room already gets — never a 403, so a cross-unit room's
+ * existence is never confirmed. This is READ scope only; `unit_admin` gains
+ * no create/update/delete ability here (that's a later phase).
  *
  * `adminIndex()`/`store()`/`update()` (Tahap 6.8.1, `can:admin`) are new,
  * separate endpoints for the Master Data management UI — deliberately a
  * different route (`GET /api/rooms`, flat, all locations, active AND
  * inactive) rather than adding an "include inactive" mode to the existing
  * `index()`/`show()`, so their well-tested read contract is never at risk of
- * regressing.
+ * regressing. Untouched by R4 — `unit_admin` never reaches these (`can:admin`
+ * gate), and R4 is explicitly read-only.
  *
- * Room aliases are still not exposed here — that is Tahap 6.8.2.
+ * Room aliases are still not exposed here — that is Tahap 6.8.2, and out of
+ * scope for R4 too (Stage 6.9's diff discipline explicitly excludes aliases
+ * from this phase).
  */
 class RoomController extends ApiController
 {
     public function index(Request $request, Location $location): AnonymousResourceCollection
     {
         abort_if(! $location->is_active, 404);
+        abort_if(! LocationScope::for($request->user())->allows($location->code), 404);
 
         $rooms = $location->rooms()
             ->where('is_active', true)
@@ -47,9 +57,10 @@ class RoomController extends ApiController
         return RoomResource::collection($rooms);
     }
 
-    public function show(Room $room): RoomResource
+    public function show(Request $request, Room $room): RoomResource
     {
         abort_if(! $room->is_active, 404);
+        abort_if(! LocationScope::for($request->user())->allows($room->location_code), 404);
 
         $room->load('location');
 

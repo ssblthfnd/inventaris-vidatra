@@ -38,6 +38,16 @@ class AssetMutationController extends ApiController
 
     public function index(MutationLogIndexRequest $request, Asset $asset): MutationLogCollection
     {
+        // Stage 6.9 R4 — same per-asset IDOR guard as AssetController::show()
+        // (same AssetPolicy::view ability, same 404-not-403 reasoning): this
+        // endpoint is keyed by the exact same asset id, so leaving it
+        // unscoped while `show()` is scoped would let a unit_admin read
+        // another unit's mutation history even though they can't see the
+        // asset itself.
+        if ($request->user()?->cannot('view', $asset)) {
+            abort(404);
+        }
+
         $filters = $request->validated();
 
         $query = $asset->mutationLogs()

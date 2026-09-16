@@ -85,6 +85,20 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('room-aliases', [RoomAliasController::class, 'index'])->name('api.room-aliases.index');
     });
 
+    // --- reporting (Tahap 6.3; Stage 6.9 R4) — `can:assets.report`, NOT
+    // `can:operator`: unlike every other endpoint in the `can:operator` group
+    // below, this one deliberately also admits `unit_admin` (the named
+    // ability already included it in App\Support\PermissionRegistry's map
+    // since R1) while still excluding `viewer` exactly as before — moving
+    // this single route off `can:operator` does NOT touch canWriteInventory()
+    // or grant unit_admin anything else in that group. Same filter
+    // vocabulary as `GET /api/assets` / `GET /api/assets/export`
+    // (AssetIndexRequest via FiltersAssets, which is where the actual
+    // location scoping happens); see ReportController.
+    Route::middleware('can:assets.report')->group(function () {
+        Route::get('reports/inventory', [ReportController::class, 'index'])->name('api.reports.inventory');
+    });
+
     // --- write API: operator / admin (Gate `operator` already passes admins) ---
     Route::middleware('can:operator')->group(function () {
         Route::post('assets', [AssetController::class, 'store'])->name('api.assets.store');
@@ -128,14 +142,9 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
         // Excel export (Tahap 6.2) — reuses the exact `GET /api/assets` filter
         // vocabulary (AssetIndexRequest) via FiltersAssets; see AssetExportController.
+        // Deliberately left on `can:operator` (Stage 6.9 R4 does not add export
+        // scope) — unit_admin stays fully blocked from export here, unchanged.
         Route::get('assets/export', [AssetExportController::class, 'export'])->name('api.assets.export');
-
-        // Reporting / rekap inventaris (Tahap 6.3) — `can:operator`, unlike
-        // `GET /api/dashboard` above which is `can:viewer`; a viewer is forbidden
-        // here per this stage's explicit requirement. Same filter vocabulary as
-        // `GET /api/assets` / `GET /api/assets/export` (AssetIndexRequest via
-        // FiltersAssets); see ReportController.
-        Route::get('reports/inventory', [ReportController::class, 'index'])->name('api.reports.inventory');
 
         // Import Excel UI (Tahap 6.1) — operator/admin only, viewer forbidden. A thin
         // HTTP layer over the pre-existing App\Import staging/promotion pipeline (see

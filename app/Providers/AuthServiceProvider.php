@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\Asset;
 use App\Models\User;
+use App\Policies\AssetPolicy;
 use App\Support\PermissionRegistry;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -53,5 +55,11 @@ class AuthServiceProvider extends ServiceProvider
         foreach (PermissionRegistry::ABILITIES as $ability) {
             Gate::define($ability, fn (User $user) => $user->is_active === true && PermissionRegistry::has($user->role, $ability));
         }
+
+        // Stage 6.9 R4 — single-resource asset authorization (App\Policies\AssetPolicy).
+        // Not auto-discovered: this AuthServiceProvider extends the plain
+        // Illuminate ServiceProvider, not Laravel's Foundation Auth base class,
+        // so policy resolution is registered explicitly here.
+        Gate::policy(Asset::class, AssetPolicy::class);
     }
 }

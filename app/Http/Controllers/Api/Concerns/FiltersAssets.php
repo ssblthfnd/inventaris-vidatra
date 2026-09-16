@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Concerns;
 
 use App\Http\Requests\Api\AssetIndexRequest;
 use App\Models\Asset;
+use App\Support\LocationScope;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -18,6 +19,16 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Requires `ApiController::escapeLike()` on the consuming controller (both
  * `AssetController` and `AssetExportController` extend `ApiController`).
+ *
+ * Stage 6.9 R4 — the ONE shared place `location_code` is turned into a WHERE
+ * clause, so `AssetController::index()`, `AssetExportController::export()`,
+ * and `ReportController::index()` (via `ReportService`, which only ever sees
+ * the `Builder` this method already returns) all inherit the same
+ * {@see LocationScope}-enforced scope automatically, with no duplicated
+ * WHERE clause anywhere. `export` currently stays fully `can:operator`-gated
+ * (unit_admin can't reach it — unaffected by this change in practice), and
+ * `reports/inventory` is deliberately regated to `can:assets.report` (see
+ * routes/api.php) specifically so unit_admin CAN reach it, scoped, per R4.
  */
 trait FiltersAssets
 {
@@ -26,9 +37,11 @@ trait FiltersAssets
 
     protected function assetsMatchingFilters(AssetIndexRequest $request): Builder
     {
+        $locationCodes = LocationScope::for($request->user())->resolveFilterCodes($request->locationCodes());
+
         return Asset::query()
             ->with(['location', 'category', 'room'])
-            ->when($request->locationCodes(), fn (Builder $q, array $codes) => $q->whereIn('location_code', $codes))
+            ->when($locationCodes !== null, fn (Builder $q) => $q->whereIn('location_code', $locationCodes))
             ->when($request->categoryCodes(), fn (Builder $q, array $codes) => $q->whereIn('category_code', $codes))
             ->when($request->subcategoryPairs(), fn (Builder $q, array $pairs) => $q->where(function (Builder $inner) use ($pairs): void {
                 foreach ($pairs as [$categoryCode, $subcategoryCode]) {

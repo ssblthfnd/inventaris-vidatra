@@ -63,6 +63,15 @@ class AssetController extends ApiController
             abort(404);
         }
 
+        // Stage 6.9 R4 — a unit_admin requesting an asset outside their scope
+        // gets the same plain 404 as the trashed-asset case above (AssetPolicy::view,
+        // via LocationScope), never a 403 — this endpoint already has a
+        // precedent of using 404 to hide something a caller isn't allowed to
+        // see, and a 403 would confirm the asset exists in another unit.
+        if ($request->user()?->cannot('view', $asset)) {
+            abort(404);
+        }
+
         $asset->load(['location', 'category', 'room']);
 
         return new AssetResource($asset);
