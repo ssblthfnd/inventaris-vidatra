@@ -13,6 +13,7 @@ use App\Http\Requests\Api\WriteOffAssetRequest;
 use App\Http\Resources\AssetCollection;
 use App\Http\Resources\AssetResource;
 use App\Models\Asset;
+use App\Models\Room;
 use App\Services\Asset\AssetWriteService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,10 +29,19 @@ use Illuminate\Http\Response;
  *  - `subcategory` is resolved from the composite `(category_code, subcategory_code)` and
  *    bulk-loaded to avoid N+1 (Asset::loadSubcategoriesFor).
  *
- * Write (Tahap 5.4, `can:operator`):
+ * Write (Tahap 5.4, previously `can:operator` for every action; Stage 6.9 R5
+ * regates each single-asset write action to its own named `can:assets.*`
+ * ability — see routes/api.php — so `unit_admin` can reach them too):
  *  - All business logic lives in {@see AssetWriteService} (transactions, sequence
  *    generator, concurrency retry, mutation logging). The controller only maps
  *    HTTP ↔ service and picks the status code.
+ *  - Stage 6.9 R5 — the route gate only answers WHAT (does this role have
+ *    this ability at all); WHERE (is this specific asset/location in the
+ *    actor's scope) is checked here via `AssetPolicy`/`LocationScope` before
+ *    the service ever runs, for every single-asset write action. Batch
+ *    actions (`batchUpdate`/`batchDestroy`) authorize inside
+ *    {@see AssetWriteService} itself, after the batch's rows are locked but
+ *    before any of them is mutated — see that class's docblock.
  */
 class AssetController extends ApiController
 {
@@ -81,7 +91,18 @@ class AssetController extends ApiController
 
     public function store(StoreAssetRequest $request, AssetWriteService $service): JsonResponse
     {
-        $asset = $service->create($request->validated(), $request->user());
+        $data = $request->validated();
+
+        // Stage 6.9 R5 — no existing Asset to check yet; authorize the
+        // TARGET location directly. Never rewritten to the actor's own
+        // location — an out-of-scope request is rejected, not silently
+        // corrected (that would hide a client mistake, per the approved
+        // design).
+        if ($request->user()->cannot('create', [Asset::class, $data['location_code']])) {
+            abort(403);
+        }
+
+        $asset = $service->create($data, $request->user());
 
         return $this->assetResponse($asset)->setStatusCode(Response::HTTP_CREATED);
     }
@@ -94,7 +115,16 @@ class AssetController extends ApiController
     public function storeBatch(BatchStoreAssetRequest $request, AssetWriteService $service): JsonResponse
     {
         $count = $request->assetCount();
-        $created = $service->createBatch($request->assetTemplate(), $count, $request->user());
+        $template = $request->assetTemplate();
+
+        // Stage 6.9 R5 — a batch-create template has exactly ONE location_code
+        // shared by every asset in the batch, so one check authorizes the
+        // whole request (no per-asset loop needed, unlike batchUpdate/batchDestroy).
+        if ($request->user()->cannot('create', [Asset::class, $template['location_code']])) {
+            abort(403);
+        }
+
+        $created = $service->createBatch($template, $count, $request->user());
 
         return AssetResource::collection($created)
             ->additional([
@@ -107,7 +137,33 @@ class AssetController extends ApiController
 
     public function update(UpdateAssetRequest $request, Asset $asset, AssetWriteService $service): JsonResponse
     {
-        $asset = $service->update($asset, $request->validated(), $request->user());
+        $data = $request->validated();
+
+        // Stage 6.9 R5 — checks BOTH the asset's current location and the
+        // (possibly resubmitted-unchanged, possibly different) target
+        // location_code in `$data`. For unit_admin these must be the SAME
+        // one location, so this single check is also what blocks using this
+        // field to transfer an asset to another unit — see AssetPolicy::update()'s
+        // own docblock for why no separate branch is needed.
+        if ($request->user()->cannot('update', [$asset, $data['location_code']])) {
+            abort(403);
+        }
+
+        // Stage 6.9 R5 — independent second check when the request actually
+        // moves the asset to a different room (UpdateAssetRequest backfills
+        // room_id to the current value when omitted, so this only fires on a
+        // REAL change). Redundant with the check above in practice (the room
+        // is already required elsewhere to belong to `$data['location_code']`),
+        // kept explicit per the approved design's "two independent checks"
+        // requirement for a room move.
+        if (array_key_exists('room_id', $data) && $data['room_id'] !== null && $data['room_id'] !== $asset->room_id) {
+            $targetRoom = Room::find($data['room_id']);
+            if ($targetRoom === null || $request->user()->cannot('moveRoom', [$asset, $targetRoom])) {
+                abort(403);
+            }
+        }
+
+        $asset = $service->update($asset, $data, $request->user());
 
         return $this->assetResponse($asset);
     }
@@ -128,6 +184,10 @@ class AssetController extends ApiController
 
     public function destroy(Request $request, Asset $asset, AssetWriteService $service): Response
     {
+        if ($request->user()->cannot('delete', $asset)) {
+            abort(403);
+        }
+
         $service->softDelete($asset, $request->user());
 
         return response()->noContent(); // 204
@@ -151,6 +211,14 @@ class AssetController extends ApiController
 
     public function restore(Request $request, Asset $asset, AssetWriteService $service): JsonResponse
     {
+        // Stage 6.9 R5 — `restore` resolves `->withTrashed()` (route
+        // definition), so a cross-unit trashed asset IS found here; the
+        // Policy check (not "not found") is what stops a unit_admin from
+        // restoring it — never a silent global fallback.
+        if ($request->user()->cannot('restore', $asset)) {
+            abort(403);
+        }
+
         $asset = $service->restore($asset, $request->user());
 
         return $this->assetResponse($asset);
@@ -158,6 +226,10 @@ class AssetController extends ApiController
 
     public function writeOff(WriteOffAssetRequest $request, Asset $asset, AssetWriteService $service): JsonResponse
     {
+        if ($request->user()->cannot('writeOff', $asset)) {
+            abort(403);
+        }
+
         $asset = $service->writeOff($asset, $request->validated(), $request->user());
 
         return $this->assetResponse($asset);
@@ -165,6 +237,10 @@ class AssetController extends ApiController
 
     public function unwriteOff(Request $request, Asset $asset, AssetWriteService $service): JsonResponse
     {
+        if ($request->user()->cannot('writeOff', $asset)) {
+            abort(403);
+        }
+
         $asset = $service->unwriteOff($asset, $request->user());
 
         return $this->assetResponse($asset);

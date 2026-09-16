@@ -99,11 +99,20 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('reports/inventory', [ReportController::class, 'index'])->name('api.reports.inventory');
     });
 
-    // --- write API: operator / admin (Gate `operator` already passes admins) ---
-    Route::middleware('can:operator')->group(function () {
+    // --- asset write API (Tahap 5.4/5.8; Stage 6.9 R5) — each action regated
+    // from `can:operator` to its own named `can:assets.*` ability so
+    // `unit_admin` can reach them too (App\Support\PermissionRegistry already
+    // grants unit_admin these abilities). For admin/super_admin/operator this
+    // is a no-op (same allow/deny outcome as `can:operator` before); actual
+    // per-asset/per-batch LOCATION authorization (WHERE, not WHAT) happens
+    // inside AssetController (via AssetPolicy) / AssetWriteService for every
+    // action below — the route gate alone never grants cross-unit access. ---
+    Route::middleware('can:assets.create')->group(function () {
         Route::post('assets', [AssetController::class, 'store'])->name('api.assets.store');
         Route::post('assets/batch', [AssetController::class, 'storeBatch'])->name('api.assets.store-batch');
-        Route::patch('assets/batch', [AssetController::class, 'batchUpdate'])->name('api.assets.update-batch');
+    });
+
+    Route::middleware('can:assets.edit')->group(function () {
         // ->whereNumber('asset') (Tahap 6.6, M-6): applied consistently to every
         // assets/{asset} route now, not just the GET show route — previously only
         // that one had it, so a non-numeric/negative id on these write routes fell
@@ -113,18 +122,31 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // genuinely-missing numeric id exactly as before — this only rejects
         // non-numeric input earlier and more consistently.
         Route::match(['put', 'patch'], 'assets/{asset}', [AssetController::class, 'update'])->name('api.assets.update')->whereNumber('asset');
+    });
+
+    Route::middleware('can:assets.batchEdit')->group(function () {
+        Route::patch('assets/batch', [AssetController::class, 'batchUpdate'])->name('api.assets.update-batch');
+    });
+
+    Route::middleware('can:assets.delete')->group(function () {
         Route::delete('assets/batch', [AssetController::class, 'batchDestroy'])->name('api.assets.destroy-batch');
         Route::delete('assets/{asset}', [AssetController::class, 'destroy'])->name('api.assets.destroy')->whereNumber('asset');
+    });
 
+    Route::middleware('can:assets.restore')->group(function () {
         // restore resolves a soft-deleted asset — the only route that does
         Route::post('assets/{asset}/restore', [AssetController::class, 'restore'])
             ->withTrashed()
             ->whereNumber('asset')
             ->name('api.assets.restore');
+    });
 
+    Route::middleware('can:assets.writeOff')->group(function () {
         Route::post('assets/{asset}/write-off', [AssetController::class, 'writeOff'])->name('api.assets.write-off')->whereNumber('asset');
         Route::post('assets/{asset}/unwrite-off', [AssetController::class, 'unwriteOff'])->name('api.assets.unwrite-off')->whereNumber('asset');
+    });
 
+    Route::middleware('can:assets.revert')->group(function () {
         // Mutation revert/undo (Tahap 6.5). `{mutation}` binds a `MutationLog` row
         // directly (that table is append-only, never soft-deleted, so no
         // `->withTrashed()` is needed here) — the mutation being reverted may be the
@@ -133,7 +155,12 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // real per-field conflict check.
         Route::post('mutations/{mutation}/revert', [MutationRevertController::class, 'revert'])
             ->name('api.mutations.revert');
+    });
 
+    // --- everything else that was, and remains, operator/admin only: labels,
+    // export, import, room aliases — Stage 6.9 R5 deliberately does NOT touch
+    // these gates, so unit_admin stays fully blocked from all of them. ---
+    Route::middleware('can:operator')->group(function () {
         // Printable label PDF (Tahap 6.0; ?size=small|medium|large added Tahap 6.0.2,
         // default small). No ->withTrashed(): a soft-deleted asset is not something
         // the app prints a fresh label for (see AssetLabelController).

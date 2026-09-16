@@ -8,6 +8,7 @@ use App\Http\Requests\Api\BatchUpdateAssetRequest;
 use App\Models\Asset;
 use App\Models\Room;
 use App\Models\User;
+use App\Support\LocationScope;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -28,6 +29,16 @@ use Illuminate\Validation\ValidationException;
  *    NEVER changed afterwards (§10, §19).
  *  - Soft delete / restore keep the same row, id, sequence and asset_code (§7, §23).
  *  - written-off is a business status, independent of soft delete (§8).
+ *
+ * Stage 6.9 R5 — `batchUpdate()`/`batchSoftDelete()` authorize the COMPLETE
+ * resolved+locked asset set (every unique `location_code` present) BEFORE
+ * any row in the batch is mutated or any mutation log is written: if even
+ * one targeted asset is outside the actor's `LocationScope`, the whole
+ * request aborts (403) and nothing changes — no partial batch. Single-asset
+ * actions (`create`/`update`/`softDelete`/`restore`/`writeOff`/`unwriteOff`)
+ * are authorized one layer up, in `AssetController`, via `AssetPolicy` —
+ * there's no existing-row lock for those to piggyback on, so checking in
+ * the controller before this service is ever called is equally safe.
  */
 class AssetWriteService
 {
@@ -240,6 +251,19 @@ class AssetWriteService
                 abort(404, 'Salah satu aset tidak ditemukan.');
             }
 
+            // Stage 6.9 R5 — authorize the WHOLE target set before anything
+            // else (including before the room↔location check below, which
+            // only validates data consistency, not actor authorization). One
+            // out-of-scope asset aborts the entire batch — nothing is mutated,
+            // no mutation log is written, and the transaction this closure
+            // runs in rolls back automatically when abort() throws.
+            $scope = LocationScope::for($actor);
+            foreach ($assets as $asset) {
+                if (! $scope->allows($asset->location_code)) {
+                    abort(403, 'Anda tidak berwenang mengubah salah satu aset yang dipilih.');
+                }
+            }
+
             $targetRoom = null;
             if (array_key_exists('room_id', $changes) && $changes['room_id'] !== null) {
                 $targetRoom = Room::query()->find($changes['room_id']);
@@ -339,6 +363,15 @@ class AssetWriteService
 
             if ($assets->count() !== count($sortedIds)) {
                 abort(404, 'Salah satu aset tidak ditemukan.');
+            }
+
+            // Stage 6.9 R5 — same all-or-nothing authorization as batchUpdate()
+            // above: the complete target set is checked before any delete.
+            $scope = LocationScope::for($actor);
+            foreach ($assets as $asset) {
+                if (! $scope->allows($asset->location_code)) {
+                    abort(403, 'Anda tidak berwenang menghapus salah satu aset yang dipilih.');
+                }
             }
 
             $batchOperationId = (string) Str::uuid();

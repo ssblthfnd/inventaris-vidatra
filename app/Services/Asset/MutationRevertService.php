@@ -5,6 +5,7 @@ namespace App\Services\Asset;
 use App\Models\Asset;
 use App\Models\MutationLog;
 use App\Models\User;
+use App\Support\LocationScope;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,17 @@ use Illuminate\Support\Str;
  * since" and will proceed. Detecting that would require tracking WHICH
  * mutation produced a value, not just comparing values, which the stage does
  * not ask for.
+ *
+ * Stage 6.9 R5 — authorizes EVERY asset in the group (not just
+ * `$mutation`'s own `asset_id`) against `LocationScope`, right after they're
+ * resolved and locked but before Pass 1 (validation) or Pass 2 (the actual
+ * writes) run. A mutation group can span multiple assets (a prior batch
+ * edit/delete's `batch_operation_id`), so checking only the ONE asset
+ * `$mutation` points at would miss the others. If any asset in the group is
+ * outside the actor's scope, the whole revert aborts (403) before anything
+ * is written — `abort()` throws out of the `DB::transaction()` closure
+ * below, which rolls back the row locks with it, so nothing partially
+ * reverts and no new revert mutation log is created.
  */
 class MutationRevertService
 {
@@ -77,6 +89,15 @@ class MutationRevertService
 
             if ($assets->count() !== count($assetIds)) {
                 abort(404, 'Salah satu aset terkait mutasi ini tidak ditemukan.');
+            }
+
+            // Stage 6.9 R5 — authorize EVERY asset in the group before Pass 1
+            // even begins. Deliberately NOT based on $mutation->asset_id alone.
+            $scope = LocationScope::for($actor);
+            foreach ($assets as $asset) {
+                if (! $scope->allows($asset->location_code)) {
+                    abort(403, 'Anda tidak berwenang membatalkan mutasi ini.');
+                }
             }
 
             // Pass 1 — validate EVERY member of the group before changing
