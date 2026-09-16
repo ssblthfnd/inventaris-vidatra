@@ -46,10 +46,12 @@ class AuthServiceProvider extends ServiceProvider
         Gate::define('admin', fn (User $user) => $user->is_active === true && $user->isAdmin());
 
         // Stage 6.9 R1 — named-ability skeleton (App\Support\PermissionRegistry).
-        // Defined so future phases can adopt them one call site at a time;
-        // nothing in the app calls Gate::allows() with any of these names yet.
+        // Defined so phases can adopt them one call site at a time. As of R2,
+        // `users.manage` is the first ability actually wired into a route
+        // (`can:users.manage` on the user-management group in routes/api.php)
+        // — every other ability here is still unused by any route/controller.
         foreach (PermissionRegistry::ABILITIES as $ability) {
-            Gate::define($ability, fn (User $user) => $user->is_active === true && PermissionRegistry::has($user, $ability));
+            Gate::define($ability, fn (User $user) => $user->is_active === true && PermissionRegistry::has($user->role, $ability));
         }
     }
 }

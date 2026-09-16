@@ -37,6 +37,7 @@ class UserManagementResource extends JsonResource
             'name' => $user->name,
             'email' => $user->email,
             'role' => $user->role?->value,
+            'location_code' => $user->location_code,
             'is_active' => $user->is_active,
             'created_at' => $user->created_at?->toIso8601String(),
             'updated_at' => $user->updated_at?->toIso8601String(),

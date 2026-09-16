@@ -3,7 +3,7 @@
 namespace App\Support;
 
 use App\Enums\UserRole;
-use App\Models\User;
+use App\Http\Requests\Api\UpdateUserRequest;
 use App\Providers\AuthServiceProvider;
 
 /**
@@ -75,17 +75,30 @@ final class PermissionRegistry
         'viewer' => ['assets.view', 'dashboard.view', 'rooms.view'],
     ];
 
-    /** Every ability {@see MAP} intends for this user's role — empty for an unrecognized/legacy-missing role. @return list<string> */
-    public static function abilitiesFor(User $user): array
+    /**
+     * Every ability {@see MAP} intends for this role — empty for an
+     * unrecognized/legacy-missing role.
+     *
+     * Deliberately takes a bare `UserRole` rather than a `User` — this is a
+     * pure "does this role have this ability" question with no dependency on
+     * `is_active` or any other per-account state (the Gates in
+     * AuthServiceProvider layer `is_active` on top themselves), which also
+     * makes it usable for a hypothetical/not-yet-persisted role value, e.g.
+     * {@see UpdateUserRequest}'s self-protection check
+     * against a role value a request is only proposing.
+     *
+     * @return list<string>
+     */
+    public static function abilitiesForRole(UserRole $role): array
     {
-        $abilities = self::MAP[$user->role?->value] ?? [];
+        $abilities = self::MAP[$role->value] ?? [];
 
         return $abilities === '*' ? self::ABILITIES : $abilities;
     }
 
-    public static function has(User $user, string $ability): bool
+    public static function has(UserRole $role, string $ability): bool
     {
-        $abilities = self::MAP[$user->role?->value] ?? [];
+        $abilities = self::MAP[$role->value] ?? [];
 
         return $abilities === '*' || in_array($ability, $abilities, true);
     }

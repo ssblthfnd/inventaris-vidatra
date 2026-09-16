@@ -6,7 +6,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Password;
 
 /**
- * `POST /api/users/{user}/reset-password` (Tahap 6.4), `can:admin`.
+ * `POST /api/users/{user}/reset-password` (Tahap 6.4), `can:users.manage`
+ * (Stage 6.9 R2 — was `can:admin`; today only `admin`/`super_admin` satisfy
+ * that ability).
  *
  * A deliberate, separate action (not a side effect of `PUT /api/users/{user}`)
  * so an admin editing e.g. just the name can never accidentally change a
@@ -23,7 +25,7 @@ class ResetUserPasswordRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:users.manage
     }
 
     /**

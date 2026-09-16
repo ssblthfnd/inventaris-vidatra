@@ -13,8 +13,10 @@ use App\Services\Asset\AssetWriteService;
 use Illuminate\Http\JsonResponse;
 
 /**
- * User management API (Tahap 6.4), `can:admin` only — a viewer/operator gets
- * 403 for every action here (route middleware, see routes/api.php).
+ * User management API (Tahap 6.4), `can:users.manage` only (Stage 6.9 R2 —
+ * was `can:admin`; today only `admin`/`super_admin` satisfy that ability) —
+ * a unit_admin/operator/viewer gets 403 for every action here (route
+ * middleware, see routes/api.php), before this controller is ever reached.
  *
  * Deliberately no service layer: unlike asset writes (sequence generation,
  * mutation logging, concurrency retry — real complexity that justifies
@@ -67,6 +69,11 @@ class UserController extends ApiController
             'name' => $validated['name'],
             'email' => $validated['email'],
             'role' => $validated['role'],
+            // Stage 6.9 R2 — absent key means "not provided", same as every
+            // other role: StoreUserRequest already guarantees whatever is
+            // persisted here is a structurally valid (role, location_code)
+            // pair (UserLocationValidator), so no further coercion happens.
+            'location_code' => $validated['location_code'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
             // hashed automatically by User's `password => 'hashed'` cast — never
             // call Hash::make() here, that would double-hash it.

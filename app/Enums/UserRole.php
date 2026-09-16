@@ -36,6 +36,16 @@ enum UserRole: string
     case SuperAdmin = 'super_admin';
     case UnitAdmin = 'unit_admin';
 
+    /**
+     * Stage 6.9 R2 — the only `locations.code` values a `unit_admin` may ever
+     * be assigned to (SD/SMP/SMA). Single source of truth: referenced by
+     * App\Support\LocationScope and App\Support\UserLocationValidator rather
+     * than each redeclaring the same three codes.
+     *
+     * @var list<string>
+     */
+    public const UNIT_ADMIN_LOCATION_CODES = ['02', '03', '04'];
+
     public function label(): string
     {
         return match ($this) {

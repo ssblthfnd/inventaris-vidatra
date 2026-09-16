@@ -29,14 +29,6 @@ use Illuminate\Auth\Access\AuthorizationException;
  */
 final class LocationScope
 {
-    /**
-     * The only locations a `unit_admin` may ever be assigned to (SD/SMP/SMA).
-     * `01` (Yayasan) is deliberately excluded — that is super_admin territory.
-     *
-     * @var list<string>
-     */
-    private const UNIT_ADMIN_LOCATIONS = ['02', '03', '04'];
-
     private function __construct(
         private readonly bool $global,
         private readonly ?string $locationCode,
@@ -64,7 +56,7 @@ final class LocationScope
 
         $code = $user->location_code;
 
-        if ($code === null || ! in_array($code, self::UNIT_ADMIN_LOCATIONS, true)) {
+        if ($code === null || ! in_array($code, UserRole::UNIT_ADMIN_LOCATION_CODES, true)) {
             throw new AuthorizationException(
                 "unit_admin user #{$user->id} has an invalid location_code ('".
                 ($code ?? 'NULL')."') — must be exactly one of 02/03/04. Refusing ".

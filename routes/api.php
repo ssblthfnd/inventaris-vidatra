@@ -159,8 +159,11 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
             ->name('api.room-aliases.destroy');
     });
 
-    // --- user management (Tahap 6.4) — admin only; operator gets 403 here ---
-    Route::middleware('can:admin')->group(function () {
+    // --- user management (Tahap 6.4; Stage 6.9 R2 — gate switched from
+    // `can:admin` to the named `users.manage` ability, currently satisfied
+    // by admin/super_admin only) — unit_admin/operator/viewer get 403 here,
+    // before UserController is ever reached (no per-action check needed) ---
+    Route::middleware('can:users.manage')->group(function () {
         Route::get('users', [UserController::class, 'index'])->name('api.users.index');
         Route::post('users', [UserController::class, 'store'])->name('api.users.store');
         Route::get('users/{user}', [UserController::class, 'show'])->name('api.users.show');

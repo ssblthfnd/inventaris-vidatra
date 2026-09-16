@@ -7,7 +7,8 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `GET /api/users` (Tahap 6.4), `can:admin`.
+ * `GET /api/users` (Tahap 6.4), `can:users.manage` (Stage 6.9 R2 — was
+ * `can:admin`; today only `admin`/`super_admin` satisfy that ability).
  *
  * Deliberately small: the user table is expected to stay tiny (a handful of
  * staff accounts), so this is a plain `q` / `role` / `is_active` / pagination
@@ -19,7 +20,7 @@ class UserIndexRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:users.manage
     }
 
     /**
