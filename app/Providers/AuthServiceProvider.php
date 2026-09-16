@@ -3,20 +3,34 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Support\PermissionRegistry;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Authorization foundation for the inventory API (Tahap 5.0).
+ * Authorization foundation for the inventory API (Tahap 5.0; extended by
+ * Stage 6.9 R1).
  *
  * Role model (data/reference/schema_design.md §9):
  *   viewer   → read-only
  *   operator → read + write assets / mutations / imports / room aliases
  *   admin    → everything, incl. user & structural master-data management
  *
- * These Gates are the single source of truth used by controllers
- * (`$this->authorize()` / `Gate::allows()`) and by the `can:` route
- * middleware in Tahap 5.1+. An INACTIVE user always fails every Gate.
+ * These three Gates are the single source of truth actually used by
+ * controllers (`$this->authorize()` / `Gate::allows()`) and by the `can:`
+ * route middleware — unchanged by Stage 6.9 R1.
+ *
+ * Stage 6.9 adds `super_admin`/`unit_admin` (App\Enums\UserRole) but does
+ * NOT touch these three Gates or what satisfies them: `admin` alone still
+ * satisfies `admin`, `admin`/`operator` still satisfy `operator`, so a
+ * `unit_admin` (or `super_admin`) account passes NONE of them yet. That is
+ * intentional for this phase — see App\Support\LocationScope's docblock and
+ * Stage 6.9's R1 critical security rule: a unit_admin account must never be
+ * granted access through these existing Gates before location-scope
+ * enforcement (a later phase) actually exists.
+ *
+ * An INACTIVE user always fails every Gate, including every named ability
+ * below.
  */
 class AuthServiceProvider extends ServiceProvider
 {
@@ -30,5 +44,12 @@ class AuthServiceProvider extends ServiceProvider
 
         // Admins only: user management and structural master-data changes.
         Gate::define('admin', fn (User $user) => $user->is_active === true && $user->isAdmin());
+
+        // Stage 6.9 R1 — named-ability skeleton (App\Support\PermissionRegistry).
+        // Defined so future phases can adopt them one call site at a time;
+        // nothing in the app calls Gate::allows() with any of these names yet.
+        foreach (PermissionRegistry::ABILITIES as $ability) {
+            Gate::define($ability, fn (User $user) => $user->is_active === true && PermissionRegistry::has($user, $ability));
+        }
     }
 }
