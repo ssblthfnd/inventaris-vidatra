@@ -9,14 +9,20 @@
         <div class="title-box"><span>{{ $titleText }}</span></div>
         <div class="qr-box"><img src="{{ $label['qrDataUri'] }}" alt="QR Code"></div>
     </div>
+    {{-- Layout revision — `groupLeftOffsetMm` centers the whole cell GROUP
+         within the code-row's available width (zero when the group already
+         fills it, i.e. a long code — unchanged from before); cells are still
+         positioned individually via absolute mm coordinates, just all shifted
+         by the same offset, so this stays exactly as Dompdf-reliable as the
+         rest of this file's positioning. --}}
     <div class="code-row">
         @foreach ($label['cells'] as $i => $char)
             <span
                 class="code-cell"
-                style="left: {{ $i * $label['cellWidthMm'] }}mm; width: {{ $label['cellWidthMm'] }}mm; font-size: {{ $label['cellFontSizePt'] }}pt;"
+                style="left: {{ $label['groupLeftOffsetMm'] + $i * $label['cellWidthMm'] }}mm; width: {{ $label['cellWidthMm'] }}mm; font-size: {{ $label['cellFontSizePt'] }}pt;"
             >{{ $char }}</span>
             @unless ($loop->last)
-                <span class="code-divider" style="left: {{ ($i + 1) * $label['cellWidthMm'] }}mm;"></span>
+                <span class="code-divider" style="left: {{ $label['groupLeftOffsetMm'] + ($i + 1) * $label['cellWidthMm'] }}mm;"></span>
             @endunless
         @endforeach
     </div>

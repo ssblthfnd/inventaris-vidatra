@@ -204,7 +204,10 @@ class AssetLabelLayoutTest extends TestCase
 
     /** An 18-char code (`ZL.ZC.001.001.2020`, 3-digit sequence) and a 19-char code
      *  (`ZL.ZC.001.0004.2019`, 4-digit sequence) both still fit, for every size —
-     *  no wrap, no overflow, no assumed length. */
+     *  no wrap, no overflow, no assumed length. The cell group is never stretched
+     *  past its natural width to fill the row (Tahap 6.0 R8 revision — long codes
+     *  still shrink-to-fit exactly as before, but a code short enough to fit at its
+     *  natural width is centered in the row instead of being force-stretched). */
     #[DataProvider('sizes')]
     public function test_varying_code_lengths_fit_for_every_size(string $size): void
     {
@@ -221,7 +224,15 @@ class AssetLabelLayoutTest extends TestCase
         foreach ([$eighteen, $nineteen] as $asset) {
             $label = $refl->invoke($service, $asset, $layout);
             $totalWidthMm = $label['cellWidthMm'] * count($label['cells']);
-            $this->assertEqualsWithDelta($layout['codeWidthMm'], $totalWidthMm, 0.01);
+            // Never overflows the available row width...
+            $this->assertLessThanOrEqual($layout['codeWidthMm'] + 0.01, $totalWidthMm);
+            // ...and the group is centered within it: the left offset exactly
+            // accounts for whatever slack space is left over.
+            $this->assertEqualsWithDelta(
+                ($layout['codeWidthMm'] - $totalWidthMm) / 2,
+                $label['groupLeftOffsetMm'],
+                0.01,
+            );
             $this->assertGreaterThan(0, $label['cellWidthMm']);
         }
     }

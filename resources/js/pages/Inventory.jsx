@@ -337,10 +337,10 @@ export default function Inventory() {
     setRetryKey((k) => k + 1);
   };
 
-  const handlePrintLabels = async (size) => {
+  const handlePrintLabels = async (size, mode) => {
     setPrintingLabel(true);
     try {
-      await printBatchLabels([...selectedIds], size);
+      await printBatchLabels(selectedAssets, size, mode);
     } catch (e) {
       setFlashTone('error');
       setFlash(e?.message || 'Gagal membuat label. Coba lagi.');
@@ -468,6 +468,8 @@ export default function Inventory() {
                 onSelect={handlePrintLabels}
                 busy={printingLabel}
                 align="right"
+                showModeSelector
+                selectionCount={selectedIds.size}
                 buttonClassName="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
             )}

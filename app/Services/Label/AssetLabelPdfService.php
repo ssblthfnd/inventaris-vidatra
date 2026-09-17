@@ -18,17 +18,27 @@ use Illuminate\Support\Collection;
  *  - {@see renderSingle()}: one PDF page, exactly the chosen physical label
  *    size (config('inventory.label.sizes'), Tahap 6.0.2 — 'small'/'medium'/
  *    'large', default 'small'), border flush against the page edge — no outer
- *    whitespace at all (Tahap 6.0.1).
+ *    whitespace at all (Tahap 6.0.1; clear-space/centering revised R8, see
+ *    {@see CLEAR_SPACE_TARGET_MM}).
  *  - {@see renderBatch()}: one or more A4 portrait pages, each holding a
  *    deterministic, explicitly-positioned grid of labels (2 columns) with
  *    cutting spacing around them — the physical label size itself never
  *    changes; only the sheet it's printed on does (Tahap 6.0.1).
+ *  - {@see renderIndividualMulti()} (R8): one PDF, N pages, each page
+ *    exactly the chosen label size (NOT an A4 sheet) — R8's "Individual"
+ *    print mode for more than one asset. A single asset in Individual mode
+ *    skips this entirely and gets {@see renderSingle()}'s PDF straight back.
+ *    (An earlier revision of this stage returned a ZIP of N separate PDFs
+ *    instead — replaced outright, not kept alongside this, per explicit
+ *    instruction that one multi-page PDF is more practical to print.)
  *
  * Strictly READ-ONLY with respect to the asset domain: this class never writes
  * to `assets` (it only ever reads `id` / `asset_code`) and never persists a QR
  * image anywhere. Each QR is rendered in memory (GD, via endroid/qr-code) and
  * embedded straight into the PDF as a base64 data URI — no temp file, no DB
- * column, nothing left behind after the response is sent.
+ * column, nothing left behind after the response is sent. Every render method
+ * here, including {@see renderIndividualMulti()}, is purely in-memory — there
+ * is nothing to clean up.
  *
  * Layout approach: every box (label border, header row, logo/title/QR, code
  * character cells, and — in batch — every label's position on the sheet) is
@@ -66,16 +76,55 @@ class AssetLabelPdfService
     /** Fraction of the label's inner content height given to the logo/title/QR row. */
     private const HEADER_HEIGHT_RATIO = 0.6;
 
-    /** The label's own border + inner padding, inset from its box edge. */
-    private const BORDER_MM = 0.8;
+    /**
+     * Layout revision — target clear space from the label's content to its
+     * physical edge, on every side. Achieved exactly on the horizontal axis
+     * for every size (width is never the tight dimension at 55/70/90mm) and
+     * on both axes for medium/large. On the vertical axis of the smallest
+     * label (55x15mm) it is deliberately NOT applied literally — see
+     * {@see MIN_HEADER_HEIGHT_MM}'s own docblock for why — this is the one
+     * place the previous 1.4mm inset (border + inner padding) came from;
+     * that fixed pair is gone, replaced by this single target-driven value.
+     */
+    private const CLEAR_SPACE_TARGET_MM = 5.0;
 
-    private const INNER_PAD_MM = 0.6;
+    /**
+     * Floor on the header row's (logo/title/QR) own rendered height —
+     * anchored here, not on a fraction of the box height, because the QR
+     * code is the one element on the label where "too small to be legible"
+     * has a real practical consequence (a tag nobody can scan), and it scales
+     * directly with header height. Exists solely to stop
+     * {@see CLEAR_SPACE_TARGET_MM} from being applied so literally on a
+     * 15mm-tall label that almost nothing would be left to render into (15mm
+     * - 5mm - 5mm = 5mm total for BOTH rows plus the gap between them) — the
+     * explicit "don't break the label just to hit 5mm" requirement this
+     * exists to satisfy. Chosen equal to the clear-space target itself (5mm)
+     * — a QR/logo square shouldn't render smaller than the margin around it.
+     * At this value the vertical inset actually used comes out to ~3.18mm
+     * for 55x15mm (visibly more than the old 1.4mm, short of the full 5mm
+     * target) while medium/large both still land on exactly 5mm — this floor
+     * never engages for either of them, since they have height to spare.
+     */
+    private const MIN_HEADER_HEIGHT_MM = 5.0;
 
     /** Vertical gap between the header row and the code-cell row. */
     private const ROW_GAP_MM = 0.4;
 
     /** Code-cell font size never exceeds this, however few characters there are. */
     private const CODE_FONT_MAX_PT = 11.0;
+
+    /**
+     * Layout revision — a code cell's own "natural" width when NOT forced to
+     * stretch to fill the available row: the width at which
+     * {@see CODE_FONT_MAX_PT}'s own cap already kicks in under the existing
+     * `cellFontSizePt = min(CODE_FONT_MAX_PT, cellWidthMm * 2.6)` formula
+     * (i.e. `11.0 / 2.6`). A short code's cell group is centered at this
+     * natural width instead of stretched edge-to-edge (see
+     * {@see buildLabel()}); a long code that needs more than the available
+     * row width still shrinks below this exactly as before — this constant
+     * only ever LOWERS the ceiling a cell can grow to, never forces overflow.
+     */
+    private const CODE_NATURAL_CELL_WIDTH_MM = self::CODE_FONT_MAX_PT / 2.6;
 
     private const TITLE_TEXT = 'YAYASAN VIDATRA';
 
@@ -160,6 +209,46 @@ class AssetLabelPdfService
 
         return Pdf::loadView('labels.single', [
             'label' => $this->buildLabel($asset, $layout),
+            'logoDataUri' => $this->logoDataUri(),
+            'pageWidthMm' => $layout['boxWidthMm'],
+            'pageHeightMm' => $layout['boxHeightMm'],
+            ...$layout,
+        ]);
+    }
+
+    /**
+     * R8 revision — Individual mode for MORE THAN ONE asset: one PDF, N
+     * pages, every page exactly the chosen label size — replaces an earlier
+     * ZIP-of-N-PDFs approach entirely (removed, not kept alongside this).
+     * This is deliberately NOT an A4 sheet: {@see renderBatch()}'s A4 grid
+     * stays completely untouched and is not reused here.
+     *
+     * Every page shares the SAME `@page` size, because Individual mode
+     * always renders one `$size` for the whole request — this sidesteps
+     * whether Dompdf can vary page size WITHIN one document (it cannot
+     * reliably; confirmed experimentally against this exact codebase's own
+     * dompdf version before choosing this design — a later `@page` rule does
+     * not override an earlier one per-page, only globally), since nothing
+     * here ever needs it to. Mirrors {@see renderBatch()}'s own
+     * `page-break-after: always` mechanism exactly (see `labels.batch.blade.php`),
+     * just one label per page instead of a grid of them — the same
+     * dompdf-reliable technique this class already trusted for multi-page
+     * output, applied to a new page shape.
+     *
+     * Reuses {@see buildLabel()} per asset — the exact same per-label
+     * geometry `renderSingle()`/`renderBatch()` already compute. No new
+     * label content/layout/QR/logo code exists for this method; it only
+     * arranges N already-built labels one per page. Purely in-memory, same
+     * as every other render method here — no temp file, nothing to clean up.
+     *
+     * @param  Collection<int, Asset>  $assets  in the exact order pages must appear
+     */
+    public function renderIndividualMulti(Collection $assets, string $size = self::DEFAULT_SIZE): PdfDocument
+    {
+        $layout = $this->labelLayout($size);
+
+        return Pdf::loadView('labels.individual-multi', [
+            'labels' => $assets->map(fn (Asset $asset) => $this->buildLabel($asset, $layout)),
             'logoDataUri' => $this->logoDataUri(),
             'pageWidthMm' => $layout['boxWidthMm'],
             'pageHeightMm' => $layout['boxHeightMm'],
@@ -276,12 +365,27 @@ class AssetLabelPdfService
     private function buildLabel(Asset $asset, array $layout): array
     {
         $cells = $this->codeCells($asset);
-        $cellWidthMm = round($layout['codeWidthMm'] / count($cells), 4);
+
+        // Layout revision — a cell never grows past its "natural" width just
+        // because the row has room to spare (that was the old behaviour: a
+        // short code's cells stretched edge-to-edge, looking disproportionate
+        // and "melebar"). A long code that genuinely needs more than the
+        // available row width still shrinks below natural width exactly as
+        // before (`min()`, not a fixed value) — this is a ceiling, not a floor.
+        $maxCellWidthMm = $layout['codeWidthMm'] / count($cells);
+        $cellWidthMm = round(min(self::CODE_NATURAL_CELL_WIDTH_MM, $maxCellWidthMm), 4);
+
+        // The resulting cell GROUP (not each cell individually) is centered
+        // within the available code-row width — zero offset when the group
+        // already fills the row (the long-code case, unchanged from before).
+        $groupWidthMm = round($cellWidthMm * count($cells), 4);
+        $groupLeftOffsetMm = round(max(0, ($layout['codeWidthMm'] - $groupWidthMm) / 2), 4);
 
         return [
             'qrDataUri' => $this->qrDataUri($this->qrTargetUrl($asset)),
             'cells' => $cells,
             'cellWidthMm' => $cellWidthMm,
+            'groupLeftOffsetMm' => $groupLeftOffsetMm,
             // Recomputed from the actual cell width so a longer/shorter code (a
             // different sequence_no length) still fits one row, never wraps or
             // overflows (Tahap 6.0.1 §5).
@@ -291,10 +395,12 @@ class AssetLabelPdfService
 
     /**
      * The label's fixed internal geometry for `$size` — the same proportional
-     * design (Tahap 6.0.1) scaled to whichever of {@see SIZES} is requested.
-     * Identical for every label, single or batch. Every box is
-     * `position: absolute`, in mm, relative to the label's own top-left corner
-     * (0,0) — see this class's docblock for why.
+     * design (Tahap 6.0.1, clear-space/centering revised — see
+     * {@see CLEAR_SPACE_TARGET_MM} / {@see MIN_HEADER_HEIGHT_MM}) scaled
+     * to whichever of {@see SIZES} is requested. Identical for every label,
+     * single or batch. Every box is `position: absolute`, in mm, relative to
+     * the label's own top-left corner (0,0) — see this class's docblock for
+     * why.
      *
      * @return array<string, float|string>
      */
@@ -304,13 +410,20 @@ class AssetLabelPdfService
         $boxWidthMm = $dimensions['width_mm'];
         $boxHeightMm = $dimensions['height_mm'];
 
-        // Header/code rows, inset from the box edge by the border + inner padding.
-        // The label's own border sits ON the box edge — for the single-label PDF
-        // that edge IS the physical page edge (no separate page margin exists).
-        $inset = self::BORDER_MM + self::INNER_PAD_MM;
-        $rowLeftMm = $inset;
-        $rowWidthMm = $boxWidthMm - (2 * $inset);
-        $contentHeightMm = $boxHeightMm - (2 * $inset) - self::ROW_GAP_MM;
+        // Horizontal clear space: width is never the tight dimension at
+        // 55/70/90mm, so the full target always applies without a floor.
+        $insetXMm = self::CLEAR_SPACE_TARGET_MM;
+
+        // Vertical clear space: floored so the header row (QR/logo) never
+        // renders shorter than MIN_HEADER_HEIGHT_MM — see that constant's
+        // own docblock for the exact 55x15mm numbers.
+        $minContentHeightMm = self::MIN_HEADER_HEIGHT_MM / self::HEADER_HEIGHT_RATIO;
+        $maxInsetYMm = max(0, ($boxHeightMm - $minContentHeightMm - self::ROW_GAP_MM) / 2);
+        $insetYMm = min(self::CLEAR_SPACE_TARGET_MM, $maxInsetYMm);
+
+        $rowLeftMm = $insetXMm;
+        $rowWidthMm = $boxWidthMm - (2 * $insetXMm);
+        $contentHeightMm = $boxHeightMm - (2 * $insetYMm) - self::ROW_GAP_MM;
 
         $headerHeightMm = round($contentHeightMm * self::HEADER_HEIGHT_RATIO, 3);
         $codeHeightMm = round($contentHeightMm - $headerHeightMm, 3);
@@ -328,17 +441,34 @@ class AssetLabelPdfService
         return [
             'boxWidthMm' => $boxWidthMm,
             'boxHeightMm' => $boxHeightMm,
-            'headerTopMm' => $inset,
+            'headerTopMm' => $insetYMm,
             'headerLeftMm' => $rowLeftMm,
             'headerWidthMm' => $rowWidthMm,
             'headerHeightMm' => $headerHeightMm,
             'titleText' => self::TITLE_TEXT,
             'titleFontSizePt' => $titleFontSizePt,
-            'codeTopMm' => $inset + $headerHeightMm + self::ROW_GAP_MM,
+            'codeTopMm' => $insetYMm + $headerHeightMm + self::ROW_GAP_MM,
             'codeLeftMm' => $rowLeftMm,
             'codeWidthMm' => $rowWidthMm,
             'codeHeightMm' => $codeHeightMm,
         ];
+    }
+
+    /**
+     * R8 — the filename for one asset's Individual-mode PDF (the single-asset
+     * case only — see {@see renderIndividualMulti()} for more than one):
+     * `label-{asset_code}.pdf`, e.g. `label-01.02.001.001.2025.pdf`.
+     * `asset_code` is a DB `GENERATED ALWAYS AS ... STORED` column built from
+     * digits/dots (see the `assets` table migration) so this is
+     * defensive-only, not a real-world requirement today: any character that
+     * isn't filesystem-safe is replaced with `_`, and the database value
+     * itself is never touched.
+     */
+    public function individualFilename(Asset $asset): string
+    {
+        $safeCode = preg_replace('/[^A-Za-z0-9._-]/', '_', $asset->asset_code) ?? $asset->asset_code;
+
+        return "label-{$safeCode}.pdf";
     }
 
     private function qrDataUri(string $url): string
