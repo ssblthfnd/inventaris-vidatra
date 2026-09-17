@@ -159,7 +159,7 @@ export default function AssetDetail() {
   const { assetId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { refreshUser, isOperator } = useAuth();
+  const { refreshUser, canWriteInventory, canPrintLabels } = useAuth();
 
   const [phase, setPhase] = useState('loading'); // loading | ready | notfound | forbidden | error
   const [asset, setAsset] = useState(null);
@@ -364,7 +364,7 @@ export default function AssetDetail() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink to={backTo} />
 
-        {isOperator && !isTrashed && (
+        {canWriteInventory && !isTrashed && (
           <div className="flex flex-wrap gap-2">
             <Link
               to={`/inventory/${asset.id}/edit`}
@@ -401,16 +401,22 @@ export default function AssetDetail() {
             >
               Hapus Aset
             </button>
-            <PrintLabelMenu
-              onSelect={doPrintLabel}
-              busy={labelBusy}
-              align="right"
-              buttonClassName={`${actionBtn} border-gray-300 text-gray-700 hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-60`}
-            />
+            {/* R7.1 — label printing stays on the legacy can:operator Gate
+                (admin/operator only); unlike the actions above, unit_admin
+                and super_admin do not have it yet, so this button is gated
+                separately here rather than folded into canWriteInventory. */}
+            {canPrintLabels && (
+              <PrintLabelMenu
+                onSelect={doPrintLabel}
+                busy={labelBusy}
+                align="right"
+                buttonClassName={`${actionBtn} border-gray-300 text-gray-700 hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-60`}
+              />
+            )}
           </div>
         )}
 
-        {isOperator && isTrashed && (
+        {canWriteInventory && isTrashed && (
           <button
             type="button"
             onClick={() => setAction('restore')}
@@ -529,7 +535,7 @@ export default function AssetDetail() {
       <AssetHistorySection
         assetId={asset.id}
         refreshSignal={historyRefreshKey}
-        isOperator={isOperator}
+        isOperator={canWriteInventory}
         onReverted={(reverted) => {
           const updated = reverted.find((a) => a.id === asset.id);
           if (updated) setAsset(updated);

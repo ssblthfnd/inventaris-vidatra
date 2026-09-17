@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
@@ -6,11 +6,21 @@ import ResetPasswordDialog from '../components/users/ResetPasswordDialog';
 import UserFormModal from '../components/users/UserFormModal';
 import { api, ApiError } from '../lib/api';
 import { CenteredState } from '../lib/assetFields';
+import { useMasterData } from '../lib/useMasterData';
 
-const ROLE_LABELS = { admin: 'Admin', operator: 'Operator', viewer: 'Viewer' };
+// R7.1 — gained super_admin/unit_admin (Stage 6.9). Order mirrors the form's own ROLE_OPTIONS.
+const ROLE_LABELS = {
+  admin: 'Admin',
+  super_admin: 'Super Admin',
+  unit_admin: 'Unit Admin',
+  operator: 'Operator',
+  viewer: 'Viewer',
+};
 const ROLE_FILTER_OPTIONS = [
   { value: '', label: 'Semua role' },
   { value: 'admin', label: 'Admin' },
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'unit_admin', label: 'Unit Admin' },
   { value: 'operator', label: 'Operator' },
   { value: 'viewer', label: 'Viewer' },
 ];
@@ -28,7 +38,12 @@ function formatDate(iso) {
 }
 
 export default function Users() {
-  const { user: currentUser, isAdmin } = useAuth();
+  const { user: currentUser, canManageUsers } = useAuth();
+  const { locations } = useMasterData();
+  const locationNameByCode = useMemo(
+    () => Object.fromEntries(locations.map((l) => [l.code, l.name])),
+    [locations],
+  );
 
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
@@ -59,7 +74,7 @@ export default function Users() {
   }, [qInput]);
 
   const load = useCallback(() => {
-    if (!isAdmin) return undefined;
+    if (!canManageUsers) return undefined;
     let alive = true;
     setPhase((p) => (result === null ? 'loading' : p));
 
@@ -87,7 +102,7 @@ export default function Users() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, role, status, page, retryKey, isAdmin]);
+  }, [q, role, status, page, retryKey, canManageUsers]);
 
   useEffect(() => load(), [load]);
 
@@ -97,11 +112,11 @@ export default function Users() {
     return () => clearTimeout(t);
   }, [flash]);
 
-  if (!isAdmin) {
+  if (!canManageUsers) {
     return (
       <CenteredState
         title="Akses ditolak"
-        message="Hanya admin yang dapat mengakses Manajemen Pengguna."
+        message="Anda tidak memiliki izin untuk mengakses Manajemen Pengguna."
         backTo="/dashboard"
         backLabel="Kembali ke Dashboard"
       />
@@ -256,6 +271,7 @@ export default function Users() {
                 <th className="px-4 py-2.5">Nama</th>
                 <th className="px-4 py-2.5">Email</th>
                 <th className="px-4 py-2.5">Role</th>
+                <th className="px-4 py-2.5">Unit</th>
                 <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5">Dibuat</th>
                 <th className="px-4 py-2.5 text-right">Aksi</th>
@@ -272,6 +288,9 @@ export default function Users() {
                     </td>
                     <td className="px-4 py-2.5 text-gray-700">{u.email}</td>
                     <td className="px-4 py-2.5 text-gray-700">{ROLE_LABELS[u.role] ?? u.role}</td>
+                    <td className="px-4 py-2.5 text-gray-500">
+                      {u.location_code ? (locationNameByCode[u.location_code] ?? u.location_code) : '—'}
+                    </td>
                     <td className="px-4 py-2.5">
                       <span
                         className={[

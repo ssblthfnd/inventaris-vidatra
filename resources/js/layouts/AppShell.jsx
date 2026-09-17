@@ -2,34 +2,61 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
+import { api } from '../lib/api';
 
 const ROLE_LABELS = {
   admin: 'Administrator',
   operator: 'Operator',
   viewer: 'Viewer',
+  // R7.1
+  super_admin: 'Super Admin',
+  unit_admin: 'Unit Admin',
 };
 
 /**
  * Navigation. Asset mutation/audit history is shown inline on Asset Detail
  * ("Riwayat Perubahan", Tahap 5.8.9) — there is no separate global history page,
  * so no corresponding sidebar entry exists here.
+ *
+ * R7.1 — each item's visibility is now driven by a named capability from
+ * `useAuth()` (`show`) instead of a single hardcoded `adminOnly` flag, so a
+ * `unit_admin`/`super_admin` sees exactly the functional surface backend
+ * actually grants them (see `AuthContext.jsx`'s own docblock for which
+ * legacy-gated capabilities they still don't have). Dashboard/Inventaris are
+ * `show: () => true` — every active role has at least read access to both,
+ * unchanged from before; the PAGE itself still narrows what's rendered
+ * inside (e.g. a viewer's Inventory has no write actions).
  */
 const NAV = [
-  { label: 'Dashboard', to: '/dashboard', ready: true },
-  { label: 'Inventaris', to: '/inventory', ready: true },
-  { label: 'Import Excel', to: '/imports', ready: true },
-  { label: 'Laporan', to: '/reports', ready: true },
+  { label: 'Dashboard', to: '/dashboard', ready: true, show: () => true },
+  { label: 'Inventaris', to: '/inventory', ready: true, show: () => true },
+  { label: 'Import Excel', to: '/imports', ready: true, show: (auth) => auth.canImport },
+  { label: 'Laporan', to: '/reports', ready: true, show: (auth) => auth.canViewReports },
+  // R7.1 — a NEW dedicated entry point for `unit_admin`/`super_admin` room
+  // management (own-location for unit_admin, every location for
+  // super_admin), reusing the R7 `rooms.manage` ability. Legacy `admin`
+  // already manages rooms inside "Master Data" below — deliberately not
+  // shown this second entry too, to avoid two different UIs for the same
+  // admin doing the same thing.
+  { label: 'Ruangan', to: '/rooms', ready: true, show: (auth) => auth.canManageRooms && !auth.isAdmin },
   // Tahap 6.4 — unlike every other item above (always visible, gated only on
-  // the page itself), this one is admin-only in the NAV LIST too, per the
-  // stage's explicit requirement: a viewer/operator must not even see it.
-  { label: 'Pengguna', to: '/users', ready: true, adminOnly: true },
-  // Tahap 6.8.1 — same admin-only-in-the-nav-list treatment as 'Pengguna' above.
-  { label: 'Master Data', to: '/master-data', ready: true, adminOnly: true },
+  // the page itself), this one is gated in the NAV LIST too, per the
+  // stage's explicit requirement: an unauthorized role must not even see it.
+  // R7.1: `canManageUsers` now also admits `super_admin` (the `users.manage`
+  // named ability already covers it — R2).
+  { label: 'Pengguna', to: '/users', ready: true, show: (auth) => auth.canManageUsers },
+  // Tahap 6.8.1 — same gated-in-the-nav-list treatment as 'Pengguna' above.
+  // R7.1: stays literal-`admin`-only (`canManageMasterData`) — its backend
+  // routes (locations/categories/subcategories/room admin-browser) are
+  // still the legacy `can:admin` Gate, never migrated to a named ability,
+  // so `super_admin` does NOT actually have access yet (a confirmed,
+  // pre-existing gap reported separately, not fixed by R7.1).
+  { label: 'Master Data', to: '/master-data', ready: true, show: (auth) => auth.canManageMasterData },
 ];
 
 function NavItems({ onNavigate }) {
-  const { isAdmin } = useAuth();
-  const items = NAV.filter((item) => !item.adminOnly || isAdmin);
+  const auth = useAuth();
+  const items = NAV.filter((item) => item.show(auth));
 
   return (
     <nav className="flex flex-col gap-1 p-3">
@@ -67,12 +94,37 @@ function NavItems({ onNavigate }) {
 }
 
 export default function AppShell() {
-  const { user, logout } = useAuth();
+  const { user, logout, isUnitAdmin, locationCode } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // R7.1 — a unit_admin's own location NAME (not just its code) for the
+  // header badge, e.g. "Unit Admin — SD". One small dedicated fetch rather
+  // than pulling in the multi-endpoint `useMasterData()` hook here (this
+  // layout wraps every page, so that hook's location/category/subcategory
+  // fetches would otherwise re-run on every navigation for every role).
+  const [unitLocationName, setUnitLocationName] = useState(null);
+  useEffect(() => {
+    if (!isUnitAdmin || !locationCode) {
+      setUnitLocationName(null);
+      return undefined;
+    }
+    let alive = true;
+    api
+      .get(`/api/locations/${encodeURIComponent(locationCode)}`)
+      .then((res) => {
+        if (alive) setUnitLocationName(res?.data?.name ?? null);
+      })
+      .catch(() => {
+        /* badge simply falls back to the raw code below */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isUnitAdmin, locationCode]);
 
   // close the mobile drawer / user menu on navigation
   useEffect(() => {
@@ -86,7 +138,9 @@ export default function AppShell() {
     navigate('/login', { replace: true });
   };
 
-  const roleLabel = ROLE_LABELS[user?.role] ?? user?.role ?? '';
+  const baseRoleLabel = ROLE_LABELS[user?.role] ?? user?.role ?? '';
+  const roleLabel =
+    isUnitAdmin && locationCode ? `${baseRoleLabel} — ${unitLocationName ?? locationCode}` : baseRoleLabel;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">

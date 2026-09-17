@@ -78,7 +78,7 @@ function CountTable({ title, rows, labelKey, headers, secondaryKey }) {
 }
 
 export default function Reports() {
-  const { refreshUser, isOperator } = useAuth();
+  const { refreshUser, canViewReports } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const md = useMasterData();
   const { ensureSubcategories, ensureRooms } = md;
@@ -175,7 +175,7 @@ export default function Reports() {
 
   /* ---------------------------------------------------------------- fetch report */
   useEffect(() => {
-    if (!isOperator) return undefined;
+    if (!canViewReports) return undefined;
     let alive = true;
     setPhase((p) => (data === null ? 'loading' : p));
 
@@ -208,7 +208,7 @@ export default function Reports() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiQuery, retryKey, isOperator]);
+  }, [apiQuery, retryKey, canViewReports]);
 
   /* ---------------------------------------------------------------- chips */
   const chipLabel = useCallback(
@@ -248,11 +248,11 @@ export default function Reports() {
   const filterActive = hasActiveReportFilters(state);
 
   /* ---------------------------------------------------------------- access gate */
-  if (!isOperator) {
+  if (!canViewReports) {
     return (
       <CenteredState
         title="Akses ditolak"
-        message="Hanya operator atau admin yang dapat mengakses Laporan Inventaris."
+        message="Anda tidak memiliki izin untuk mengakses Laporan Inventaris."
         backTo="/dashboard"
         backLabel="Kembali ke Dashboard"
       />

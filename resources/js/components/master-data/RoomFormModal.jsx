@@ -6,12 +6,17 @@ import { controlClass } from '../../lib/assetFields';
 
 /**
  * Create/edit room modal (Tahap 6.8.1), one component for both via `mode`
- * (mirrors `UserFormModal`'s own `mode="create"|"edit"` convention).
+ * (mirrors `UserFormModal`'s own `mode="create"|"edit"` convention). Shared
+ * (R7.1) by both `RoomsPanel` (legacy `admin`'s `/master-data` Rooms panel)
+ * and `Rooms.jsx` (the newer `/rooms` page for `unit_admin`/`super_admin`) —
+ * neither knows or cares which caller is rendering it, since it just
+ * POSTs/PATCHes `/api/rooms(/…)`, which R7's `RoomPolicy` already
+ * authorizes correctly per-actor.
  *
  * Location is only selectable on create (from the `locations` prop, which
- * `RoomsPanel` passes as its active-only subset — never free text); on edit
- * it is shown read-only, since the backend rejects a `location_code` change
- * outright.
+ * each caller passes as its own active-only, already-scoped subset — never
+ * free text); on edit it is shown read-only, since the backend rejects a
+ * `location_code` change outright.
  */
 export default function RoomFormModal({ open, mode, room, locations, onClose, onSuccess }) {
   const isEdit = mode === 'edit';

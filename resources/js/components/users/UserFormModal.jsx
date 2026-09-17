@@ -1,35 +1,72 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import LifecycleConfirmDialog from '../LifecycleConfirmDialog';
 import { api, ApiError } from '../../lib/api';
 import { controlClass } from '../../lib/assetFields';
+import { useMasterData } from '../../lib/useMasterData';
 
+// R7.1 — gained super_admin/unit_admin (Stage 6.9 R1-R7). Uses the backend's
+// exact role values (App\Enums\UserRole) verbatim as the option `value`.
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin' },
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'unit_admin', label: 'Unit Admin' },
   { value: 'operator', label: 'Operator' },
   { value: 'viewer', label: 'Viewer' },
 ];
 
+// The only location codes a unit_admin may ever be assigned to
+// (App\Enums\UserRole::UNIT_ADMIN_LOCATION_CODES = 02/03/04, SD/SMP/SMA) —
+// kept here as the single source of truth for which subset of
+// `useMasterData()`'s locations the picker below offers, so an inactive or
+// out-of-range location (e.g. 01/Yayasan) is never offered even if it's
+// technically present in the master-data response.
+const UNIT_ADMIN_LOCATION_CODES = ['02', '03', '04'];
+
 /**
- * Create/edit user modal (Tahap 6.4), one component for both via `mode`
- * (mirrors `AssetForm`'s own `mode="create"|"edit"` convention). Password is
- * deliberately NOT a field here in edit mode — resetting it is a separate,
- * explicit dialog ({@see ResetPasswordDialog}) so saving a name/role change
- * can never accidentally touch the password.
+ * Create/edit user modal (Tahap 6.4; role/location picker added R7.1), one
+ * component for both via `mode` (mirrors `AssetForm`'s own
+ * `mode="create"|"edit"` convention). Password is deliberately NOT a field
+ * here in edit mode — resetting it is a separate, explicit dialog
+ * ({@see ResetPasswordDialog}) so saving a name/role change can never
+ * accidentally touch the password.
  *
- * Self-protection is mirrored client-side (role locked to Admin, status
- * locked to Aktif when editing your own account) purely as a UX convenience —
- * same "UI-only helper, backend stays authoritative" philosophy as every
- * other role-based UI check in this app; the backend's own validation is what
- * actually enforces it (tested independently).
+ * R7.1 — `location_code` mirrors the backend's own (role, location_code)
+ * invariant (`App\Support\UserLocationValidator`, unchanged by this stage):
+ * required + one of 02/03/04 for `unit_admin`, always `null` otherwise. The
+ * location picker itself is sourced from `useMasterData()` (never
+ * hard-coded names) filtered to `UNIT_ADMIN_LOCATION_CODES` — since that
+ * endpoint is active-only by default, an inactive SD/SMP/SMA simply won't
+ * appear here, matching the backend rule that it wouldn't be accepted
+ * anyway. Switching role AWAY from `unit_admin` clears the picked location
+ * immediately (never silently resubmits a stale one); switching INTO
+ * `unit_admin` starts from '' so a location must be actively chosen.
+ * `useMasterData()`'s own location list is never unit_admin-narrowed for
+ * the ACTOR here, because only an `admin`/`super_admin` (via
+ * `canManageUsers`) ever reaches this component in the first place — see
+ * that hook's own docblock.
+ *
+ * Self-protection is mirrored client-side (role + status locked when
+ * editing your own account) purely as a UX convenience — same "UI-only
+ * helper, backend stays authoritative" philosophy as every other
+ * role-based UI check in this app; the backend's own validation is what
+ * actually enforces it (tested independently). A unit_admin can never
+ * reach this modal at all (no `canManageUsers`), so the isSelf+unit_admin
+ * combination this would otherwise need to handle can't occur in practice.
  */
 export default function UserFormModal({ open, mode, user, currentUserId, onClose, onSuccess }) {
   const isEdit = mode === 'edit';
   const isSelf = isEdit && user && currentUserId === user.id;
+  const { locations } = useMasterData();
+  const unitLocationOptions = useMemo(
+    () => locations.filter((l) => UNIT_ADMIN_LOCATION_CODES.includes(l.code)),
+    [locations],
+  );
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('viewer');
+  const [locationCode, setLocationCode] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
@@ -38,11 +75,14 @@ export default function UserFormModal({ open, mode, user, currentUserId, onClose
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
 
+  const isUnitAdminRole = role === 'unit_admin';
+
   useEffect(() => {
     if (!open) return;
     setName(isEdit ? (user?.name ?? '') : '');
     setEmail(isEdit ? (user?.email ?? '') : '');
     setRole(isEdit ? (user?.role ?? 'viewer') : 'viewer');
+    setLocationCode(isEdit && user?.role === 'unit_admin' ? (user?.location_code ?? '') : '');
     setIsActive(isEdit ? (user?.is_active ?? true) : true);
     setPassword('');
     setPasswordConfirmation('');
@@ -50,12 +90,21 @@ export default function UserFormModal({ open, mode, user, currentUserId, onClose
     setFieldErrors({});
   }, [open, isEdit, user]);
 
+  const handleRoleChange = (value) => {
+    setRole(value);
+    // Changing away from unit_admin must not silently retain an obsolete
+    // unit location; changing into it must require a fresh, explicit choice.
+    if (value !== 'unit_admin') setLocationCode('');
+    setFieldErrors((e) => ({ ...e, role: undefined, location_code: undefined }));
+  };
+
   if (!open) return null;
 
   const canSubmit =
     !busy &&
     name.trim() !== '' &&
     email.trim() !== '' &&
+    (!isUnitAdminRole || locationCode !== '') &&
     (isEdit || (password !== '' && passwordConfirmation !== ''));
 
   const handleSubmit = async () => {
@@ -64,16 +113,16 @@ export default function UserFormModal({ open, mode, user, currentUserId, onClose
     setError('');
     setFieldErrors({});
 
+    const base = {
+      name: name.trim(),
+      email: email.trim(),
+      role,
+      location_code: isUnitAdminRole ? locationCode : null,
+      is_active: isActive,
+    };
     const payload = isEdit
-      ? { name: name.trim(), email: email.trim(), role, is_active: isActive }
-      : {
-          name: name.trim(),
-          email: email.trim(),
-          role,
-          is_active: isActive,
-          password,
-          password_confirmation: passwordConfirmation,
-        };
+      ? base
+      : { ...base, password, password_confirmation: passwordConfirmation };
 
     try {
       const res = isEdit
@@ -159,7 +208,7 @@ export default function UserFormModal({ open, mode, user, currentUserId, onClose
           <select
             id="user-role"
             value={role}
-            onChange={(e) => setRole(e.target.value)}
+            onChange={(e) => handleRoleChange(e.target.value)}
             disabled={isSelf}
             className={controlClass(fieldErrors.role)}
           >
@@ -176,6 +225,34 @@ export default function UserFormModal({ open, mode, user, currentUserId, onClose
             </p>
           )}
         </div>
+
+        {isUnitAdminRole && (
+          <div>
+            <label htmlFor="user-location" className="mb-1 block text-xs font-medium text-gray-600">
+              Unit / Lokasi
+            </label>
+            <select
+              id="user-location"
+              value={locationCode}
+              onChange={(e) => setLocationCode(e.target.value)}
+              disabled={isSelf}
+              className={controlClass(fieldErrors.location_code)}
+            >
+              <option value="">Pilih unit…</option>
+              {unitLocationOptions.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            {fieldErrors.location_code && (
+              <p className="mt-1 text-xs text-red-600" role="alert">{fieldErrors.location_code}</p>
+            )}
+            <p className="mt-1 text-xs text-gray-400">
+              Unit Admin hanya dapat mengelola inventaris dan ruangan di unit yang dipilih di sini.
+            </p>
+          </div>
+        )}
 
         <div>
           <span className="mb-1 block text-xs font-medium text-gray-600">Status</span>

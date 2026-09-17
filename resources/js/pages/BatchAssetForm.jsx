@@ -52,7 +52,7 @@ const EMPTY = {
 
 export default function BatchAssetForm() {
   const location = useLocation();
-  const { isOperator, refreshUser } = useAuth();
+  const { canWriteInventory, refreshUser } = useAuth();
   const md = useMasterData();
   const { ensureRooms, ensureSubcategories } = md;
 
@@ -250,11 +250,11 @@ export default function BatchAssetForm() {
   };
 
   /* ---- gates ---- */
-  if (!isOperator) {
+  if (!canWriteInventory) {
     return (
       <CenteredState
         title="Akses ditolak"
-        message="Hanya operator atau admin yang dapat menambah aset."
+        message="Anda tidak memiliki izin untuk menambah aset."
         backTo="/inventory"
         backLabel="Kembali ke Inventaris"
       />

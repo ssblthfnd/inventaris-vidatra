@@ -3,6 +3,7 @@
 namespace Tests\Feature\Auth;
 
 use App\Enums\UserRole;
+use App\Models\Location;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -103,8 +104,22 @@ class AuthFoundationTest extends TestCase
                 'name' => $user->name,
                 'email' => 'viewer@vidatra.test',
                 'role' => 'viewer',
+                'location_code' => null,
                 'is_active' => true,
             ]]);
+    }
+
+    /** R7.1 — a unit_admin's own `/me` must expose their own `location_code` (the frontend has no other way to learn "what is my unit"). */
+    public function test_me_exposes_the_unit_admins_own_location_code(): void
+    {
+        Location::query()->firstOrCreate(['code' => '02'], ['name' => 'Lokasi 02', 'is_active' => true]);
+        $user = $this->makeUser(['email' => 'unitadmin@vidatra.test', 'role' => UserRole::UnitAdmin, 'location_code' => '02']);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/me')
+            ->assertOk()
+            ->assertJsonPath('data.role', 'unit_admin')
+            ->assertJsonPath('data.location_code', '02');
     }
 
     public function test_logout_ends_the_session(): void

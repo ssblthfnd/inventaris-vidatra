@@ -71,7 +71,7 @@ function pageWindow(current, last) {
 }
 
 export default function Inventory() {
-  const { refreshUser, isOperator } = useAuth();
+  const { refreshUser, canWriteInventory, canExportAssets, canPrintLabels } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const md = useMasterData();
 
@@ -398,32 +398,41 @@ export default function Inventory() {
             Kelola dan cari aset Yayasan Vidatra dengan mudah.
           </p>
         </div>
-        {isOperator && (
+        {(canWriteInventory || canExportAssets) && (
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-            <Link
-              to="/inventory/new"
-              state={{ from: searchParams.toString() }}
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
-            >
-              <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Aset
-            </Link>
-            <Link
-              to="/inventory/batch"
-              state={{ from: searchParams.toString() }}
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
-            >
-              <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Banyak Aset
-            </Link>
-            <ExportMenu
-              categories={md.categories}
-              currentQuery={apiQuery}
-              currentCount={result?.meta?.total ?? 0}
-              hasActiveFilters={filterActive}
-              onSelect={handleExport}
-              busy={exportingExcel}
-              align="right"
-              buttonClassName="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            />
+            {canWriteInventory && (
+              <>
+                <Link
+                  to="/inventory/new"
+                  state={{ from: searchParams.toString() }}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                >
+                  <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Aset
+                </Link>
+                <Link
+                  to="/inventory/batch"
+                  state={{ from: searchParams.toString() }}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                >
+                  <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Banyak Aset
+                </Link>
+              </>
+            )}
+            {/* R7.1 — export stays on the legacy can:operator Gate (admin/
+                operator only); unit_admin/super_admin don't have it yet, so
+                it's gated separately from the create actions above. */}
+            {canExportAssets && (
+              <ExportMenu
+                categories={md.categories}
+                currentQuery={apiQuery}
+                currentCount={result?.meta?.total ?? 0}
+                hasActiveFilters={filterActive}
+                onSelect={handleExport}
+                busy={exportingExcel}
+                align="right"
+                buttonClassName="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            )}
           </div>
         )}
       </header>
@@ -442,7 +451,7 @@ export default function Inventory() {
       )}
 
       {/* batch selection toolbar */}
-      {isOperator && selectedIds.size > 0 && (
+      {canWriteInventory && selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-900 bg-gray-900 px-3.5 py-2.5 text-sm text-white">
           <span className="font-medium">{selectedIds.size} aset dipilih</span>
           <div className="ml-auto flex gap-2">
@@ -453,12 +462,15 @@ export default function Inventory() {
             >
               Edit massal
             </button>
-            <PrintLabelMenu
-              onSelect={handlePrintLabels}
-              busy={printingLabel}
-              align="right"
-              buttonClassName="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
-            />
+            {/* R7.1 — label printing stays admin/operator-only (legacy can:operator Gate) */}
+            {canPrintLabels && (
+              <PrintLabelMenu
+                onSelect={handlePrintLabels}
+                busy={printingLabel}
+                align="right"
+                buttonClassName="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            )}
             <button
               type="button"
               onClick={() => setShowDeleteDialog(true)}
@@ -664,7 +676,7 @@ export default function Inventory() {
             loading={phase === 'loading'}
             refreshing={refreshing}
             listSearch={searchParams.toString()}
-            selectable={isOperator}
+            selectable={canWriteInventory}
             selectedIds={selectedIds}
             onToggleRow={toggleRow}
             onToggleAll={toggleAll}
@@ -707,7 +719,7 @@ export default function Inventory() {
         </>
       )}
 
-      {isOperator && (
+      {canWriteInventory && (
         <BatchEditModal
           open={showBatchModal}
           assets={selectedAssets}
@@ -718,7 +730,7 @@ export default function Inventory() {
         />
       )}
 
-      {isOperator && (
+      {canWriteInventory && (
         <BatchDeleteDialog
           open={showDeleteDialog}
           assets={selectedAssets}

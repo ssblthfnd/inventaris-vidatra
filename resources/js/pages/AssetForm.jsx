@@ -58,7 +58,7 @@ export default function AssetForm({ mode }) {
   const { assetId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isOperator, refreshUser } = useAuth();
+  const { canWriteInventory, refreshUser } = useAuth();
   const md = useMasterData();
   const { ensureRooms, ensureSubcategories } = md;
 
@@ -94,7 +94,7 @@ export default function AssetForm({ mode }) {
 
   /* ---- edit: load the asset ---- */
   useEffect(() => {
-    if (!isEdit || !isOperator) return undefined;
+    if (!isEdit || !canWriteInventory) return undefined;
     let alive = true;
     setPhase('loading');
 
@@ -142,7 +142,7 @@ export default function AssetForm({ mode }) {
     return () => {
       alive = false;
     };
-  }, [isEdit, isOperator, assetId, refreshUser]);
+  }, [isEdit, canWriteInventory, assetId, refreshUser]);
 
   /* ---- dependent master data ---- */
   useEffect(() => {
@@ -343,11 +343,11 @@ export default function AssetForm({ mode }) {
   };
 
   /* ---- render gates ---- */
-  if (!isOperator) {
+  if (!canWriteInventory) {
     return (
       <CenteredState
         title="Akses ditolak"
-        message="Hanya operator atau admin yang dapat menambah atau mengubah aset."
+        message="Anda tidak memiliki izin untuk menambah atau mengubah aset."
         backTo={isEdit ? detailTo : '/inventory'}
         backLabel="Kembali"
       />

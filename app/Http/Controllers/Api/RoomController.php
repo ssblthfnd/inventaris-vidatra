@@ -12,6 +12,7 @@ use App\Support\LocationScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Master data: rooms.
@@ -45,6 +46,21 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  * Room aliases are still not exposed here — that is Tahap 6.8.2, and stays
  * out of scope for R7 too (`roomAliases.manage` is deliberately excluded
  * from `unit_admin`, see `RoomAliasController`'s docblock).
+ *
+ * `index()` gained one opt-in addition (R7.1): `?include_inactive=1`,
+ * honoured ONLY for an actor who passes `can:rooms.manage` — same precedent
+ * as `LocationController::index()`'s own `?include_inactive=1` (Tahap
+ * 6.8.3), just gated on the newer named ability instead of the legacy
+ * `can:admin` Gate, since `rooms.manage` is exactly "who may see/manage a
+ * room outside the active-only default" for THIS resource (admin/
+ * super_admin globally, unit_admin within their own already-enforced
+ * `LocationScope`). Silently ignored for every other caller (operator/
+ * viewer, and any caller that never sends the param — every existing
+ * consumer of this route), so default behaviour is byte-identical to
+ * before. Necessary because `unit_admin`/`super_admin` have no other way to
+ * see a room they deactivated in order to reactivate it — the only other
+ * "see inactive rooms" endpoint, `adminIndex()` above, stays legacy
+ * `can:admin`-only and was never extended to them.
  */
 class RoomController extends ApiController
 {
@@ -53,8 +69,10 @@ class RoomController extends ApiController
         abort_if(! $location->is_active, 404);
         abort_if(! LocationScope::for($request->user())->allows($location->code), 404);
 
+        $includeInactive = $request->boolean('include_inactive') && Gate::allows('rooms.manage');
+
         $rooms = $location->rooms()
-            ->where('is_active', true)
+            ->when(! $includeInactive, fn ($query) => $query->where('is_active', true))
             ->when($request->filled('q'), function ($query) use ($request) {
                 $like = '%'.$this->escapeLike((string) $request->string('q')).'%';
                 $query->where('name', 'like', $like);

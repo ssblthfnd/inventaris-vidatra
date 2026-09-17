@@ -13,6 +13,7 @@ import Inventory from './pages/Inventory';
 import Login from './pages/Login';
 import MasterData from './pages/MasterData';
 import Reports from './pages/Reports';
+import Rooms from './pages/Rooms';
 import Users from './pages/Users';
 import GuestRoute from './routes/GuestRoute';
 import ProtectedRoute from './routes/ProtectedRoute';
@@ -46,6 +47,7 @@ function App() {
             <Route path="/inventory/:assetId/edit" element={<AssetForm mode="edit" />} />
             <Route path="/imports" element={<Imports />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/rooms" element={<Rooms />} />
             <Route path="/users" element={<Users />} />
             <Route path="/master-data" element={<MasterData />} />
           </Route>

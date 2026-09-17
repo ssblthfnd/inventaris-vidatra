@@ -54,7 +54,7 @@ function SummaryTile({ label, value, tone = 'default' }) {
 }
 
 export default function Imports() {
-  const { isOperator } = useAuth();
+  const { canImport, canViewImportHistory } = useAuth();
   const { categories } = useMasterData();
 
   // Tahap 6.8.4: codes are the fixed backend constant (which categories the
@@ -116,8 +116,8 @@ export default function Imports() {
   }, []);
 
   useEffect(() => {
-    if (isOperator) loadHistory();
-  }, [isOperator, loadHistory]);
+    if (canViewImportHistory) loadHistory();
+  }, [canViewImportHistory, loadHistory]);
 
   const loadRows = useCallback(async (batchId, status, page) => {
     setRowsLoading(true);
@@ -181,7 +181,7 @@ export default function Imports() {
       setFlashTone('success');
       setFlash(res?.message || 'File berhasil diunggah dan divalidasi.');
       await openBatch(res.data.id);
-      await loadHistory();
+      if (canViewImportHistory) await loadHistory();
     } catch (e) {
       setUploadError(e?.message || 'Gagal mengunggah file. Coba lagi.');
     } finally {
@@ -210,7 +210,7 @@ export default function Imports() {
       setPromotionResult(res.promotion);
       setPromoteOpen(false);
       await loadRows(batch.id, statusFilter, rowsPage);
-      await loadHistory();
+      if (canViewImportHistory) await loadHistory();
     } catch (e) {
       setPromoteError(e?.message || 'Gagal mempromosikan batch. Coba lagi.');
     } finally {
@@ -218,11 +218,11 @@ export default function Imports() {
     }
   };
 
-  if (!isOperator) {
+  if (!canImport) {
     return (
       <CenteredState
         title="Akses ditolak"
-        message="Hanya operator atau admin yang dapat mengakses Import Excel."
+        message="Anda tidak memiliki izin untuk mengakses Import Excel."
         backTo="/dashboard"
         backLabel="Kembali ke Dashboard"
       />
@@ -418,7 +418,14 @@ export default function Imports() {
         </section>
       )}
 
-      {/* History */}
+      {/* History — stays admin/operator-only (legacy can:operator Gate on
+          GET /api/imports); a unit_admin gets real import access (R6) but
+          not this cross-user, unscoped history browser (R6 "Scope Control"),
+          and super_admin doesn't have it yet either (the same unmigrated
+          Gate). Hidden entirely rather than shown-then-empty, since an empty
+          list here would misleadingly read as "no imports yet" rather than
+          "you can't see this". */}
+      {canViewImportHistory && (
       <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-gray-800">Riwayat Import</h2>
         {historyLoading ? (
@@ -460,6 +467,7 @@ export default function Imports() {
           </div>
         )}
       </section>
+      )}
 
       <LifecycleConfirmDialog
         open={promoteOpen}
