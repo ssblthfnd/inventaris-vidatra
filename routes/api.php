@@ -221,13 +221,30 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
             ->name('api.users.reset-password');
     });
 
-    // --- room master-data management (Tahap 6.8.1) — admin only ---
+    // --- room master-data management (Tahap 6.8.1; Stage 6.9 R7) ---
     // A separate `GET /rooms` (flat, all locations, active AND inactive) rather
     // than changing the existing viewer-facing `index()`/`show()` above — see
     // RoomController's docblock. No DELETE: deactivation (`is_active`) is the
     // only lifecycle mechanism, same precedent as user management.
+    //
+    // `GET /rooms` stays `can:admin` only — it is a flat, cross-location
+    // (active AND inactive) browser, and unit_admin's existing R4 read scope
+    // (`GET /api/locations/{location}/rooms`, `GET /api/rooms/{room}`) is the
+    // read surface they get instead; giving them this endpoint too would leak
+    // other units' room existence, which R7 does not ask for.
     Route::middleware('can:admin')->group(function () {
         Route::get('rooms', [RoomController::class, 'adminIndex'])->name('api.rooms.admin-index');
+    });
+
+    // `POST /rooms` / `PUT|PATCH /rooms/{room}` — regated from `can:admin` to
+    // the named `can:rooms.manage` ability (Stage 6.9 R7) so `unit_admin` can
+    // reach them too (App\Support\PermissionRegistry now grants unit_admin
+    // this ability). Unchanged for admin/super_admin (both still `*`) and a
+    // no-op for operator/viewer (neither has `rooms.manage`, same denial as
+    // `can:admin` before). WHERE (is this room's location in the actor's
+    // scope) is checked inside RoomController via RoomPolicy — the route
+    // gate alone never grants cross-unit access.
+    Route::middleware('can:rooms.manage')->group(function () {
         Route::post('rooms', [RoomController::class, 'store'])->name('api.rooms.store');
         Route::match(['put', 'patch'], 'rooms/{room}', [RoomController::class, 'update'])->name('api.rooms.update');
     });

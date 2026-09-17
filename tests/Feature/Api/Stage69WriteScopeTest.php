@@ -525,14 +525,20 @@ class Stage69WriteScopeTest extends TestCase
         ])->assertStatus(403);
     }
 
-    public function test_unit_admin_cannot_manage_master_data(): void
+    /**
+     * Room management is deliberately EXCLUDED from this list as of Stage 6.9
+     * R7 — a `unit_admin` now legitimately manages rooms within their own
+     * location (see `Stage69RoomScopeTest`); locations/categories/
+     * subcategories/room aliases/users remain unit_admin-forbidden
+     * master data, unchanged.
+     */
+    public function test_unit_admin_cannot_manage_locations_or_categories(): void
     {
         $this->seedUnitLocations();
         Sanctum::actingAs($this->unitAdmin('02'));
 
         $this->postJson('/api/locations', ['code' => '09', 'name' => 'New Location'])->assertStatus(403);
         $this->postJson('/api/categories', ['code' => '99', 'name' => 'New Category'])->assertStatus(403);
-        $this->postJson('/api/rooms', ['location_code' => '02', 'name' => 'New Room'])->assertStatus(403);
     }
 
     public function test_unit_admin_cannot_manage_users(): void

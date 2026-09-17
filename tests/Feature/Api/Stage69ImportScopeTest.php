@@ -80,6 +80,13 @@ class Stage69ImportScopeTest extends TestCase
         return User::factory()->create(['role' => UserRole::UnitAdmin, 'location_code' => $locationCode]);
     }
 
+    private function roomIn(string $locationCode): Room
+    {
+        $this->ensureLocation($locationCode);
+
+        return Room::factory()->create(['location_code' => $locationCode]);
+    }
+
     /** One data row's cells for a given location + sequence, category/subcategory fixed. */
     private function rowFor(string $locationCode, string $sequenceNo, array $overrides = []): array
     {
@@ -570,11 +577,22 @@ class Stage69ImportScopeTest extends TestCase
         $this->getJson('/api/assets/export')->assertStatus(403);
     }
 
-    public function test_unit_admin_still_cannot_manage_rooms_after_gaining_import(): void
+    /**
+     * Room management itself is no longer unit_admin-forbidden as of Stage
+     * 6.9 R7 (see `Stage69RoomScopeTest`) — this test now checks the ability
+     * that DOES stay excluded, room ALIAS management, so it still guards
+     * against import accidentally broadening scope.
+     */
+    public function test_unit_admin_still_cannot_manage_room_aliases_after_gaining_import(): void
     {
         $this->seedUnitLocations();
+        $room = $this->roomIn('02');
         Sanctum::actingAs($this->unitAdmin('02'));
 
-        $this->postJson('/api/rooms', ['location_code' => '02', 'name' => 'New Room'])->assertStatus(403);
+        $this->postJson('/api/room-aliases', [
+            'location_code' => '02',
+            'room_id' => $room->id,
+            'raw_value' => 'New Alias',
+        ])->assertStatus(403);
     }
 }

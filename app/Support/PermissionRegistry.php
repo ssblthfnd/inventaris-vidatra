@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Enums\UserRole;
 use App\Http\Requests\Api\UpdateUserRequest;
+use App\Policies\RoomPolicy;
 use App\Providers\AuthServiceProvider;
 
 /**
@@ -64,8 +65,7 @@ final class PermissionRegistry
      * abilities are wired into real routes/policies. Deliberately NOT
      * {@see FULL_INVENTORY_AND_ROOMS}: unit_admin gets every scoped
      * inventory write ability, but explicitly none of `assets.export`
-     * or `rooms.manage` (room master-data management) — those stay
-     * super_admin/admin/operator-only per Stage 6.9 R5 §2/§13.
+     * — that stays super_admin/admin/operator-only per Stage 6.9 R5 §2/§13.
      * (R1 originally reused FULL_INVENTORY_AND_ROOMS + rooms.manage for
      * unit_admin here, harmlessly, since none of these abilities were wired
      * to anything yet; R5 corrects it now that they are.)
@@ -74,13 +74,20 @@ final class PermissionRegistry
      * `ImportManager`/`AssetPromoter`) — while `assets.export` stays
      * excluded; export scope is explicitly a later phase.
      *
+     * Stage 6.9 R7 adds `rooms.manage` — location-scoped room master-data
+     * management (create/update/deactivate/reactivate a room in the actor's
+     * own location, see {@see RoomPolicy}). Deliberately still
+     * excludes `roomAliases.manage`: aliases stay a more sensitive
+     * import-mapping mechanism, per R7 §"ROOM ALIAS — IMPORTANT" — this is
+     * intentional, not an oversight.
+     *
      * @var list<string>
      */
     private const UNIT_ADMIN_INVENTORY = [
         'assets.view', 'assets.create', 'assets.edit', 'assets.batchEdit', 'assets.delete',
         'assets.writeOff', 'assets.restore', 'assets.revert', 'assets.moveRoom',
         'assets.import', 'assets.report',
-        'dashboard.view', 'rooms.view',
+        'dashboard.view', 'rooms.view', 'rooms.manage',
     ];
 
     /**

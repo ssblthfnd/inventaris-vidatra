@@ -4,9 +4,11 @@ namespace App\Providers;
 
 use App\Models\Asset;
 use App\Models\ImportBatch;
+use App\Models\Room;
 use App\Models\User;
 use App\Policies\AssetPolicy;
 use App\Policies\ImportBatchPolicy;
+use App\Policies\RoomPolicy;
 use App\Support\PermissionRegistry;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -67,5 +69,8 @@ class AuthServiceProvider extends ServiceProvider
         // Stage 6.9 R6 — single-resource import-batch authorization
         // (App\Policies\ImportBatchPolicy).
         Gate::policy(ImportBatch::class, ImportBatchPolicy::class);
+
+        // Stage 6.9 R7 — single-resource room authorization (App\Policies\RoomPolicy).
+        Gate::policy(Room::class, RoomPolicy::class);
     }
 }

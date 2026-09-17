@@ -6,20 +6,24 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `POST /api/rooms` (Tahap 6.8.1), `can:admin`.
+ * `POST /api/rooms` (Tahap 6.8.1, `can:admin`; Stage 6.9 R7 regated to
+ * `can:rooms.manage`).
  *
  * A new room always starts `is_active = true` — `is_active` is deliberately
  * `prohibited` here (not just omitted) so a client attempting to set it gets a
  * clean 422 instead of the value being silently dropped. Same for `id`.
  * `location_code` is intentionally NOT restricted here beyond "must be an
- * active location" — this is what lets an admin (only) onboard the first
- * rooms for SD/SMP/SMA once their locations are needed.
+ * active location" — a `unit_admin` submitting a location outside their own
+ * scope still passes THIS validation (the location itself is real and
+ * active) and is rejected afterward by `RoomController::store()` via
+ * `RoomPolicy` instead — the location is never silently rewritten to the
+ * actor's own.
  */
 class StoreRoomRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:rooms.manage; location scope checked in RoomController via RoomPolicy
     }
 
     protected function prepareForValidation(): void
