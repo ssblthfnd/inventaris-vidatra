@@ -25,12 +25,19 @@ class ImportTemplateController extends ApiController
         $categoryCode = $request->categoryCode();
         $spreadsheet = $service->generate($categoryCode);
 
+        // Tahap 6.9 R8.2 (P3-3): guaranteed cleanup, same pattern as
+        // AssetExportController — see that file's comment for the rationale.
         $tempPath = tempnam(sys_get_temp_dir(), 'import-template-');
-        (new Xlsx($spreadsheet))->save($tempPath);
-        $spreadsheet->disconnectWorksheets();
+        try {
+            (new Xlsx($spreadsheet))->save($tempPath);
+            $spreadsheet->disconnectWorksheets();
 
-        $contents = file_get_contents($tempPath);
-        unlink($tempPath);
+            $contents = file_get_contents($tempPath);
+        } finally {
+            if (is_string($tempPath) && is_file($tempPath)) {
+                unlink($tempPath);
+            }
+        }
 
         $filename = "template-impor-{$categoryCode}.xlsx";
 

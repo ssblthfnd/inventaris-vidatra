@@ -86,6 +86,16 @@ class ImportController extends ApiController
             throw ValidationException::withMessages([
                 'file' => ['File Excel tidak dapat diproses. Pastikan file menggunakan format dan struktur kolom yang benar (lihat template import), lalu coba lagi.'],
             ]);
+        } catch (\Throwable $e) {
+            // Tahap 6.9 R8.2 (P3-3): an unexpected (non-RuntimeException) failure
+            // must not leave the uploaded file behind either — nothing was
+            // successfully staged, so there is nothing worth auditing, same
+            // reasoning as the RuntimeException branch above. The original
+            // exception is rethrown UNCHANGED (no message/response shape change)
+            // so this stays purely a cleanup addition, not a behavior change.
+            Storage::disk('local')->deleteDirectory($directory);
+
+            throw $e;
         }
 
         // Stage 6.9 R6 — the batch (and its rows) stay in the database

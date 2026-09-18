@@ -220,4 +220,23 @@ class AssetExportTest extends TestCase
         clearstatcache(true, $path);
         $this->assertSame($before, filemtime($path));
     }
+
+    /**
+     * Tahap 6.9 R8.2 (P3-3) — the `tempnam()`'d workbook is removed on the normal
+     * success path (guaranteed via `finally`, not just a bare `unlink()` call at
+     * the end of the method — see AssetExportController). This proves the
+     * success-path half of that guarantee end-to-end over real HTTP.
+     */
+    public function test_no_leftover_temp_file_after_a_successful_export(): void
+    {
+        $this->scope('01', '02', '001');
+        $this->existingAsset('001', 2020, [], '01', '02', '001');
+        Sanctum::actingAs($this->operator());
+
+        $before = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'asset-export-*') ?: [];
+        $this->get('/api/assets/export')->assertOk();
+        $after = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'asset-export-*') ?: [];
+
+        $this->assertSame($before, $after, 'A temp export file was left behind after a successful request.');
+    }
 }

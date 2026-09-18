@@ -145,4 +145,22 @@ class ImportUploadTest extends TestCase
             collect(Storage::disk('local')->allFiles('imports'))->first()
         );
     }
+
+    /**
+     * Tahap 6.9 R8.2 (P3-3) — regression lock: the pre-existing RuntimeException
+     * cleanup branch in ImportController::store() (nothing worth auditing when
+     * staging never produced a batch) must still remove the per-upload directory
+     * exactly as before, unaffected by the new sibling catch(\Throwable) branch
+     * added alongside it for non-RuntimeException failures.
+     */
+    public function test_malformed_upload_directory_is_removed_not_left_behind(): void
+    {
+        Sanctum::actingAs($this->operator());
+        $upload = $this->makeMalformedUpload();
+
+        Storage::fake('local');
+        $this->post('/api/imports', ['file' => $upload])->assertStatus(422);
+
+        $this->assertSame([], Storage::disk('local')->allFiles('imports'));
+    }
 }

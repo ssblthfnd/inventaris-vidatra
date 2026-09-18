@@ -121,4 +121,20 @@ class ImportTemplateTest extends TestCase
 
         $this->assertSame($before, $after);
     }
+
+    /**
+     * Tahap 6.9 R8.2 (P3-3) — same guaranteed-cleanup contract as
+     * AssetExportController's own test; see that file's comment.
+     */
+    public function test_no_leftover_temp_file_after_a_successful_download(): void
+    {
+        $this->scope('01', '02', '001');
+        Sanctum::actingAs($this->operator());
+
+        $before = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'import-template-*') ?: [];
+        $this->get('/api/imports/template?category=02')->assertOk();
+        $after = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'import-template-*') ?: [];
+
+        $this->assertSame($before, $after, 'A temp template file was left behind after a successful request.');
+    }
 }

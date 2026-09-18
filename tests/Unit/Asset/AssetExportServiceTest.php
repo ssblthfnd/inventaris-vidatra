@@ -288,6 +288,81 @@ class AssetExportServiceTest extends TestCase
         $this->assertStringEndsWith('.xlsx', $filename);
     }
 
+    /* ------------------------------------------------------------------ filename sanitization (Tahap 6.9 R8.2, P3-6) */
+
+    /**
+     * @return string the generated filename for one asset whose category is
+     *                 forced to the given (possibly unsafe) raw name
+     */
+    private function filenameForCategoryNamed(string $rawName): string
+    {
+        $this->scope('01', '02', '001');
+        Category::query()->where('code', '02')->update(['name' => $rawName]);
+        $asset = $this->existingAsset('001', 2020, [], '01', '02', '001');
+
+        return $this->service()->filenameFor(Asset::where('id', $asset->id)->get());
+    }
+
+    public function test_filename_sanitizer_preserves_a_normal_category_name(): void
+    {
+        $filename = $this->filenameForCategoryNamed('ELEKTRONIK');
+
+        $this->assertSame('Inventaris ELEKTRONIK - Export '.now()->format('Y-m-d').'.xlsx', $filename);
+    }
+
+    public function test_filename_sanitizer_preserves_spaces_in_a_multi_word_category_name(): void
+    {
+        $filename = $this->filenameForCategoryNamed('Alat Kebersihan');
+
+        $this->assertStringContainsString('Alat Kebersihan', $filename);
+    }
+
+    public function test_filename_sanitizer_replaces_slashes_and_backslashes(): void
+    {
+        $filename = $this->filenameForCategoryNamed('A/B\\C');
+
+        $this->assertStringNotContainsString('/', explode(' - Export', $filename)[0]);
+        $this->assertStringNotContainsString('\\', $filename);
+        $this->assertStringContainsString('A_B_C', $filename);
+    }
+
+    public function test_filename_sanitizer_replaces_double_quotes_preventing_header_injection(): void
+    {
+        $filename = $this->filenameForCategoryNamed('Evil"; filename="hijacked');
+
+        $this->assertStringNotContainsString('"', $filename);
+    }
+
+    public function test_filename_sanitizer_replaces_cr_and_lf_preventing_header_injection(): void
+    {
+        $filename = $this->filenameForCategoryNamed("Evil\r\nX-Injected: 1");
+
+        $this->assertStringNotContainsString("\r", $filename);
+        $this->assertStringNotContainsString("\n", $filename);
+    }
+
+    public function test_filename_sanitizer_replaces_control_characters(): void
+    {
+        $filename = $this->filenameForCategoryNamed("A\x00\x01\x1FB");
+
+        $this->assertMatchesRegularExpression('/^[\x20-\x7E]*$/', $filename, 'Filename must contain only printable ASCII.');
+        $this->assertStringContainsString('A___B', $filename);
+    }
+
+    public function test_filename_sanitizer_trims_leading_and_trailing_unsafe_characters(): void
+    {
+        $filename = $this->filenameForCategoryNamed("\r\n  UnsafeName  \r\n");
+
+        $this->assertStringStartsWith('Inventaris UnsafeName', $filename);
+    }
+
+    public function test_filename_sanitizer_falls_back_when_the_whole_name_is_unsafe(): void
+    {
+        $filename = $this->filenameForCategoryNamed("\x00\x01\x02");
+
+        $this->assertStringContainsString('Kategori', $filename);
+    }
+
     /* ------------------------------------------------------------------ formula injection (Tahap 6.6, L-3) */
 
     /**

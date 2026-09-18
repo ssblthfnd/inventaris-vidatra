@@ -22,6 +22,17 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     /**
+     * A precomputed, constant bcrypt hash of an unguessable, never-typed value —
+     * NOT a real password or a DB value, and never regenerated per-request. Used
+     * only so {@see Hash::check()} still runs its full cost when the email lookup
+     * fails, so a nonexistent-email request takes about as long as a real-email
+     * request with a wrong password (Tahap 6.9 R8.2, P3-1 — closes the timing
+     * side-channel that previously let response latency alone reveal whether an
+     * email exists, since `Hash::check()` was only reached on a successful lookup).
+     */
+    private const DUMMY_PASSWORD_HASH = '$2y$12$KrbT2JuT9mHngpjmJzcDJuojeSQDmGauBQYl90cCPfXfYj2lo2o9W';
+
+    /**
      * POST /api/login
      *
      * 422 — missing/invalid input or wrong credentials (Laravel validation shape).
@@ -34,7 +45,13 @@ class AuthController extends Controller
 
         $user = User::query()->where('email', $credentials['email'])->first();
 
-        if ($user === null || ! Hash::check($credentials['password'], $user->password)) {
+        // Always call Hash::check(), even when no user was found — against the
+        // real user's hash when one exists, otherwise against the constant dummy
+        // hash above, so both branches pay the same bcrypt cost (P3-1).
+        $hashToCheck = $user->password ?? self::DUMMY_PASSWORD_HASH;
+        $passwordMatches = Hash::check($credentials['password'], $hashToCheck);
+
+        if ($user === null || ! $passwordMatches) {
             throw ValidationException::withMessages([
                 'email' => [trans('auth.failed')],
             ]);

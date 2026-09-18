@@ -103,12 +103,38 @@ final class AssetExportService
 
         if ($categoryCodes->count() === 1) {
             $category = Category::query()->find($categoryCodes->first());
-            $label = $category !== null ? $category->name : $categoryCodes->first();
+            $label = $category !== null
+                ? $this->sanitizeFilenameSegment($category->name)
+                : $categoryCodes->first();
 
             return "Inventaris {$label} - Export {$date}.xlsx";
         }
 
         return "Inventaris - Export {$date}.xlsx";
+    }
+
+    /**
+     * Defense-in-depth filename sanitizer (Tahap 6.9 R8.2, P3-6) — `Category::name`
+     * is only ever writable via `can:admin`-gated `categories.manage`, so this is
+     * not closing a reachable exploit for a lower-privileged role today, but the
+     * `Content-Disposition` header this feeds is still built by simple string
+     * interpolation, so an admin-set name containing a `"`, a path separator, or a
+     * raw CR/LF should never be able to break out of the quoted filename or inject
+     * an extra header line. Same whitelist philosophy as
+     * {@see \App\Services\Label\AssetLabelPdfService::individualFilename()}, widened
+     * to also allow a literal space — unlike a generated `asset_code`, a category
+     * name is free text meant to stay human-readable in the downloaded filename
+     * (e.g. "Alat Kebersihan"), so collapsing every space to `_` would needlessly
+     * mangle it. No Unicode normalization: plain byte-level whitelist is enough to
+     * neutralize the characters that actually matter here (quotes, slashes,
+     * control characters including CR/LF).
+     */
+    private function sanitizeFilenameSegment(string $value): string
+    {
+        $safe = preg_replace('/[^A-Za-z0-9 ._-]/', '_', $value) ?? $value;
+        $safe = trim($safe, " _");
+
+        return $safe !== '' ? $safe : 'Kategori';
     }
 
     private function sheetTitle(string $categoryCode): string

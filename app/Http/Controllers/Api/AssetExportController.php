@@ -49,12 +49,21 @@ class AssetExportController extends ApiController
 
         $spreadsheet = $service->build($assets);
 
+        // Tahap 6.9 R8.2 (P3-3): guaranteed cleanup — the temp file is removed on
+        // success AND on any exception (expected or not) thrown between here and
+        // the read, never only on the happy path. The original exception, if any,
+        // is never suppressed — `finally` runs then lets it continue propagating.
         $tempPath = tempnam(sys_get_temp_dir(), 'asset-export-');
-        (new Xlsx($spreadsheet))->save($tempPath);
-        $spreadsheet->disconnectWorksheets();
+        try {
+            (new Xlsx($spreadsheet))->save($tempPath);
+            $spreadsheet->disconnectWorksheets();
 
-        $contents = file_get_contents($tempPath);
-        unlink($tempPath);
+            $contents = file_get_contents($tempPath);
+        } finally {
+            if (is_string($tempPath) && is_file($tempPath)) {
+                unlink($tempPath);
+            }
+        }
 
         $filename = $service->filenameFor($assets);
 

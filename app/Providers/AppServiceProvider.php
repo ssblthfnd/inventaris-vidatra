@@ -32,6 +32,7 @@ class AppServiceProvider extends ServiceProvider
         DeploymentSafety::assertLogLevelSafety((string) config('app.env'), (string) config('logging.level'));
 
         $this->configureLoginRateLimiter();
+        $this->configureQrRedirectRateLimiter();
     }
 
     /**
@@ -62,6 +63,25 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perMinute(5)->by('login:email-ip:'.$email.'|'.$ip),
                 Limit::perMinute(20)->by('login:ip:'.$ip),
             ];
+        });
+    }
+
+    /**
+     * `GET /a/{asset}` rate limiting (Tahap 6.9 R8.2, P3-2). The route is
+     * deliberately public (printed QR labels must resolve pre-login — see
+     * {@see \App\Http\Controllers\AssetQrRedirectController}) and returns no
+     * asset data, only a 302/404 based on whether the id exists. Without any
+     * limiter, an unauthenticated caller could script sequential requests to
+     * infer roughly how many assets exist. One IP-based limit is enough here
+     * (unlike login, there is no separate credential/account dimension to
+     * protect against) — generous enough that a person physically scanning
+     * several printed labels in a row, or a shared-NAT office of scanners,
+     * never trips it, but bounded enough to blunt bulk enumeration.
+     */
+    private function configureQrRedirectRateLimiter(): void
+    {
+        RateLimiter::for('qr-redirect', function (Request $request) {
+            return Limit::perMinute(60)->by('qr-redirect:ip:'.(string) $request->ip());
         });
     }
 }

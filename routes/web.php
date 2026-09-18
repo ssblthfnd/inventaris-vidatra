@@ -7,10 +7,13 @@ use Illuminate\Support\Facades\Route;
 | Public QR-code redirect layer (Tahap 6.0). Registered BEFORE the SPA catch-all so
 | it never falls through to the HTML shell. See AssetQrRedirectController for why
 | this exists, why it uses asset.id, and why it deliberately does not require auth.
+| `throttle:qr-redirect` (Tahap 6.9 R8.2, P3-2) — IP-based limiter defined in
+| AppServiceProvider::configureQrRedirectRateLimiter(); stays public, no auth bypass.
 */
 Route::get('/a/{asset}', AssetQrRedirectController::class)
     ->whereNumber('asset')
     ->withTrashed()
+    ->middleware('throttle:qr-redirect')
     ->name('asset.qr-redirect');
 
 /*

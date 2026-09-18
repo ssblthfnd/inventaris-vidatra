@@ -73,4 +73,50 @@ class AssetQrRedirectTest extends TestCase
         $response->assertRedirect();
         $this->assertStringNotContainsString($asset->asset_code, $response->getContent() ?: '');
     }
+
+    /**
+     * Tahap 6.9 R8.2 (P3-2) — `throttle:qr-redirect`, defined in
+     * `AppServiceProvider::configureQrRedirectRateLimiter()` (60/min per IP).
+     * `TestCase::setUp()` flushes the cache before every test (see
+     * `LoginRateLimitTest`'s own docblock for why), so this never sees hits left
+     * over from another test.
+     */
+    private function requestFromIp(string $path, string $ip)
+    {
+        return $this->withServerVariables(['REMOTE_ADDR' => $ip])->get($path);
+    }
+
+    public function test_repeated_requests_from_one_ip_eventually_receive_429(): void
+    {
+        $asset = $this->existingAsset('001');
+
+        for ($i = 1; $i <= 60; $i++) {
+            $response = $this->requestFromIp("/a/{$asset->id}", '203.0.113.40');
+            $this->assertNotSame(429, $response->getStatusCode(), "Request {$i} was throttled too early.");
+        }
+
+        $this->requestFromIp("/a/{$asset->id}", '203.0.113.40')->assertStatus(429);
+    }
+
+    public function test_throttle_does_not_block_normal_scanning_volume(): void
+    {
+        $asset = $this->existingAsset('001');
+
+        for ($i = 1; $i <= 5; $i++) {
+            $this->requestFromIp("/a/{$asset->id}", '203.0.113.41')->assertRedirect("/inventory/{$asset->id}");
+        }
+    }
+
+    public function test_a_different_ip_is_not_affected_by_another_ips_throttle(): void
+    {
+        $asset = $this->existingAsset('001');
+
+        for ($i = 1; $i <= 60; $i++) {
+            $this->requestFromIp("/a/{$asset->id}", '203.0.113.42');
+        }
+        $this->requestFromIp("/a/{$asset->id}", '203.0.113.42')->assertStatus(429);
+
+        // A different IP is on its own separate bucket, unaffected.
+        $this->requestFromIp("/a/{$asset->id}", '203.0.113.43')->assertRedirect("/inventory/{$asset->id}");
+    }
 }
