@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
 import ImportRowsTable from '../components/imports/ImportRowsTable';
+import RoomMappingSection from '../components/imports/RoomMappingSection';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import { ApiError } from '../lib/api';
 import { CenteredState } from '../lib/assetFields';
@@ -368,6 +369,11 @@ export default function Imports() {
               )}
             </div>
           )}
+
+          <RoomMappingSection
+            batchId={batch.id}
+            onResolved={() => loadRows(batch.id, statusFilter, rowsPage)}
+          />
 
           <div className="flex flex-wrap gap-2">
             {IMPORT_STATUS_OPTIONS.map((opt) => (

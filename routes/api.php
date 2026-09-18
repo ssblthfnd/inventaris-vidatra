@@ -172,6 +172,12 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('imports/{batch}/rows', [ImportController::class, 'rows'])->name('api.imports.rows');
         Route::post('imports/{batch}/promote', [ImportController::class, 'promote'])->name('api.imports.promote');
         Route::get('imports/{batch}/report', [ImportController::class, 'report'])->name('api.imports.report');
+
+        // Tahap 6.9 R9.2 — same `can:assets.import` gate, location-based (not
+        // ImportBatchPolicy/ownership) authorization inside RoomMappingResolver,
+        // matching `promote` above.
+        Route::get('imports/{batch}/room-mappings', [ImportController::class, 'roomMappings'])->name('api.imports.room-mappings.index');
+        Route::post('imports/{batch}/room-mappings/resolve', [ImportController::class, 'resolveRoomMapping'])->name('api.imports.room-mappings.resolve');
     });
 
     // --- everything else that was, and remains, operator/admin only:

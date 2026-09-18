@@ -126,3 +126,21 @@ export function promoteImportBatch(batchId) {
 export function getImportReport(batchId) {
   return api.get(`/api/imports/${batchId}/report`);
 }
+
+/** Tahap 6.9 R9.2 — distinct (location_code, normalized raw value) unmapped room groups for one batch. */
+export function getRoomMappings(batchId) {
+  return api.get(`/api/imports/${batchId}/room-mappings`);
+}
+
+/**
+ * Resolves one unmapped group to `roomId` — for this batch only, or
+ * permanently as a new alias when `saveAsAlias` is true.
+ */
+export function resolveRoomMapping(batchId, { locationCode, rawValue, roomId, saveAsAlias }) {
+  return api.post(`/api/imports/${batchId}/room-mappings/resolve`, {
+    location_code: locationCode,
+    raw_value: rawValue,
+    room_id: roomId,
+    save_as_alias: saveAsAlias,
+  });
+}

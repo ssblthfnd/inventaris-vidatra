@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Requests\Api\ImportRowIndexRequest;
+use App\Http\Requests\Api\ResolveRoomMappingRequest;
 use App\Http\Requests\Api\StoreImportRequest;
 use App\Http\Resources\ImportBatchCollection;
 use App\Http\Resources\ImportBatchResource;
@@ -10,6 +11,7 @@ use App\Http\Resources\ImportRowCollection;
 use App\Import\ImportManager;
 use App\Import\Promotion\AssetPromoter;
 use App\Import\Reporting\ImportReporter;
+use App\Import\RoomMapping\RoomMappingResolver;
 use App\Models\ImportBatch;
 use App\Policies\ImportBatchPolicy;
 use Illuminate\Http\JsonResponse;
@@ -227,5 +229,46 @@ class ImportController extends ApiController
                 'duplicates' => $reporter->duplicates(),
             ],
         ]);
+    }
+
+    /**
+     * Tahap 6.9 R9.2 — distinct (location_code, normalized raw value) unmapped
+     * room groups for this batch, silently narrowed to the actor's own
+     * location for `unit_admin`. Deliberately NOT an `ImportBatchPolicy`
+     * (ownership) check — see {@see RoomMappingResolver}'s class docblock for
+     * why this mirrors `promote()`'s location-based precedent instead.
+     */
+    public function roomMappings(Request $request, ImportBatch $batch, RoomMappingResolver $resolver): JsonResponse
+    {
+        return response()->json([
+            'data' => $resolver->unmappedGroups($batch, $request->user()),
+        ]);
+    }
+
+    /**
+     * Tahap 6.9 R9.2 — resolves one unmapped room group (`location_code` +
+     * `raw_value`) to `room_id`, for this batch's still-unresolved,
+     * still-unpromoted rows only. `save_as_alias` additionally persists a
+     * `room_aliases` row so future imports resolve it automatically via the
+     * existing {@see \App\Import\Matching\RoomMatcher}. See
+     * {@see RoomMappingResolver::resolve()} for the full authorization/
+     * concurrency contract.
+     */
+    public function resolveRoomMapping(ResolveRoomMappingRequest $request, ImportBatch $batch, RoomMappingResolver $resolver): JsonResponse
+    {
+        try {
+            $result = $resolver->resolve(
+                $batch,
+                $request->validated('location_code'),
+                $request->validated('raw_value'),
+                (int) $request->validated('room_id'),
+                $request->saveAsAlias(),
+                $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            throw ValidationException::withMessages(['room_id' => [$e->getMessage()]]);
+        }
+
+        return response()->json(['data' => $result]);
     }
 }
