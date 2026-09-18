@@ -76,10 +76,17 @@ final class ImportReporter
         return $out;
     }
 
-    /** @return array{exact_name:int, alias:int, none:int, total:int, distinct_raw:int} */
-    public function roomMethodTotals(): array
+    /**
+     * @param  list<array{location_code:string,raw_value:string,normalized_match_key:string,match_method:string,matched_room_id:?int,canonical_room_name:?string,count:int}>|null  $roomMapping
+     *         pass an already-computed {@see roomMapping()} result to avoid recomputing it
+     *         (Tahap 6.9 R9.1 — see {@see consistencyCheck()}'s docblock); omitted/null keeps the
+     *         original self-contained behavior (computes it internally), unchanged for existing
+     *         callers like `InventoryReportCommand`.
+     * @return array{exact_name:int, alias:int, none:int, total:int, distinct_raw:int}
+     */
+    public function roomMethodTotals(?array $roomMapping = null): array
     {
-        $rows = $this->roomMapping();
+        $rows = $roomMapping ?? $this->roomMapping();
         $out = ['exact_name' => 0, 'alias' => 0, 'none' => 0, 'total' => 0, 'distinct_raw' => count($rows)];
         foreach ($rows as $r) {
             $out[$r['match_method']] += $r['count'];
@@ -278,12 +285,23 @@ final class ImportReporter
     /**
      * Regression check: the report must never present contradictory counts.
      *
+     * Tahap 6.9 R9.1 (query-redundancy hardening, P2): a caller that has already
+     * computed {@see promotionSummary()} and/or {@see roomMethodTotals()} for the
+     * SAME batch scope in the same request (e.g. `ImportController::report()`,
+     * which needs both independently for its own response keys) can pass them in
+     * here to avoid this method re-running those queries a second time. Omitted/
+     * null preserves the original self-contained behavior — computes both itself
+     * — unchanged for existing callers like `InventorySelfTestCommand` that only
+     * ever call `consistencyCheck()` on its own.
+     *
+     * @param  array{total:int,valid:int,warning:int,error:int,promotable:int,promoted:int,promotion_failed:int,not_yet_promoted:int,assets_created:int}|null  $summary
+     * @param  array{exact_name:int, alias:int, none:int, total:int, distinct_raw:int}|null  $roomMethodTotals
      * @return list<array{check:string, ok:bool, detail:string}>
      */
-    public function consistencyCheck(): array
+    public function consistencyCheck(?array $summary = null, ?array $roomMethodTotals = null): array
     {
-        $s = $this->promotionSummary();
-        $rm = $this->roomMethodTotals();
+        $s = $summary ?? $this->promotionSummary();
+        $rm = $roomMethodTotals ?? $this->roomMethodTotals();
 
         $checks = [];
         $add = function (string $name, bool $ok, string $detail) use (&$checks): void {

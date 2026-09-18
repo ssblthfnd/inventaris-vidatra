@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import RevertConfirmDialog from './RevertConfirmDialog';
 import { ApiError } from '../../lib/api';
@@ -30,6 +30,19 @@ import {
  * successful revert refreshes this section's own history AND calls
  * `onReverted(assets)` so the parent can patch the asset it's showing without
  * a full page reload.
+ *
+ * Tahap 6.9 R9.1 (P2, request-waterfall hardening): `initialFetch`, if given, is
+ * an ALREADY-STARTED `getAssetMutations(assetId, {page:1})` promise the parent
+ * (AssetDetail) kicked off in parallel with its own asset-detail fetch, instead
+ * of this section only starting its request once it mounts (which previously
+ * only happened after the asset-detail fetch resolved — a sequential waterfall
+ * even though this section never actually needs the resolved asset data, only
+ * `assetId` from the route). Used for the very first load ONLY (tracked via a
+ * ref so it's a one-shot substitution) — every later reload this section does on
+ * its own (refresh after a lifecycle action, "Coba lagi", "Muat lebih banyak")
+ * still calls `getAssetMutations` itself exactly as before. This never causes a
+ * duplicate request: either the parent's promise is consumed here, or this
+ * section makes its own single call — never both for the same load.
  */
 
 function HistorySkeleton() {
@@ -132,7 +145,13 @@ function HistoryEventCard({ event, isOperator, onRevertClick }) {
   );
 }
 
-export default function AssetHistorySection({ assetId, refreshSignal, isOperator = false, onReverted }) {
+export default function AssetHistorySection({
+  assetId,
+  refreshSignal,
+  isOperator = false,
+  onReverted,
+  initialFetch = null,
+}) {
   const [phase, setPhase] = useState('loading'); // loading | ready | error
   const [events, setEvents] = useState([]);
   const [meta, setMeta] = useState(null);
@@ -143,12 +162,23 @@ export default function AssetHistorySection({ assetId, refreshSignal, isOperator
   const [revertTarget, setRevertTarget] = useState(null); // the event being confirmed
   const [flash, setFlash] = useState('');
 
+  // One-shot: consume the parent's prefetched promise on this section's very
+  // first load only. Every subsequent effect run (refreshSignal/retryKey
+  // change) falls through to this section's own normal fetch, unchanged.
+  const consumedInitialFetch = useRef(false);
+
   useEffect(() => {
     let alive = true;
     setPhase('loading');
     setError('');
 
-    getAssetMutations(assetId, { page: 1 })
+    const request =
+      !consumedInitialFetch.current && initialFetch
+        ? initialFetch
+        : getAssetMutations(assetId, { page: 1 });
+    consumedInitialFetch.current = true;
+
+    request
       .then((res) => {
         if (!alive) return;
         setEvents(res?.data ?? []);

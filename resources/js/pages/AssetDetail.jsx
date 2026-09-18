@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
@@ -6,6 +6,7 @@ import AssetHistorySection from '../components/asset-detail/AssetHistorySection'
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import PrintLabelMenu from '../components/PrintLabelMenu';
 import { api, ApiError } from '../lib/api';
+import { getAssetMutations } from '../lib/assetHistory';
 import { printAssetLabel } from '../lib/labels';
 
 /**
@@ -190,6 +191,25 @@ export default function AssetDetail() {
 
   const from = location.state?.from;
   const backTo = typeof from === 'string' && from ? `/inventory?${from}` : '/inventory';
+
+  // Tahap 6.9 R9.1 (P2, request-waterfall hardening): starts the mutation-history
+  // request at the same time as the asset-detail request below, instead of
+  // AssetHistorySection only starting it once it mounts (which only happened
+  // after THIS fetch resolved and phase became 'ready' — a sequential waterfall
+  // even though history only ever needs `assetId` from the route, never the
+  // resolved asset). Re-fires on the same [assetId, attempt] as the asset fetch
+  // so a "Coba lagi" retry gets a genuinely fresh history prefetch too, not a
+  // stale one from the original failed attempt. If the asset turns out
+  // notfound/forbidden/error, AssetHistorySection never mounts and this
+  // prefetch's result is simply never consumed — harmless, and the identical
+  // backend authorization check on `/api/assets/{id}/mutations` runs regardless
+  // of whether anything reads the response (see AssetHistorySection's docblock).
+  const historyPrefetchRef = useRef(null);
+  useEffect(() => {
+    const request = getAssetMutations(assetId, { page: 1 });
+    request.catch(() => {}); // avoid an unhandled-rejection warning if never consumed below
+    historyPrefetchRef.current = request;
+  }, [assetId, attempt]);
 
   useEffect(() => {
     let alive = true;
@@ -536,6 +556,7 @@ export default function AssetDetail() {
         assetId={asset.id}
         refreshSignal={historyRefreshKey}
         isOperator={canWriteInventory}
+        initialFetch={historyPrefetchRef.current}
         onReverted={(reverted) => {
           const updated = reverted.find((a) => a.id === asset.id);
           if (updated) setAsset(updated);

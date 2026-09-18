@@ -207,11 +207,22 @@ class ImportController extends ApiController
 
         $reporter = new ImportReporter([$batch->id]);
 
+        // Tahap 6.9 R9.1 (P2, query-redundancy hardening): summary/room_mapping are
+        // needed for their own response keys below AND as consistencyCheck()'s
+        // inputs — compute each exactly once and pass the results in, instead of
+        // letting consistencyCheck() recompute both internally a second time
+        // (was 22 queries total for this endpoint, 9 of them pure re-execution;
+        // see ImportReporter::consistencyCheck()'s docblock). Values returned are
+        // identical either way — this only removes duplicate query execution.
+        $summary = $reporter->promotionSummary();
+        $roomMapping = $reporter->roomMapping();
+        $roomMethodTotals = $reporter->roomMethodTotals($roomMapping);
+
         return response()->json([
             'data' => [
-                'summary' => $reporter->promotionSummary(),
-                'consistency' => $reporter->consistencyCheck(),
-                'room_mapping' => $reporter->roomMapping(),
+                'summary' => $summary,
+                'consistency' => $reporter->consistencyCheck($summary, $roomMethodTotals),
+                'room_mapping' => $roomMapping,
                 'data_quality' => $reporter->dataQuality(),
                 'duplicates' => $reporter->duplicates(),
             ],
