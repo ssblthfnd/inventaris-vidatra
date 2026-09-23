@@ -4,6 +4,7 @@ namespace App\Import\Promotion;
 
 use App\Import\Parsing\ParsedRow;
 use App\Import\Validation\DuplicateChecker;
+use App\Models\Asset;
 use App\Models\User;
 use App\Support\LocationScope;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -18,7 +19,9 @@ use Throwable;
  *  - Each row promoted inside its own DB transaction. A row that fails on a constraint is
  *    NOT silently skipped — the error is written back to validation_messages.
  *  - Re-running is safe: an already-promoted row is skipped (idempotent).
- *  - `asset_code` is NEVER written — it is a DB generated column.
+ *  - `asset_code` is computed via {@see Asset::composeCode()} and written explicitly —
+ *    it is NOT a DB generated column here (testing-hosting deviation, see the `assets`
+ *    migration) and this insert bypasses Eloquent's `saving()` event entirely.
  *  - NO mutation_logs are created (initial inventory = initial state, §31).
  *  - Existing-asset duplicate is re-checked inside the transaction (final-state check, §29).
  *
@@ -34,9 +37,7 @@ use Throwable;
  */
 final class AssetPromoter
 {
-    public function __construct(private readonly DuplicateChecker $duplicates)
-    {
-    }
+    public function __construct(private readonly DuplicateChecker $duplicates) {}
 
     /**
      * @return array{promoted:int, skipped_already:int, failed:int, errors:list<array{row:int,message:string}>}
@@ -142,7 +143,13 @@ final class AssetPromoter
                 'subcategory_code' => $parsed['subcategory_code'],
                 'sequence_no' => $parsed['sequence_no'],       // string, EXACTLY as read
                 'asset_year' => $parsed['asset_year'],
-                // asset_code: GENERATED — do NOT insert
+                'asset_code' => Asset::composeCode(
+                    $parsed['location_code'],
+                    $parsed['category_code'],
+                    $parsed['subcategory_code'],
+                    $parsed['sequence_no'],
+                    $parsed['asset_year'],
+                ),
                 'room_id' => $stagedRow->matched_room_id,       // null => unmapped (kept for review)
                 'room_raw_value' => $parsed['room_raw_value'],
                 'condition' => $parsed['condition_parsed'],     // may be null (unknown/ambiguous)
@@ -186,7 +193,7 @@ final class AssetPromoter
             'code' => 'promotion_failed',
             'severity' => 'error',
             'field' => null,
-            'message' => 'promotion failed: ' . $message,
+            'message' => 'promotion failed: '.$message,
         ];
         DB::table('import_rows')->where('id', $stagedRow->id)->update([
             'validation_messages' => json_encode($messages, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),

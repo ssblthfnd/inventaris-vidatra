@@ -11,7 +11,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * Read shape for the inventory UI. Internal / audit columns are NOT exposed:
  * `import_row_id`, `created_by`, `updated_by`, `created_at`, `updated_at`, `deleted_at`.
- * `asset_code` is taken straight from the DB (STORED generated column) — never rebuilt.
+ * `asset_code` is taken straight from the model attribute (see `Asset::composeCode()`) —
+ * never rebuilt here.
  */
 class AssetResource extends JsonResource
 {

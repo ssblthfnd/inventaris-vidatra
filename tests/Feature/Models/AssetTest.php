@@ -24,14 +24,15 @@ class AssetTest extends TestCase
         return [$location, $category, $subcategory];
     }
 
-    public function test_asset_code_is_generated_by_the_database_without_application_input(): void
+    public function test_asset_code_is_computed_from_its_five_components_without_application_input(): void
     {
         [$location, $category, $subcategory] = $this->identityFixtures();
 
+        // never provided by the caller — Asset::factory()->identity() only sets the five
+        // source components; asset_code is derived by the model's saving() event.
         $asset = Asset::factory()->identity('01', '02', '001', '001', 2026)->create();
 
-        // never provided by the app
-        $this->assertNull($asset->getAttributes()['asset_code'] ?? null);
+        $this->assertSame('01.02.001.001.2026', $asset->getAttributes()['asset_code'] ?? null);
 
         $asset->refresh();
         $this->assertSame('01.02.001.001.2026', $asset->asset_code);

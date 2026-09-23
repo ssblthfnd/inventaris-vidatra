@@ -458,11 +458,9 @@ class AssetLabelPdfService
      * R8 — the filename for one asset's Individual-mode PDF (the single-asset
      * case only — see {@see renderIndividualMulti()} for more than one):
      * `label-{asset_code}.pdf`, e.g. `label-01.02.001.001.2025.pdf`.
-     * `asset_code` is a DB `GENERATED ALWAYS AS ... STORED` column built from
-     * digits/dots (see the `assets` table migration) so this is
-     * defensive-only, not a real-world requirement today: any character that
-     * isn't filesystem-safe is replaced with `_`, and the database value
-     * itself is never touched.
+     * `asset_code` is built from digits/dots only (see `Asset::composeCode()`) so this
+     * is defensive-only, not a real-world requirement today: any character that isn't
+     * filesystem-safe is replaced with `_`, and the stored value itself is never touched.
      */
     public function individualFilename(Asset $asset): string
     {

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AssetCondition;
+use App\Import\Promotion\AssetPromoter;
 use Database\Factories\AssetFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -17,9 +18,14 @@ use Illuminate\Support\Collection;
  * Inventory asset — one row = one physical unit (schema_design.md §2.6, Tahap 4 B3).
  *
  * Key rules honoured here:
- *  - `asset_code` is a DB STORED GENERATED column
- *    (location.category.subcategory.sequence.year). It is NOT fillable, has no mutator,
- *    and is never assigned by application code — the database produces it.
+ *  - `asset_code` (location.category.subcategory.sequence.year) is computed by
+ *    {@see self::composeCode()} and assigned by the `saving()` model event below — NOT
+ *    a DB generated column. The original design (Opsi C, §5.2, F4) used a DB
+ *    `GENERATED ALWAYS AS (...) STORED` column, but the testing deployment's shared-
+ *    hosting MySQL/MariaDB rejects every function inside a generated/stored column
+ *    expression with error 1901, so this is a testing-only deviation (see the migration
+ *    for `assets`). It is NOT fillable and has no public mutator — application code
+ *    never assigns it directly, the model event still owns it exclusively.
  *  - `sequence_no` stays a STRING verbatim ('001', '0001', '005A', '0017B'); never cast
  *    to int (Tahap 4 B2).
  *  - `quantity` is fixed at 1 (DB `CHECK (quantity = 1)`); grouped assets are unsupported.
@@ -70,7 +76,7 @@ class Asset extends Model
     {
         return [
             // sequence_no: intentionally NOT cast — must stay a string verbatim.
-            // asset_code: intentionally NOT cast — read-only DB generated column.
+            // asset_code: intentionally NOT cast — read-only, app-computed (see composeCode()).
             'asset_year' => 'integer',
             'quantity' => 'integer',
             'is_written_off' => 'boolean',
@@ -78,6 +84,30 @@ class Asset extends Model
             'purchase_date' => 'date',
             'written_off_on' => 'date',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $asset): void {
+            $asset->attributes['asset_code'] = self::composeCode(
+                $asset->location_code,
+                $asset->category_code,
+                $asset->subcategory_code,
+                $asset->sequence_no,
+                $asset->asset_year,
+            );
+        });
+    }
+
+    /**
+     * Build the canonical `asset_code` from its five authoritative components, dot-
+     * separated. Kept as a single shared implementation used both here (the `saving()`
+     * event, for every Eloquent write) and by {@see AssetPromoter},
+     * whose bulk-promote path inserts via the query builder and so bypasses model events.
+     */
+    public static function composeCode(string $locationCode, string $categoryCode, string $subcategoryCode, string $sequenceNo, int $assetYear): string
+    {
+        return "{$locationCode}.{$categoryCode}.{$subcategoryCode}.{$sequenceNo}.{$assetYear}";
     }
 
     /* ------------------------------------------------------------------ relations */

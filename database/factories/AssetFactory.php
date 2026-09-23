@@ -12,9 +12,9 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 /**
  * @extends Factory<Asset>
  *
- * NEVER sets `asset_code` — the database generates it (STORED column). The factory
- * only fills the five source components and descriptive fields, and does NOT depend on
- * the asset-number generator (Tahap 5.4).
+ * NEVER sets `asset_code` — it is computed by the Asset model's `saving()` event (see
+ * Asset::composeCode()). The factory only fills the five source components and
+ * descriptive fields, and does NOT depend on the asset-number generator (Tahap 5.4).
  */
 class AssetFactory extends Factory
 {

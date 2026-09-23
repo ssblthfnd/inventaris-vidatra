@@ -23,8 +23,9 @@ use Illuminate\Validation\ValidationException;
  * service owns transactions, the sequence generator, concurrency retries, and
  * mutation logging.
  *
- *  - `asset_code` is a DB generated column — never assigned; the model is refreshed
- *    after every write so the Resource emits the current value (§20).
+ *  - `asset_code` is computed by the Asset model's `saving()` event (see
+ *    Asset::composeCode()) — never assigned here; the model is refreshed after every
+ *    write so the Resource emits the current value (§20).
  *  - `sequence_no` is allocated by {@see AssetNumberGenerator} on create and is
  *    NEVER changed afterwards (§10, §19).
  *  - Soft delete / restore keep the same row, id, sequence and asset_code (§7, §23).
@@ -134,7 +135,7 @@ class AssetWriteService
                     $ids[] = $asset->id;
                 }
 
-                // one bulk reload so `asset_code` (DB generated column) is populated
+                // one bulk reload so relations are eager-loaded for the mutation snapshot
                 $created = Asset::query()
                     ->with(['location', 'category', 'room'])
                     ->whereIn('id', $ids)

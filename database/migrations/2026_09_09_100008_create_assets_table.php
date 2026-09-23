@@ -9,8 +9,13 @@ use Illuminate\Support\Facades\Schema;
  * schema_design.md §2.6 `assets` — tabel inti. 1 baris = 1 physical asset (P3, B3).
  *
  *  - Nomor aset disimpan sebagai 5 komponen terpisah (authoritative) + `asset_code`
- *    GENERATED ALWAYS AS (...) STORED (Opsi C, §5.2, F4). asset_code dihasilkan DB —
- *    tidak dibuat di application layer.
+ *    (Opsi C, §5.2, F4 — desain aslinya GENERATED ALWAYS AS (...) STORED, tapi server
+ *    MySQL/MariaDB shared-hosting untuk deployment testing ini menolak SEMUA fungsi di
+ *    dalam generated/stored column expression dengan error 1901, termasuk CONCAT polos
+ *    — bukan cuma CONCAT_WS. Jadi testing snapshot ini pakai kolom biasa yang dihitung
+ *    & diisi di application layer, bukan oleh DB. Lihat App\Models\Asset::composeCode()
+ *    dan App\Import\Promotion\AssetPromoter — testing-only deviation dari desain
+ *    produksi, sama seperti deviasi collation di migration users.
  *  - `sequence_no` VARCHAR(10) — string apa adanya, tanpa padding/cast/normalisasi (B2).
  *  - `asset_year` SMALLINT UNSIGNED — bagian identitas unik, BUKAN bagian scope generator (B1).
  *  - Identitas bisnis: UNIQUE(location_code, category_code, subcategory_code, sequence_no, asset_year).
@@ -40,9 +45,13 @@ return new class extends Migration
             $table->string('sequence_no', 10);              // string apa adanya (B2)
             $table->unsignedSmallInteger('asset_year');
 
-            // --- turunan: rekonstruksi kanonik, separator titik (dihasilkan DB) ---
-            $table->string('asset_code', 40)
-                ->storedAs("concat_ws('.', location_code, category_code, subcategory_code, sequence_no, asset_year)");
+            // --- turunan: rekonstruksi kanonik, separator titik ---
+            // Plain column, NOT a DB generated column — this testing server's MySQL/MariaDB
+            // rejects every function (plain CONCAT included, not just CONCAT_WS) inside a
+            // GENERATED ALWAYS AS (...) STORED expression with error 1901. The value is
+            // computed and assigned in the application layer instead (Asset::composeCode(),
+            // used by the Asset model's saving() hook and by AssetPromoter's raw insert).
+            $table->string('asset_code', 40);
 
             // --- penempatan ruangan (P6, P7, P10) ---
             $table->unsignedBigInteger('room_id')->nullable();      // NULL = belum terpetakan
