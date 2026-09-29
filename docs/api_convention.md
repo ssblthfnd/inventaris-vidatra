@@ -649,7 +649,7 @@ rule untouched). `asset_code` is not rebuilt anywhere.
 - **Development DB:** `inventaris_vidatra` (`.env`) — never touched by the test suite.
 - **Test DB:** `inventaris_vidatra_test` (`phpunit.xml` + `.env.testing`).
 - SQLite cannot be used — the domain schema needs MySQL 8 features (STORED generated
-  column, `CHECK`, composite FKs, `utf8mb4_0900_ai_ci`).
+  column, `CHECK`, composite FKs, `utf8mb4_unicode_ci`).
 - `tests/TestCase.php::refreshApplication()` **aborts the run** if the default connection
   is not `inventaris_vidatra_test`.
 - Feature tests use `RefreshDatabase` + factories (never the real 394-row inventory data).
