@@ -46,12 +46,22 @@ use Illuminate\Validation\Rule;
  *  - `room_id[]` combined with `location_code[]`: every room must belong to one of the
  *    selected locations, otherwise `422` (mirrors the write API's room↔location rule
  *    and the composite FK defence-in-depth).
+ *  - `room_id[]` additionally accepts the sentinel `none` = `room_id IS NULL` (an asset
+ *    with no room assigned), same pattern as `condition[]=unknown` — deliberately a
+ *    different word, so `unknown` keeps meaning only "condition not determined".
+ *    `room_id[]=12&room_id[]=none` => `room_id = 12 OR room_id IS NULL`. `none` has
+ *    no location, so the room↔location rule above never applies to it (Tahap 6.9
+ *    R9.4-13). An asset whose room exists but is INACTIVE is not "without room" and
+ *    is never matched by `none`.
  *
  * `per_page` is REJECTED above 100 (never silently clamped). `asset_year` accepts
  * 1980..currentYear+1.
  */
 class AssetIndexRequest extends FormRequest
 {
+    /** `room_id[]` sentinel for `room_id IS NULL` — see the class docblock. */
+    public const ROOMLESS = 'none';
+
     /** Filters that accept multiple values. */
     private const MULTI = [
         'location_code', 'category_code', 'subcategory_code', 'room_id',
@@ -210,7 +220,8 @@ class AssetIndexRequest extends FormRequest
     private function validRooms(): \Closure
     {
         return function (string $attribute, mixed $value, \Closure $fail): void {
-            $ids = array_values((array) $value);
+            // the `none` sentinel names no room: nothing to look up or location-check
+            $ids = array_values(array_filter((array) $value, fn ($v): bool => $v !== self::ROOMLESS));
             if ($ids === []) {
                 return;
             }
@@ -330,10 +341,25 @@ class AssetIndexRequest extends FormRequest
         return $this->filterArray('category_code');
     }
 
-    /** @return array<int, int> */
-    public function roomIds(): array
+    /**
+     * The room filter split into concrete room ids + whether `room_id IS NULL` is
+     * wanted (the `none` sentinel) — same shape as {@see conditionFilter()}.
+     *
+     * @return array{ids: array<int, int>, includeNull: bool}|null null when the filter is absent
+     */
+    public function roomFilter(): ?array
     {
-        return array_values(array_unique(array_map('intval', $this->filterArray('room_id'))));
+        $raw = $this->filterArray('room_id');
+        if ($raw === []) {
+            return null;
+        }
+
+        $ids = array_filter($raw, fn (string $v): bool => $v !== self::ROOMLESS);
+
+        return [
+            'ids' => array_values(array_unique(array_map('intval', $ids))),
+            'includeNull' => in_array(self::ROOMLESS, $raw, true),
+        ];
     }
 
     /** @return array<int, int> */

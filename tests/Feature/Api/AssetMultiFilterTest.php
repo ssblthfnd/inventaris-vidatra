@@ -143,6 +143,112 @@ class AssetMultiFilterTest extends TestCase
             ->assertOk()->assertJsonCount(5, 'data');
     }
 
+    // ------------------------------------------------------------- R9.4-13: room_id[]=none ("Tanpa Ruangan")
+
+    public function test_room_none_sentinel_matches_only_assets_without_a_room(): void
+    {
+        $location = Location::factory()->create(['code' => 'N1']);
+        $active = Room::factory()->forLocation($location)->create();
+        $inactive = Room::factory()->forLocation($location)->inactive()->create();
+        $roomless = Asset::factory()->count(2)->create(['location_code' => 'N1']);
+        Asset::factory()->inRoom($active)->create();
+        Asset::factory()->inRoom($inactive)->create(); // inactive room is still a room — never "tanpa ruangan"
+
+        $this->actingAsRole(UserRole::Viewer);
+
+        $response = $this->getJson('/api/assets?room_id[]=none')->assertOk()->assertJsonCount(2, 'data');
+        $this->assertEqualsCanonicalizing($roomless->pluck('id')->all(), $this->ids($response));
+        foreach ($response->json('data') as $asset) {
+            $this->assertNull($asset['room']);
+        }
+    }
+
+    public function test_room_none_ors_with_specific_rooms(): void
+    {
+        $location = Location::factory()->create(['code' => 'N2']);
+        $r1 = Room::factory()->forLocation($location)->create();
+        $r2 = Room::factory()->forLocation($location)->create();
+        $inR1 = Asset::factory()->inRoom($r1)->create();
+        Asset::factory()->inRoom($r2)->create();
+        $roomless = Asset::factory()->create(['location_code' => 'N2']);
+
+        $this->actingAsRole(UserRole::Viewer);
+
+        $response = $this->getJson("/api/assets?room_id[]={$r1->id}&room_id[]=none")->assertOk();
+        $this->assertEqualsCanonicalizing([$inR1->id, $roomless->id], $this->ids($response));
+    }
+
+    public function test_room_none_ands_with_location_and_other_filters(): void
+    {
+        $p1 = Location::factory()->create(['code' => 'N3']);
+        Location::factory()->create(['code' => 'N4']);
+        $room = Room::factory()->forLocation($p1)->create();
+        $wanted = Asset::factory()->create(['location_code' => 'N3', 'condition' => AssetCondition::Baik]);
+        Asset::factory()->unknownCondition()->create(['location_code' => 'N3']); // roomless, other condition
+        Asset::factory()->create(['location_code' => 'N4', 'condition' => AssetCondition::Baik]); // roomless, other location
+        Asset::factory()->inRoom($room)->create(['condition' => AssetCondition::Baik]); // has a room
+
+        $this->actingAsRole(UserRole::Viewer);
+
+        // `none` names no room, so the room<->location consistency rule never rejects it
+        $response = $this->getJson('/api/assets?location_code[]=N3&room_id[]=none&condition[]=baik')->assertOk();
+        $this->assertSame([$wanted->id], $this->ids($response));
+    }
+
+    public function test_room_none_paginates_with_correct_totals(): void
+    {
+        $location = Location::factory()->create(['code' => 'N5']);
+        $room = Room::factory()->forLocation($location)->create();
+        Asset::factory()->count(5)->create(['location_code' => 'N5']);
+        Asset::factory()->count(3)->inRoom($room)->create();
+
+        $this->actingAsRole(UserRole::Viewer);
+
+        $this->getJson('/api/assets?room_id[]=none&location_code[]=N5&per_page=2&page=1')
+            ->assertOk()->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.total', 5)->assertJsonPath('meta.last_page', 3);
+        $this->getJson('/api/assets?room_id[]=none&location_code[]=N5&per_page=2&page=3')
+            ->assertOk()->assertJsonCount(1, 'data');
+    }
+
+    public function test_room_none_sentinel_validation(): void
+    {
+        $this->actingAsRole(UserRole::Viewer);
+
+        $this->getJson('/api/assets?room_id[]=none&room_id[]=none')
+            ->assertStatus(422)->assertJsonValidationErrors('room_id');
+        // only the exact sentinel is accepted — `unknown` stays a condition-only word
+        foreach (['unknown', 'null', 'NONE'] as $bad) {
+            $this->getJson("/api/assets?room_id[]={$bad}")
+                ->assertStatus(422)->assertJsonValidationErrors('room_id');
+        }
+    }
+
+    public function test_room_none_stays_within_unit_admin_scope(): void
+    {
+        Location::factory()->create(['code' => '02']);
+        Location::factory()->create(['code' => '03']);
+        $own = Asset::factory()->create(['location_code' => '02']);
+        Asset::factory()->create(['location_code' => '03']); // roomless, foreign
+        Sanctum::actingAs(User::factory()->create(['role' => UserRole::UnitAdmin, 'location_code' => '02']));
+
+        $this->assertSame([$own->id], $this->ids($this->getJson('/api/assets?room_id[]=none')->assertOk()));
+    }
+
+    /** Export and report share the same filter path (FiltersAssets), so the sentinel means the same there. */
+    public function test_room_none_applies_identically_to_the_report_endpoint(): void
+    {
+        $location = Location::factory()->create(['code' => 'N6']);
+        $room = Room::factory()->forLocation($location)->create();
+        Asset::factory()->count(2)->create(['location_code' => 'N6']);
+        Asset::factory()->inRoom($room)->create();
+
+        $this->actingAsRole(UserRole::Operator);
+
+        $this->getJson('/api/reports/inventory?room_id[]=none&location_code[]=N6')
+            ->assertOk()->assertJsonPath('data.summary.total_assets', 2);
+    }
+
     public function test_multiple_rooms_are_ored(): void
     {
         $location = Location::factory()->create(['code' => 'RL']);

@@ -17,6 +17,7 @@ import {
   hasActiveFilters,
   parseQuery,
   PER_PAGE_OPTIONS,
+  ROOMLESS,
   sortValue,
   SORTS,
 } from '../lib/inventoryQuery';
@@ -179,6 +180,14 @@ export default function Inventory() {
     return out.sort((a, b) => a.label.localeCompare(b.label));
   }, [state.location_code, allLocationCodes, md.roomsByLocation]);
 
+  // R9.4-13 — "Tanpa Ruangan" (room_id IS NULL) is always offered first, independent
+  // of any location/room data. The location->room pruning below keeps it (it is not a
+  // known room id), so it survives a location change.
+  const roomFilterOptions = useMemo(
+    () => [{ value: ROOMLESS, label: 'Tanpa Ruangan', hint: 'Aset yang belum memiliki ruangan' }, ...roomOptions],
+    [roomOptions],
+  );
+
   const subcategoriesLoading =
     subcategoryOptions.length === 0 &&
     (state.category_code.length ? state.category_code : allCategoryCodes).some(
@@ -257,7 +266,7 @@ export default function Inventory() {
         case 'subcategory_code':
           return subcategoryOptions.find((o) => o.value === value)?.label ?? value;
         case 'room_id':
-          return roomOptions.find((o) => o.value === value)?.label ?? `Ruangan #${value}`;
+          return roomFilterOptions.find((o) => o.value === value)?.label ?? `Ruangan #${value}`;
         case 'condition':
           return CONDITION_OPTIONS.find((o) => o.value === value)?.label ?? value;
         case 'is_written_off':
@@ -266,7 +275,7 @@ export default function Inventory() {
           return value;
       }
     },
-    [locationOptions, categoryOptions, subcategoryOptions, roomOptions],
+    [locationOptions, categoryOptions, subcategoryOptions, roomFilterOptions],
   );
 
   const chips = useMemo(() => {
@@ -540,7 +549,7 @@ export default function Inventory() {
           />
           <MultiSelectFilter
             label="Ruangan"
-            options={roomOptions}
+            options={roomFilterOptions}
             selected={state.room_id}
             onChange={(v) => patchState({ room_id: v })}
             loading={roomsLoading}

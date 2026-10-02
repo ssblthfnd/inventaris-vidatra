@@ -17,6 +17,13 @@ export const ARRAY_FILTERS = [
   'is_written_off',
 ];
 
+/**
+ * `room_id[]` sentinel for "Tanpa Ruangan" (room_id IS NULL) — the backend's
+ * `AssetIndexRequest::ROOMLESS`. Travels in the URL like any room id, so it
+ * survives refresh/back/forward and composes with every other filter.
+ */
+export const ROOMLESS = 'none';
+
 export const SORTS = [
   { value: 'asset_code:asc', label: 'Kode aset (A–Z)', sort: 'asset_code', direction: 'asc' },
   { value: 'asset_code:desc', label: 'Kode aset (Z–A)', sort: 'asset_code', direction: 'desc' },

@@ -50,7 +50,15 @@ trait FiltersAssets
                         ->where('subcategory_code', $subcategoryCode));
                 }
             }))
-            ->when($request->roomIds(), fn (Builder $q, array $ids) => $q->whereIn('room_id', $ids))
+            // room_id[] may include the `none` sentinel (room_id IS NULL) — same OR-within shape as condition below
+            ->when($request->roomFilter(), fn (Builder $q, array $room) => $q->where(function (Builder $inner) use ($room): void {
+                if ($room['ids'] !== []) {
+                    $inner->orWhereIn('room_id', $room['ids']);
+                }
+                if ($room['includeNull']) {
+                    $inner->orWhereNull('room_id');
+                }
+            }))
             ->when($request->conditionFilter(), fn (Builder $q, array $condition) => $q->where(function (Builder $inner) use ($condition): void {
                 if ($condition['values'] !== []) {
                     $inner->orWhereIn('condition', $condition['values']);
