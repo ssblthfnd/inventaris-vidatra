@@ -1,4 +1,4 @@
-import { ApiError } from './api';
+import { ApiError, presentErrorMessage } from './api';
 
 /**
  * Asset Excel export download helper (Tahap 6.2).
@@ -17,9 +17,10 @@ async function parseErrorPayload(response) {
   } catch {
     payload = null;
   }
-  const fieldError = payload?.errors ? Object.values(payload.errors)[0]?.[0] : null;
-
-  return { message: fieldError || payload?.message || 'Gagal membuat file export. Coba lagi.', errors: payload?.errors ?? null };
+  return {
+    message: presentErrorMessage(response.status, payload, 'Gagal membuat file export. Coba lagi.'),
+    errors: payload?.errors ?? null,
+  };
 }
 
 /**

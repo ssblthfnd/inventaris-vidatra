@@ -1,4 +1,4 @@
-import { ApiError, api, ensureCsrfCookie, readCookie } from './api';
+import { ApiError, api, ensureCsrfCookie, presentErrorMessage, readCookie } from './api';
 
 /**
  * Import Excel UI API helpers (Tahap 6.1).
@@ -38,9 +38,10 @@ async function parseErrorPayload(response) {
   } catch {
     payload = null;
   }
-  const fieldError = payload?.errors ? Object.values(payload.errors)[0]?.[0] : null;
-
-  return { message: fieldError || payload?.message || 'Terjadi kesalahan. Coba lagi.', errors: payload?.errors ?? null };
+  return {
+    message: presentErrorMessage(response.status, payload, 'Terjadi kesalahan. Coba lagi.'),
+    errors: payload?.errors ?? null,
+  };
 }
 
 /** Downloads the Excel template for `category` — same blob-download technique as

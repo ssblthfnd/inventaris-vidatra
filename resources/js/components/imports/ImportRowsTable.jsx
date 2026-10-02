@@ -1,7 +1,12 @@
+import { importRowMessageText } from '../../lib/importMessages';
+
 /**
  * Row-level preview table for one import batch (Tahap 6.1). Mirrors the visual
  * language of `components/inventory/InventoryTable.jsx` (same header/cell classes)
  * so the Import Excel page doesn't introduce a second table style.
+ *
+ * R9.4-17: row messages are shown in Indonesian via importRowMessageText()
+ * (keyed by the stored `code`); the stored English message is untouched.
  */
 
 const STATUS_BADGE = {
@@ -95,7 +100,7 @@ export default function ImportRowsTable({ rows, loading }) {
                     ) : (
                       <ul className="list-inside list-disc space-y-0.5">
                         {row.validation_messages.map((m, i) => (
-                          <li key={i}>{m.message}</li>
+                          <li key={i}>{importRowMessageText(m)}</li>
                         ))}
                       </ul>
                     )}

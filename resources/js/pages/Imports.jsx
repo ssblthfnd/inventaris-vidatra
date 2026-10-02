@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import ImportRowsTable from '../components/imports/ImportRowsTable';
@@ -18,6 +19,7 @@ import {
   roomMappingGroupKey,
   uploadImportFile,
 } from '../lib/imports';
+import { promotionErrorText } from '../lib/importMessages';
 import { useMasterData } from '../lib/useMasterData';
 
 /**
@@ -43,7 +45,22 @@ import { useMasterData } from '../lib/useMasterData';
  *     rows were promoted disappear instead of staying actionable (R9.4-05).
  *   - Master data comes from ONE `useMasterData()` instance shared with the
  *     mapping section via props (R9.4-03).
+ *
+ * Tahap 6.9 R9.4-06a — WHICH batch is active lives in the URL (`?batch=<id>`),
+ * so a refresh, a direct link and browser back/forward all restore it; the
+ * React state above only holds the LOADED server data for it. One effect is
+ * the only path that opens or clears a batch from the URL: selecting a history
+ * row, uploading, or closing only ever change the URL. The URL is not
+ * authorization — `GET /imports/{id}` (ImportBatchPolicy) still decides; a
+ * batch that can't be loaded (missing or not visible: both are the same 404)
+ * clears the parameter (replace, so Back doesn't return to it) without
+ * retrying.
  */
+
+/** A positive integer id from `?batch=`, else null. */
+function parseBatchParam(raw) {
+  return raw !== null && /^[1-9]\d{0,9}$/.test(raw) ? Number(raw) : null;
+}
 
 const BATCH_STATUS_LABEL = {
   uploaded: 'Diunggah',
@@ -104,6 +121,13 @@ export default function Imports() {
 
   const [flash, setFlash] = useState('');
   const [flashTone, setFlashTone] = useState('success');
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawBatchParam = searchParams.get('batch');
+  const urlBatchId = parseBatchParam(rawBatchParam);
+  // the batch resource an upload just returned, consumed by the URL effect so
+  // the new batch isn't fetched a second time
+  const pendingKnownBatchRef = useRef(null);
 
   const [batch, setBatch] = useState(null);
   const [batchLoading, setBatchLoading] = useState(false);
@@ -180,7 +204,8 @@ export default function Imports() {
   }, []);
 
   // `knownBatch`: the batch resource the caller already holds (the upload
-  // response), so it isn't fetched a second time.
+  // response), so it isn't fetched a second time. Resolves `true` (loaded),
+  // `false` (could not be loaded) or `null` (superseded by a newer batch).
   const openBatch = useCallback(
     async (batchId, knownBatch = null) => {
       activeBatchIdRef.current = batchId;
@@ -196,21 +221,77 @@ export default function Imports() {
         loadRows(batchId, '', 1),
         loadMappings(batchId),
       ]);
-      if (activeBatchIdRef.current !== batchId) return; // a newer batch was opened meanwhile
+      if (activeBatchIdRef.current !== batchId) return null; // a newer batch was opened meanwhile
 
+      setBatchLoading(false);
       if (batchResult.status === 'fulfilled') {
         setBatch(batchResult.value?.data ?? null);
-      } else {
-        // rows/mappings were fetched for this id in parallel — never show them
-        // under a previously opened batch's header
-        setBatch(null);
-        setFlashTone('error');
-        setFlash(batchResult.reason?.message || 'Gagal memuat data import.');
+        return true;
       }
-      setBatchLoading(false);
+      // rows/mappings were fetched for this id in parallel — never show them
+      // under a previously opened batch's header
+      setBatch(null);
+      setFlashTone('error');
+      setFlash(batchResult.reason?.message || 'Gagal memuat data import.');
+      return false;
     },
     [loadRows, loadMappings],
   );
+
+  const clearActiveBatch = useCallback(() => {
+    activeBatchIdRef.current = null; // in-flight responses for the old batch are ignored from here on
+    setBatch(null);
+    setBatchLoading(false);
+    setPromotionResult(null);
+    setPromoteOpen(false);
+    setRows([]);
+    setRowsMeta(null);
+    setRowsLoading(false);
+    setStatusFilter('');
+    setRowsPage(1);
+    setMappingGroups([]);
+    setMappingsPhase('loading');
+    setMappingsError('');
+    setMappingNotices([]);
+  }, []);
+
+  // R9.4-06a — the ONLY place a batch is opened or cleared. Re-running for the
+  // batch that is already active (StrictMode, or a state change that re-creates
+  // a dependency) is a no-op thanks to activeBatchIdRef, so a URL is never
+  // loaded twice.
+  useEffect(() => {
+    // This hook runs before the page's `canImport` gate below returns early, so
+    // without this guard a viewer opening /imports?batch=<id> would fire batch
+    // requests it is never allowed to make (all 403). No import access -> the
+    // URL is simply ignored and nothing is requested.
+    if (!canImport) return;
+    if (rawBatchParam !== null && urlBatchId === null) {
+      setSearchParams({}, { replace: true }); // malformed id: drop it, don't request anything
+      return;
+    }
+    if (urlBatchId === null) {
+      clearActiveBatch();
+      return;
+    }
+    if (activeBatchIdRef.current === urlBatchId) return;
+
+    const known = pendingKnownBatchRef.current?.id === urlBatchId ? pendingKnownBatchRef.current.data : null;
+    pendingKnownBatchRef.current = null;
+    openBatch(urlBatchId, known).then((loaded) => {
+      // missing or not visible (same 404 either way): leave no dangling ?batch=
+      // behind and never retry it — replace, so Back doesn't return to it
+      if (loaded === false && activeBatchIdRef.current === urlBatchId) setSearchParams({}, { replace: true });
+    });
+  }, [canImport, rawBatchParam, urlBatchId, openBatch, clearActiveBatch, setSearchParams]);
+
+  // Selecting a batch only changes the URL (a new history entry, so Back
+  // returns to the previous one); the effect above does the loading.
+  const selectBatch = (batchId) => {
+    if (batchId === urlBatchId) return;
+    setSearchParams({ batch: String(batchId) });
+  };
+
+  const closeBatch = () => setSearchParams({});
 
   // R9.4-04 — record the ACTUAL server result as feedback, drop only that group
   // locally (other cards stay mounted with their drafts), then refresh rows and
@@ -262,8 +343,11 @@ export default function Imports() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       setFlashTone('success');
       setFlash(res?.message || 'File berhasil diunggah dan divalidasi.');
-      // the upload response IS the batch resource (same shape as GET /imports/{id})
-      await Promise.all([openBatch(res.data.id, res.data), canViewImportHistory ? loadHistory() : null]);
+      // the upload response IS the batch resource (same shape as GET /imports/{id});
+      // hand it to the URL effect instead of fetching it again, then select it
+      pendingKnownBatchRef.current = { id: res.data.id, data: res.data };
+      setSearchParams({ batch: String(res.data.id) });
+      if (canViewImportHistory) await loadHistory();
     } catch (e) {
       setUploadError(e?.message || 'Gagal mengunggah file. Coba lagi.');
     } finally {
@@ -422,14 +506,23 @@ export default function Imports() {
                   {BATCH_STATUS_LABEL[batch.status] ?? batch.status}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setPromoteOpen(true)}
-                disabled={!canPromote}
-                className="rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Promote / Import ke Inventaris
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={closeBatch}
+                  className="rounded-lg border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPromoteOpen(true)}
+                  disabled={!canPromote}
+                  className="rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Promote / Import ke Inventaris
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -452,7 +545,7 @@ export default function Imports() {
                 <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-emerald-900">
                   {promotionResult.errors.map((err, i) => (
                     <li key={i}>
-                      Baris {err.row}: {err.message}
+                      Baris {err.row}: {promotionErrorText(err.message)}
                     </li>
                   ))}
                 </ul>
@@ -553,7 +646,7 @@ export default function Imports() {
                 {history.map((b) => (
                   <tr
                     key={b.id}
-                    onClick={() => openBatch(b.id)}
+                    onClick={() => selectBatch(b.id)}
                     className="cursor-pointer border-t border-gray-100 hover:bg-gray-50/60"
                   >
                     <td className="px-3 py-2 font-medium text-gray-900">{b.source_filename}</td>

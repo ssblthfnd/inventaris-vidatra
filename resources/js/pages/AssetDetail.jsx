@@ -464,8 +464,8 @@ export default function AssetDetail() {
           <p className="font-medium text-gray-900">Aset berada di Trash</p>
           <p className="mt-1 text-gray-600">
             Record ini masih tersimpan di sistem (kode aset {asset.asset_code}, nomor urut{' '}
-            {asset.sequence_no}) dan dapat dipulihkan oleh operator/admin. Kode aset tidak akan
-            digunakan ulang.
+            {asset.sequence_no}) dan dapat dipulihkan oleh pengguna yang memiliki akses pemulihan aset.
+            Kode aset tidak akan digunakan ulang.
           </p>
         </div>
       )}
@@ -580,8 +580,8 @@ export default function AssetDetail() {
         </p>
         <p>
           Data <span className="font-medium text-gray-900">tidak</span> dihapus dari database —
-          record tetap tersimpan dan dapat dipulihkan oleh operator/admin. Nomor aset tidak akan
-          digunakan ulang.
+          record tetap tersimpan dan dapat dipulihkan oleh pengguna yang memiliki akses pemulihan
+          aset. Nomor aset tidak akan digunakan ulang.
         </p>
       </LifecycleConfirmDialog>
 

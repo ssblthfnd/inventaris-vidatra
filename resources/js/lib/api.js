@@ -59,11 +59,63 @@ function friendlyMessage(status) {
       return 'Sesi keamanan kedaluwarsa. Muat ulang halaman lalu coba lagi.';
     case 422:
       return 'Data yang dikirim tidak valid.';
+    case 429:
+      return 'Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.';
     default:
       return status >= 500
         ? 'Terjadi kesalahan pada server. Coba lagi beberapa saat lagi.'
         : 'Terjadi kesalahan. Coba lagi.';
   }
+}
+
+/**
+ * Tahap 6.9 R9.4-17 — known technical/English server messages that reach the
+ * UI, each with its Indonesian presentation. Only the human-readable text is
+ * replaced: the HTTP status, the `errors` bag and the response body itself are
+ * untouched (API clients and backend tests still see the original). Matching is
+ * exact-pattern, never a blanket "translate English"; an Indonesian or unknown
+ * message passes through as-is. Authorization texts stay generic, so a denial
+ * never echoes back which location/batch/user it concerned.
+ */
+const SERVER_MESSAGE_PRESENTATION = [
+  // Laravel framework defaults
+  [/^This action is unauthorized\.?$/i, 'Anda tidak memiliki izin untuk melakukan tindakan ini.'],
+  [/^Unauthenticated\.?$/i, friendlyMessage(401)],
+  [/^No query results for model /, friendlyMessage(404)], // also hides the model class / id
+  [/^(Not Found|The route .* could not be found\.?)$/i, friendlyMessage(404)],
+  [/^CSRF token mismatch\.?$/i, friendlyMessage(419)],
+  [/^Too Many Attempts\.?$/i, friendlyMessage(429)],
+  // App\Support\LocationScope
+  [/^Location '.*' is outside this user's scope\.?$/, 'Data ini berada di luar lokasi yang menjadi wewenang Anda.'],
+  [/^unit_admin user #\d+/, 'Akun Anda belum terhubung ke unit yang aktif. Hubungi administrator.'],
+  // App\Import\Promotion\AssetPromoter
+  [/^Batch \d+ contains data outside your assigned location\.?$/, 'Batch ini berisi data di luar lokasi yang menjadi wewenang Anda.'],
+  [/^Batch \d+ is \[[^\]]*\] — validate it before promotion\.?$/, 'Batch ini belum dapat dipromosikan pada statusnya saat ini.'],
+  // App\Import\RoomMapping\RoomMappingResolver
+  [/^Actor is not authorized for location /, 'Data ini berada di luar lokasi yang menjadi wewenang Anda.'],
+  [/^Actor may not save a permanent room alias\.?$/, 'Anda tidak memiliki izin untuk menyimpan alias ruangan permanen.'],
+];
+
+/**
+ * The human-readable message for an error response — shared by every request
+ * helper (this file, `imports.js`, `labels.js`, `exports.js`) so there is one
+ * presentation rule:
+ *   - a validation error shows its first field message (never Laravel's English
+ *     "(and N more errors)" summary);
+ *   - a 5xx never shows server internals;
+ *   - a known technical message is presented in Indonesian (table above);
+ *   - otherwise the server's own message, or `fallback`.
+ */
+export function presentErrorMessage(status, payload, fallback = friendlyMessage(status)) {
+  if (status >= 500) return friendlyMessage(status);
+
+  const fieldError = payload?.errors ? Object.values(payload.errors)[0]?.[0] : null;
+  const raw = String(fieldError || payload?.message || '').trim();
+  if (!raw) return fallback;
+
+  const known = SERVER_MESSAGE_PRESENTATION.find(([pattern]) => pattern.test(raw));
+
+  return known ? known[1] : raw;
 }
 
 async function request(method, url, body, { retried = false } = {}) {
@@ -115,7 +167,7 @@ async function request(method, url, body, { retried = false } = {}) {
   }
 
   if (!response.ok) {
-    throw new ApiError(payload?.message || friendlyMessage(response.status), {
+    throw new ApiError(presentErrorMessage(response.status, payload), {
       status: response.status,
       errors: payload?.errors ?? null,
     });

@@ -1,4 +1,4 @@
-import { ApiError, ensureCsrfCookie, readCookie } from './api';
+import { ApiError, ensureCsrfCookie, presentErrorMessage, readCookie } from './api';
 
 /**
  * Asset-label PDF download helpers (Tahap 6.0; print-size options + direct-download
@@ -65,8 +65,7 @@ async function fetchPdf(method, url, body) {
     } catch {
       payload = null;
     }
-    const fieldError = payload?.errors ? Object.values(payload.errors)[0]?.[0] : null;
-    throw new ApiError(fieldError || payload?.message || 'Gagal membuat label. Coba lagi.', {
+    throw new ApiError(presentErrorMessage(response.status, payload, 'Gagal membuat label. Coba lagi.'), {
       status: response.status,
       errors: payload?.errors ?? null,
     });
