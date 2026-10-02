@@ -23,8 +23,9 @@ use Throwable;
  *  - Existing-asset duplicate is re-checked inside the transaction (final-state check, §29).
  *
  * Stage 6.9 R6 — `$actor` is authorized against every location this batch's
- * PROMOTABLE rows represent, BEFORE the promotion loop below touches a
- * single row. This is deliberately independent of whatever check
+ * rows represent (since R9.4-08: ALL located rows, not only those still
+ * awaiting promotion — see `assertBatchWithinScope()`), BEFORE the promotion
+ * loop below touches a single row. This is deliberately independent of whatever check
  * `ImportManager::stageFile()` ran at staging time: the actor calling
  * `promoteBatch()` may be a different user entirely from whoever staged it
  * (a colleague, or the same unit_admin after a location reassignment), so
@@ -47,31 +48,18 @@ final class AssetPromoter
         if ($batch === null) {
             throw new RuntimeException("Import batch {$batchId} not found.");
         }
+
+        // Tahap 6.9 R9.4-08 — the scope check runs BEFORE the status check, so a
+        // scoped actor learns nothing about a batch it may not touch (not even its
+        // status, which the 422 below would otherwise reveal).
+        if ($actor !== null) {
+            $this->assertBatchWithinScope($batchId, LocationScope::for($actor));
+        }
+
         if (! in_array($batch->status, ['validated', 'partially_imported', 'imported'], true)) {
             throw new RuntimeException(
                 "Batch {$batchId} is [{$batch->status}] — validate it before promotion."
             );
-        }
-
-        if ($actor !== null) {
-            $scope = LocationScope::for($actor);
-            if (! $scope->isGlobal()) {
-                $promotableLocationCodes = DB::table('import_rows')
-                    ->where('import_batch_id', $batchId)
-                    ->whereIn('validation_status', ['valid', 'warning'])
-                    ->whereNull('promoted_asset_id')
-                    ->whereNotNull('location_code')
-                    ->distinct()
-                    ->pluck('location_code');
-
-                foreach ($promotableLocationCodes as $code) {
-                    if (! $scope->allows($code)) {
-                        throw new AuthorizationException(
-                            "Batch {$batchId} contains promotable data outside your assigned location."
-                        );
-                    }
-                }
-            }
         }
 
         $result = ['promoted' => 0, 'skipped_already' => 0, 'failed' => 0, 'errors' => []];
@@ -106,6 +94,49 @@ final class AssetPromoter
         return $result;
     }
 
+    /**
+     * Tahap 6.9 R9.4-08 — a scoped actor (unit_admin) may promote a batch only
+     * when EVERY row that resolved to a location — whatever its validation
+     * status, promoted or not — is inside its scope, and at least one such row
+     * exists. Rows with no location (unparseable) carry no location to check
+     * and are ignored, same as staging.
+     *
+     * This is the same rule `ImportManager::rejectOutOfScopeRows()` already
+     * applies at staging time. The previous
+     * check looked only at rows still awaiting promotion, so once every row of
+     * a foreign batch was promoted that set was empty and the check passed
+     * vacuously — letting any unit_admin "promote" (and read back) another
+     * unit's batch. Consequences, all deliberate:
+     *   - single-location batch in scope            -> allowed (unchanged)
+     *   - batch with any row outside scope (mixed,   -> 403, even if those rows
+     *     or fully foreign)                             are errors or already promoted
+     *   - batch with no located row at all           -> 403 (nothing ties it to the
+     *                                                    actor's unit)
+     * Global actors (and the CLI's `$actor === null`) never reach this method.
+     * The batch-level `import_batches.location_code` is never used: it is NULL
+     * for multi-location batches, so only the rows themselves are authoritative.
+     *
+     * @throws AuthorizationException
+     */
+    private function assertBatchWithinScope(int $batchId, LocationScope $scope): void
+    {
+        if ($scope->isGlobal()) {
+            return;
+        }
+
+        $locationCodes = DB::table('import_rows')
+            ->where('import_batch_id', $batchId)
+            ->whereNotNull('location_code')
+            ->distinct()
+            ->pluck('location_code');
+
+        if ($locationCodes->isEmpty() || $locationCodes->contains(fn (string $code): bool => ! $scope->allows($code))) {
+            throw new AuthorizationException(
+                "Batch {$batchId} contains data outside your assigned location."
+            );
+        }
+    }
+
     private function promoteOne(object $stagedRow): int
     {
         $payload = json_decode((string) $stagedRow->raw_payload, true, flags: JSON_THROW_ON_ERROR);
@@ -133,6 +164,24 @@ final class AssetPromoter
             $existing = $this->duplicates->existingAssetId($identity);
             if ($existing !== null) {
                 throw new RuntimeException("identity already exists as asset id {$existing}");
+            }
+
+            // Tahap 6.9 R9.4-19 — final-state room guard, same idea as the duplicate
+            // guard above: the room matched at staging (or resolved later) may have
+            // been deactivated since. Never silently assign an asset to an inactive
+            // room, and never auto-reactivate or substitute one — the row fails
+            // like any other promotion failure (error recorded on the row, row stays
+            // unpromoted) and a later promote succeeds once the room is active
+            // again. Shared lock: the room can't be deactivated between this check
+            // and the insert below. Cross-location rooms remain rejected by the
+            // composite FK (location_code, room_id) -> rooms, exactly as before.
+            if ($stagedRow->matched_room_id !== null) {
+                $room = DB::table('rooms')->where('id', $stagedRow->matched_room_id)->sharedLock()->first(['id', 'is_active']);
+                if ($room === null || ! $room->is_active) {
+                    throw new RuntimeException(
+                        "matched room id {$stagedRow->matched_room_id} is no longer active — reactivate it, then promote again"
+                    );
+                }
             }
 
             $now = now();
@@ -213,6 +262,8 @@ final class AssetPromoter
             default => 'validated',
         };
 
+        $now = now();
+
         DB::table('import_batches')->where('id', $batchId)->update([
             'status' => $status,
             'total_rows' => $total,
@@ -220,8 +271,18 @@ final class AssetPromoter
             'warning_rows' => $warning,
             'error_rows' => $error,
             'imported_rows' => $imported,
-            'imported_at' => $imported > 0 ? now() : null,
-            'updated_at' => now(),
+            'updated_at' => $now,
         ]);
+
+        // Tahap 6.9 R9.4-09 — `imported_at` is WHEN the batch first had an asset
+        // imported, so it is written exactly once: only while still NULL, and only
+        // once something is actually imported. A re-promote (idempotent or one
+        // that adds more rows later) never moves it; a promote that imports
+        // nothing never sets it. Previously it was rewritten to now() on every
+        // call with imported > 0. The `whereNull` makes the write-once rule hold
+        // even under concurrent promotes.
+        if ($imported > 0) {
+            DB::table('import_batches')->where('id', $batchId)->whereNull('imported_at')->update(['imported_at' => $now]);
+        }
     }
 }

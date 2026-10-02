@@ -338,18 +338,86 @@ final class ImportReporter
             $rm['exact_name'] + $rm['alias'] + $rm['none'] === $rm['total'] && $rm['total'] === $s['total'],
             "{$rm['exact_name']} + {$rm['alias']} + {$rm['none']} == {$rm['total']} (== total {$s['total']})",
         );
+        $room = $this->promotedRoomConsistency();
         $add(
-            'no unmapped room among promoted assets',
-            DB::table('assets')->whereIn('import_row_id', (clone $this->rows())->select('id'))->whereNull('room_id')->count() === $rm['none'],
-            'assets with room_id NULL == staging rows with method none (' . $rm['none'] . ')',
+            'promoted assets keep the room their staged row had at promotion',
+            $room['mismatched'] === 0,
+            "{$room['compared']} compared (of which {$room['without_room']} without room), {$room['mismatched']} mismatched; "
+                . "{$room['not_verifiable']} not verifiable (asset changed after import)",
         );
+
+        $createLogs = $this->importedAssetCreateLogCount();
         $add(
-            'no mutation_logs created by import',
-            DB::table('mutation_logs')->count() === 0,
-            'mutation_logs count == 0',
+            'no CREATE mutation_logs for assets imported by this batch',
+            $createLogs === 0,
+            "CREATE mutation_logs on this batch's imported assets == {$createLogs} (later edits to those assets are not counted)",
         );
 
         return $checks;
+    }
+
+    /**
+     * Tahap 6.9 R9.4-12 — replaces "assets with room_id NULL == staging rows with
+     * method none", which compared populations that don't correspond: promoted
+     * assets vs EVERY staged `none` row (incl. error / not-yet-promoted rows), and
+     * current `assets.room_id` even after a later room move.
+     *
+     * Correct population: promoted rows of this scope, each paired with ITS asset
+     * via `import_rows.promoted_asset_id` (what AssetPromoter writes). For each
+     * pair, `assets.room_id` must equal `import_rows.matched_room_id` (NULL ==
+     * NULL included). An asset with ANY mutation_log may have legitimately
+     * changed room since (every app write path logs a mutation), so it cannot be
+     * verified from current state and is counted as `not_verifiable`, never as a
+     * mismatch. Soft-deleted assets are included (`DB::table` ignores the
+     * SoftDeletes scope); deleting an asset logs a mutation anyway.
+     *
+     * @return array{compared:int, without_room:int, mismatched:int, not_verifiable:int}
+     */
+    private function promotedRoomConsistency(): array
+    {
+        $pairs = (clone $this->rows())
+            ->join('assets', 'assets.id', '=', 'import_rows.promoted_asset_id')
+            ->whereNotNull('import_rows.promoted_asset_id')
+            ->selectRaw('import_rows.matched_room_id as staged_room_id, assets.room_id as asset_room_id')
+            ->selectRaw('EXISTS (SELECT 1 FROM mutation_logs WHERE mutation_logs.asset_id = assets.id) as has_mutations')
+            ->get();
+
+        $out = ['compared' => 0, 'without_room' => 0, 'mismatched' => 0, 'not_verifiable' => 0];
+        foreach ($pairs as $p) {
+            if ((bool) $p->has_mutations) {
+                $out['not_verifiable']++;
+
+                continue;
+            }
+            $out['compared']++;
+            if ($p->asset_room_id === null) {
+                $out['without_room']++;
+            }
+            $staged = $p->staged_room_id === null ? null : (int) $p->staged_room_id;
+            $actual = $p->asset_room_id === null ? null : (int) $p->asset_room_id;
+            if ($staged !== $actual) {
+                $out['mismatched']++;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Tahap 6.9 R9.4-12 — replaces "mutation_logs count == 0", which counted the
+     * GLOBAL table and so failed as soon as any unrelated asset had ever been
+     * edited. Promotion deliberately writes no mutation_logs (§31); the one log a
+     * creation path writes is CREATE (AssetWriteService, UI-created assets only),
+     * so a CREATE log on an asset imported by this scope is exactly the evidence
+     * "the import recorded a mutation" would leave. Ordinary later edits/moves/
+     * deletes of those assets are legitimate and NOT counted.
+     */
+    private function importedAssetCreateLogCount(): int
+    {
+        return DB::table('mutation_logs')
+            ->whereIn('asset_id', (clone $this->rows())->whereNotNull('promoted_asset_id')->select('promoted_asset_id'))
+            ->where('event_type', 'CREATE')
+            ->count();
     }
 
     private function identityLabel(object $r): string

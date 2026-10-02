@@ -241,7 +241,10 @@ class Stage69ImportScopeTest extends TestCase
         $this->upload([$this->rowFor('02', '540'), $this->rowFor('03', '541')])->assertStatus(403);
         $batch = $this->latestBatchFor($actor);
 
-        $this->postJson("/api/imports/{$batch->id}/promote")->assertStatus(422);
+        // R9.4-08: 403 (was 422). The batch still holds an out-of-scope (03) row,
+        // and the promote scope check now runs before the status check, so the
+        // scope denial — not the batch's `failed` status — is what answers.
+        $this->postJson("/api/imports/{$batch->id}/promote")->assertStatus(403);
         $this->assertSame(0, Asset::whereIn('sequence_no', ['540', '541'])->count());
     }
 
@@ -477,7 +480,9 @@ class Stage69ImportScopeTest extends TestCase
 
         $this->upload([$this->rowFor('02', '600'), $this->rowFor('03', '601')])->assertStatus(403);
         $batch = $this->latestBatchFor($actor);
-        $this->postJson("/api/imports/{$batch->id}/promote")->assertStatus(422);
+        // R9.4-08: 403 (was 422) — scope is checked before status; see
+        // test_rejected_mixed_import_cannot_later_be_promoted.
+        $this->postJson("/api/imports/{$batch->id}/promote")->assertStatus(403);
 
         $this->assertSame($countBefore, Asset::count());
     }
