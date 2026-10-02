@@ -127,6 +127,16 @@ export function getImportReport(batchId) {
   return api.get(`/api/imports/${batchId}/report`);
 }
 
+/**
+ * Stable identity of one unmapped room group — exactly the React key R9.2 already
+ * used (`location_code` + server-derived `match_key`). Shared so the Imports page
+ * (which owns the groups list) and RoomMappingSection (which renders one card per
+ * group, holding that card's unsaved draft) always agree on which group is which.
+ */
+export function roomMappingGroupKey(group) {
+  return `${group.location_code}${group.match_key}`;
+}
+
 /** Tahap 6.9 R9.2 — distinct (location_code, normalized raw value) unmapped room groups for one batch. */
 export function getRoomMappings(batchId) {
   return api.get(`/api/imports/${batchId}/room-mappings`);

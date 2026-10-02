@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import { api, ApiError } from '../../lib/api';
-import { getRoomMappings, resolveRoomMapping } from '../../lib/imports';
-import { useMasterData } from '../../lib/useMasterData';
+import { resolveRoomMapping, roomMappingGroupKey } from '../../lib/imports';
 
 /**
  * Tahap 6.9 R9.2 — Import Room Mapping Resolution.
@@ -25,6 +24,21 @@ import { useMasterData } from '../../lib/useMasterData';
  * room): "+ Tambah Ruangan" needs `rooms.manage` (operator does not hold
  * it), and "Simpan sebagai alias" needs `roomAliases.resolve`. Both are
  * still enforced server-side (`POST /api/rooms`, `RoomMappingResolver`).
+ *
+ * Tahap 6.9 R9.4-A1 — state ownership:
+ *   - SERVER state (the groups list, its load phase/error, and the feedback
+ *     for groups resolved in this batch) is owned by `Imports.jsx`, which
+ *     fetches it in parallel with the batch and rows and refreshes it in the
+ *     BACKGROUND after a resolve or a promotion — this section never switches
+ *     back to a loading placeholder once it has groups, so no card is ever
+ *     unmounted just because a different group changed (R9.4-04/-05).
+ *   - Master data (locations, rooms) comes from the page's single
+ *     `useMasterData()` instance via props, so N cards share one cache
+ *     instead of N (R9.4-03). Rooms created here are kept at section level so
+ *     every card for that location sees them.
+ *   - Each card owns only its own unsaved DRAFT (selected room, alias choice,
+ *     new-room form, errors), keyed by `roomMappingGroupKey()` — the same key
+ *     R9.2 used — so it survives every refresh of unrelated groups.
  */
 
 function extractErrorMessage(e) {
@@ -32,9 +46,8 @@ function extractErrorMessage(e) {
   return 'Terjadi kesalahan tak terduga. Coba lagi.';
 }
 
-function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
+function RoomMappingGroupCard({ group, locationName, batchId, availableRooms, onRoomCreated, onResolved }) {
   const { canManageRooms, canResolveRoomAliases } = useAuth();
-  const { roomsByLocation, ensureRooms } = useMasterData();
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [saveAsAlias, setSaveAsAlias] = useState(false);
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -42,16 +55,9 @@ function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
   const [newRoomPic, setNewRoomPic] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [extraRooms, setExtraRooms] = useState([]); // rooms created THIS session, not yet in the shared master-data cache
   const [applyBusy, setApplyBusy] = useState(false);
   const [applyError, setApplyError] = useState('');
-  const [resolved, setResolved] = useState(null); // { roomName, aliasCreated, aliasAlreadyExisted } | null
 
-  useEffect(() => {
-    ensureRooms([group.location_code]);
-  }, [group.location_code, ensureRooms]);
-
-  const availableRooms = [...(roomsByLocation[group.location_code] ?? []), ...extraRooms];
   const selectedRoom = availableRooms.find((r) => String(r.id) === String(selectedRoomId));
 
   const handleCreateRoom = async () => {
@@ -70,7 +76,7 @@ function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
       });
       const room = res?.data;
       if (room) {
-        setExtraRooms((current) => [...current, room]);
+        onRoomCreated(group.location_code, room);
         setSelectedRoomId(String(room.id));
       }
       setCreatingRoom(false);
@@ -94,35 +100,15 @@ function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
         roomId: Number(selectedRoomId),
         saveAsAlias: canResolveRoomAliases && saveAsAlias,
       });
-      const data = res?.data;
-      setResolved({
-        roomName: data?.room?.name ?? selectedRoom?.name ?? '',
-        aliasCreated: Boolean(data?.alias_created),
-        aliasAlreadyExisted: Boolean(data?.alias_already_existed),
-      });
-      onResolved?.();
+      // The parent records the feedback and drops this group (this card then
+      // unmounts); every OTHER card keeps its own draft untouched.
+      onResolved(group, res?.data ?? null, selectedRoom?.name ?? '');
     } catch (e) {
       setApplyError(extractErrorMessage(e));
     } finally {
       setApplyBusy(false);
     }
   };
-
-  if (resolved) {
-    return (
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
-        <p className="text-gray-500">{locationName}</p>
-        <p className="mt-0.5 text-gray-900">
-          &quot;{group.raw_value}&quot; → <span className="font-medium">{resolved.roomName}</span>
-        </p>
-        <p className="mt-1 text-emerald-800">
-          ✓ {group.affected_rows} aset akan dipetakan
-          {resolved.aliasCreated && ' · alias permanen dibuat'}
-          {resolved.aliasAlreadyExisted && ' · alias permanen sudah ada sebelumnya'}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
@@ -241,39 +227,63 @@ function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
   );
 }
 
-export default function RoomMappingSection({ batchId, onResolved }) {
-  const { locations } = useMasterData();
-  const [groups, setGroups] = useState([]);
-  const [phase, setPhase] = useState('loading'); // loading | ready | error
-  const [error, setError] = useState('');
+/** Feedback for one group resolved in this batch — built by Imports.jsx from the actual resolve response. */
+function ResolvedNotice({ notice, locationName }) {
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
+      <p className="text-gray-500">{locationName}</p>
+      <p className="mt-0.5 text-gray-900">
+        &quot;{notice.rawValue}&quot; → <span className="font-medium">{notice.roomName}</span>
+      </p>
+      <p className="mt-1 text-emerald-800">
+        ✓ {notice.updatedRows} baris dipetakan
+        {notice.aliasCreated && ' · alias permanen dibuat'}
+        {notice.aliasAlreadyExisted && ' · alias permanen sudah ada sebelumnya'}
+      </p>
+    </div>
+  );
+}
 
-  const load = () => {
-    setPhase('loading');
-    setError('');
-    getRoomMappings(batchId)
-      .then((res) => {
-        setGroups(res?.data ?? []);
-        setPhase('ready');
-      })
-      .catch((e) => {
-        setError(extractErrorMessage(e));
-        setPhase('error');
-      });
-  };
+export default function RoomMappingSection({
+  batchId,
+  groups,
+  phase, // loading | ready | error — initial load only; background refreshes never return to 'loading'
+  error,
+  onRetry,
+  notices,
+  locations,
+  roomsByLocation,
+  ensureRooms,
+  onResolved,
+}) {
+  // Rooms created from any card in this batch, by location — merged into every
+  // card of that location (the shared master-data cache isn't refetched for them).
+  const [createdRooms, setCreatedRooms] = useState({});
 
+  // One rooms request per DISTINCT location, not one per card; ensureRooms() also
+  // dedupes against what the page's master-data cache already holds or is fetching.
+  const locationCodesKey = useMemo(
+    () => [...new Set(groups.map((g) => g.location_code))].sort().join(','),
+    [groups],
+  );
   useEffect(() => {
-    if (batchId) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchId]);
+    if (locationCodesKey) ensureRooms(locationCodesKey.split(','));
+  }, [locationCodesKey, ensureRooms]);
 
   const locationName = (code) => locations.find((l) => l.code === code)?.name ?? code;
 
-  const handleGroupResolved = () => {
-    onResolved?.();
-    // re-list so a group whose rows are now fully resolved disappears, and
-    // any remaining groups reflect the current state — cheap (single small
-    // GET) and avoids the resolved card silently going stale.
-    load();
+  const roomsFor = (code) => {
+    const merged = [...(roomsByLocation[code] ?? []), ...(createdRooms[code] ?? [])];
+    return merged.filter((room, i) => merged.findIndex((r) => r.id === room.id) === i);
+  };
+
+  // keyed by the creating card's own group location (RoomResource nests it as
+  // `location.code`; the card already knows it, so don't depend on that shape)
+  const handleRoomCreated = (locationCode, room) => {
+    setCreatedRooms((current) => ({
+      ...current,
+      [locationCode]: [...(current[locationCode] ?? []), room],
+    }));
   };
 
   if (phase === 'loading') {
@@ -284,36 +294,52 @@ export default function RoomMappingSection({ batchId, onResolved }) {
     );
   }
 
-  if (phase === 'error') {
+  if (phase === 'error' && groups.length === 0) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
         {error}
-        <button type="button" onClick={load} className="ml-2 font-medium underline">
+        <button type="button" onClick={onRetry} className="ml-2 font-medium underline">
           Coba lagi
         </button>
       </div>
     );
   }
 
-  if (groups.length === 0) {
-    return null; // nothing unmapped — no need to show an empty section
+  if (groups.length === 0 && notices.length === 0) {
+    return null; // nothing unmapped and nothing resolved in this batch — no section needed
   }
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
       <h2 className="text-sm font-semibold text-gray-800">Pemetaan Ruangan</h2>
       <p className="mt-0.5 text-xs text-gray-500">
-        Nilai ruangan berikut belum dikenali. Aset tetap bisa dipromosikan tanpa dipetakan (ruangan
-        tetap kosong), atau petakan dulu ke ruangan yang sesuai.
+        {groups.length > 0
+          ? 'Nilai ruangan berikut belum dikenali. Aset tetap bisa dipromosikan tanpa dipetakan (ruangan tetap kosong), atau petakan dulu ke ruangan yang sesuai.'
+          : 'Semua nilai ruangan yang belum dikenali pada batch ini sudah dipetakan.'}
       </p>
+
+      {error && (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+          <button type="button" onClick={onRetry} className="ml-2 font-medium underline">
+            Coba lagi
+          </button>
+        </p>
+      )}
+
       <div className="mt-3 space-y-3">
+        {notices.map((n) => (
+          <ResolvedNotice key={`resolved-${n.key}`} notice={n} locationName={locationName(n.locationCode)} />
+        ))}
         {groups.map((g) => (
           <RoomMappingGroupCard
-            key={`${g.location_code}${g.match_key}`}
+            key={roomMappingGroupKey(g)}
             group={g}
             locationName={locationName(g.location_code)}
             batchId={batchId}
-            onResolved={handleGroupResolved}
+            availableRooms={roomsFor(g.location_code)}
+            onRoomCreated={handleRoomCreated}
+            onResolved={onResolved}
           />
         ))}
       </div>

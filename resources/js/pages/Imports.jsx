@@ -12,8 +12,10 @@ import {
   downloadImportTemplate,
   getImportBatch,
   getImportRows,
+  getRoomMappings,
   listImportBatches,
   promoteImportBatch,
+  roomMappingGroupKey,
   uploadImportFile,
 } from '../lib/imports';
 import { useMasterData } from '../lib/useMasterData';
@@ -27,6 +29,20 @@ import { useMasterData } from '../lib/useMasterData';
  * Every number and status shown here comes straight from the API, which is itself a
  * thin layer over the pre-existing `App\Import` pipeline — this page never decides
  * what is valid/warning/error/duplicate, it only displays it.
+ *
+ * Tahap 6.9 R9.4-A1 — this page is the single owner of the active batch's
+ * SERVER state: the batch itself, its rows page, and its unmapped room groups
+ * (plus the feedback for groups resolved in it). `activeBatchIdRef` identifies
+ * the batch every in-flight response must still belong to, so a slow response
+ * for a previously opened batch can never overwrite the current one.
+ *   - Opening a batch fetches batch, rows and room mappings in PARALLEL (they
+ *     only need the batch id) instead of batch -> rows -> mappings (R9.4-18).
+ *   - A resolve or a promotion refreshes rows and mappings in the BACKGROUND,
+ *     exactly once each: the mapping section keeps its cards mounted, so unsaved
+ *     drafts in other groups survive (R9.4-04), and after a promotion groups whose
+ *     rows were promoted disappear instead of staying actionable (R9.4-05).
+ *   - Master data comes from ONE `useMasterData()` instance shared with the
+ *     mapping section via props (R9.4-03).
  */
 
 const BATCH_STATUS_LABEL = {
@@ -57,7 +73,8 @@ function SummaryTile({ label, value, tone = 'default' }) {
 
 export default function Imports() {
   const { canImport, canViewImportHistory } = useAuth();
-  const { categories } = useMasterData();
+  // the page's ONLY master-data instance — also handed to RoomMappingSection
+  const { categories, locations, roomsByLocation, ensureRooms } = useMasterData();
 
   // Tahap 6.8.4: codes are the fixed backend constant (which categories the
   // template generator actually knows a column layout for); names/labels
@@ -90,6 +107,12 @@ export default function Imports() {
 
   const [batch, setBatch] = useState(null);
   const [batchLoading, setBatchLoading] = useState(false);
+  const activeBatchIdRef = useRef(null);
+
+  const [mappingGroups, setMappingGroups] = useState([]);
+  const [mappingsPhase, setMappingsPhase] = useState('loading'); // loading | ready | error (initial load)
+  const [mappingsError, setMappingsError] = useState('');
+  const [mappingNotices, setMappingNotices] = useState([]); // groups resolved in the active batch
 
   const [rows, setRows] = useState([]);
   const [rowsMeta, setRowsMeta] = useState(null);
@@ -121,39 +144,96 @@ export default function Imports() {
     if (canViewImportHistory) loadHistory();
   }, [canViewImportHistory, loadHistory]);
 
+  // Never throws (a rows failure only empties the table, as before).
   const loadRows = useCallback(async (batchId, status, page) => {
     setRowsLoading(true);
     try {
       const res = await getImportRows(batchId, { status: status || undefined, page });
+      if (activeBatchIdRef.current !== batchId) return;
       setRows(res?.data ?? []);
       setRowsMeta(res?.meta ?? null);
     } catch (e) {
+      if (activeBatchIdRef.current !== batchId) return;
       setRows([]);
       setRowsMeta(null);
     } finally {
-      setRowsLoading(false);
+      if (activeBatchIdRef.current === batchId) setRowsLoading(false);
     }
   }, []);
 
+  // Never throws. `background` = keep the current groups on screen while
+  // refreshing (no return to the loading placeholder, so no card remounts);
+  // a background failure keeps them too and surfaces an inline error instead.
+  const loadMappings = useCallback(async (batchId, { background = false } = {}) => {
+    if (!background) setMappingsPhase('loading');
+    setMappingsError('');
+    try {
+      const res = await getRoomMappings(batchId);
+      if (activeBatchIdRef.current !== batchId) return;
+      setMappingGroups(res?.data ?? []);
+      setMappingsPhase('ready');
+    } catch (e) {
+      if (activeBatchIdRef.current !== batchId) return;
+      setMappingsError(e?.message || 'Gagal memuat pemetaan ruangan.');
+      if (!background) setMappingsPhase('error');
+    }
+  }, []);
+
+  // `knownBatch`: the batch resource the caller already holds (the upload
+  // response), so it isn't fetched a second time.
   const openBatch = useCallback(
-    async (batchId) => {
+    async (batchId, knownBatch = null) => {
+      activeBatchIdRef.current = batchId;
       setBatchLoading(true);
       setPromotionResult(null);
       setStatusFilter('');
       setRowsPage(1);
-      try {
-        const res = await getImportBatch(batchId);
-        setBatch(res?.data ?? null);
-        await loadRows(batchId, '', 1);
-      } catch (e) {
+      setMappingGroups([]);
+      setMappingNotices([]);
+
+      const [batchResult] = await Promise.allSettled([
+        knownBatch ? Promise.resolve({ data: knownBatch }) : getImportBatch(batchId),
+        loadRows(batchId, '', 1),
+        loadMappings(batchId),
+      ]);
+      if (activeBatchIdRef.current !== batchId) return; // a newer batch was opened meanwhile
+
+      if (batchResult.status === 'fulfilled') {
+        setBatch(batchResult.value?.data ?? null);
+      } else {
+        // rows/mappings were fetched for this id in parallel — never show them
+        // under a previously opened batch's header
+        setBatch(null);
         setFlashTone('error');
-        setFlash(e?.message || 'Gagal memuat data import.');
-      } finally {
-        setBatchLoading(false);
+        setFlash(batchResult.reason?.message || 'Gagal memuat data import.');
       }
+      setBatchLoading(false);
     },
-    [loadRows],
+    [loadRows, loadMappings],
   );
+
+  // R9.4-04 — record the ACTUAL server result as feedback, drop only that group
+  // locally (other cards stay mounted with their drafts), then refresh rows and
+  // mappings once each in the background.
+  const handleMappingResolved = (group, result, fallbackRoomName) => {
+    if (!batch) return;
+    const key = roomMappingGroupKey(group);
+    setMappingNotices((current) => [
+      ...current.filter((n) => n.key !== key),
+      {
+        key,
+        locationCode: group.location_code,
+        rawValue: group.raw_value,
+        roomName: result?.room?.name ?? fallbackRoomName,
+        updatedRows: result?.updated_rows ?? 0,
+        aliasCreated: Boolean(result?.alias_created),
+        aliasAlreadyExisted: Boolean(result?.alias_already_existed),
+      },
+    ]);
+    setMappingGroups((current) => current.filter((g) => roomMappingGroupKey(g) !== key));
+    loadRows(batch.id, statusFilter, rowsPage);
+    loadMappings(batch.id, { background: true });
+  };
 
   const handleDownloadTemplate = async () => {
     if (!category) return;
@@ -182,8 +262,8 @@ export default function Imports() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       setFlashTone('success');
       setFlash(res?.message || 'File berhasil diunggah dan divalidasi.');
-      await openBatch(res.data.id);
-      if (canViewImportHistory) await loadHistory();
+      // the upload response IS the batch resource (same shape as GET /imports/{id})
+      await Promise.all([openBatch(res.data.id, res.data), canViewImportHistory ? loadHistory() : null]);
     } catch (e) {
       setUploadError(e?.message || 'Gagal mengunggah file. Coba lagi.');
     } finally {
@@ -208,11 +288,20 @@ export default function Imports() {
     setPromoteError('');
     try {
       const res = await promoteImportBatch(batch.id);
+      // R9.4-05 — the promote response already carries the updated batch: use it
+      // as-is (no extra GET), then refresh rows and room mappings once each in the
+      // background. Promoted rows drop out of the mapping groups server-side, so
+      // their cards disappear; feedback for groups resolved before the promotion
+      // is cleared since it no longer describes pending work.
       setBatch(res.data);
       setPromotionResult(res.promotion);
       setPromoteOpen(false);
-      await loadRows(batch.id, statusFilter, rowsPage);
-      if (canViewImportHistory) await loadHistory();
+      setMappingNotices([]);
+      await Promise.all([
+        loadRows(batch.id, statusFilter, rowsPage),
+        loadMappings(batch.id, { background: true }),
+        canViewImportHistory ? loadHistory() : null,
+      ]);
     } catch (e) {
       setPromoteError(e?.message || 'Gagal mempromosikan batch. Coba lagi.');
     } finally {
@@ -373,7 +462,15 @@ export default function Imports() {
 
           <RoomMappingSection
             batchId={batch.id}
-            onResolved={() => loadRows(batch.id, statusFilter, rowsPage)}
+            groups={mappingGroups}
+            phase={mappingsPhase}
+            error={mappingsError}
+            onRetry={() => loadMappings(batch.id, { background: mappingsPhase === 'ready' })}
+            notices={mappingNotices}
+            locations={locations}
+            roomsByLocation={roomsByLocation}
+            ensureRooms={ensureRooms}
+            onResolved={handleMappingResolved}
           />
 
           <div className="flex flex-wrap gap-2">

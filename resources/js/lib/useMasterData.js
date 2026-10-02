@@ -17,6 +17,13 @@ import { api } from './api';
  * Every list is reused from cache, so switching filters never re-hits the network
  * for data already held.
  *
+ * The cache is per hook INSTANCE (component-local state), never global: a page
+ * that wants its children to share one cache calls this hook once and passes the
+ * result down (R9.4-03 — `Imports.jsx` -> `RoomMappingSection`), instead of each
+ * child calling it and refetching the same lists. Being instance-local is also
+ * what keeps it naturally scoped to the signed-in user: the page unmounts on
+ * logout, so nothing survives into the next session.
+ *
  * R7.1 — `GET /api/locations` itself is NOT location-scoped by backend (every
  * role, including `unit_admin`, gets every active location back — confirmed
  * by reading `LocationController::index()`), so the returned `locations`
@@ -69,7 +76,8 @@ export function useMasterData() {
       if (!code) continue;
       if (pendingSubs.current.has(code)) continue;
       setSubcategoriesByCategory((current) => {
-        if (current[code]) return current;
+        // re-checked here too: React may invoke an updater twice (StrictMode)
+        if (current[code] || pendingSubs.current.has(code)) return current;
         pendingSubs.current.add(code);
         api
           .get(`/api/categories/${encodeURIComponent(code)}/subcategories`)
@@ -90,7 +98,8 @@ export function useMasterData() {
       if (!code) continue;
       if (pendingRooms.current.has(code)) continue;
       setRoomsByLocation((current) => {
-        if (current[code]) return current;
+        // re-checked here too: React may invoke an updater twice (StrictMode)
+        if (current[code] || pendingRooms.current.has(code)) return current;
         pendingRooms.current.add(code);
         api
           .get(`/api/locations/${encodeURIComponent(code)}/rooms`)
