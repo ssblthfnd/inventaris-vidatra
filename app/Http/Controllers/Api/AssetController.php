@@ -67,10 +67,22 @@ class AssetController extends ApiController
 
     public function show(Request $request, Asset $asset): AssetResource
     {
-        // The route resolves soft-deleted assets (`->withTrashed()`) so operator/admin
-        // can view + restore them; a viewer must still see a plain 404 (Tahap 5.8.5).
-        if ($asset->trashed() && ! $request->user()?->canWriteInventory()) {
-            abort(404);
+        // The route resolves soft-deleted assets (`->withTrashed()`) so an actor
+        // who may restore them can open them first; anyone else (e.g. a viewer)
+        // must still see a plain 404 (Tahap 5.8.5).
+        //
+        // Stage 6.9 R9.3 — WHAT is the named `assets.restore` ability (it used to
+        // be the legacy `canWriteInventory()`, i.e. literal admin/operator only,
+        // which silently 404'd super_admin and unit_admin even though the
+        // restore endpoint itself admits both); WHERE is `AssetPolicy::restore`
+        // (LocationScope), so a unit_admin never sees another unit's trashed
+        // asset — 404 there too, never 403, for the same don't-confirm-existence
+        // reason as the active-asset check below.
+        if ($asset->trashed()) {
+            $user = $request->user();
+            if ($user === null || $user->cannot('assets.restore') || $user->cannot('restore', $asset)) {
+                abort(404);
+            }
         }
 
         // Stage 6.9 R4 — a unit_admin requesting an asset outside their scope

@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `POST /api/categories` (Tahap 6.8.4), `can:admin`.
+ * `POST /api/categories` (Tahap 6.8.4), `can:categories.manage` (Stage 6.9 R9.3; was `can:admin`).
  *
  * Same immutable-code / always-starts-active shape as
  * {@see StoreLocationRequest} — `code` participates in every historical
@@ -18,7 +18,7 @@ class StoreCategoryRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:categories.manage
     }
 
     protected function prepareForValidation(): void

@@ -106,6 +106,9 @@ class AuthFoundationTest extends TestCase
                 'role' => 'viewer',
                 'location_code' => null,
                 'is_active' => true,
+                // Stage 6.9 R9.3 — additive: authoritative abilities (PermissionRegistry) + WHERE flag.
+                'abilities' => ['assets.view', 'dashboard.view', 'rooms.view'],
+                'is_global_scope' => true,
             ]]);
     }
 

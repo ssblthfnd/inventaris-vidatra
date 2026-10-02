@@ -20,7 +20,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  * each subcategory is always its own `category_code` — a bare `code` is
  * never trusted as globally unique (schema_design.md §3.2).
  *
- * `adminIndex()`/`store()`/`update()` (Tahap 6.8.4, `can:admin`) are new,
+ * `adminIndex()`/`store()`/`update()` (Tahap 6.8.4, `can:admin`; `can:subcategories.manage` since R9.3) are new,
  * separate — deliberately a different route (`GET /api/subcategories`,
  * flat, every category, active AND inactive) rather than adding an
  * "include inactive" mode to the existing nested `index()`, mirroring
@@ -63,7 +63,7 @@ class SubcategoryController extends ApiController
     }
 
     /**
-     * `GET /api/subcategories` (Tahap 6.8.4), `can:admin` — every subcategory
+     * `GET /api/subcategories` (Tahap 6.8.4), `can:subcategories.manage` (R9.3; was `can:admin`) — every subcategory
      * across every category, active AND inactive, for the Master Data
      * management list. Unpaginated like every other master-data collection.
      */

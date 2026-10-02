@@ -10,7 +10,7 @@ use Illuminate\Http\Response;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
- * `GET /api/assets/export` (Tahap 6.2), `can:operator` — exports the SAME filtered
+ * `GET /api/assets/export` (Tahap 6.2), `can:assets.export` (Stage 6.9 R9.3; was `can:operator`) — exports the SAME filtered
  * result set `GET /api/assets` would show, as a workbook structurally matching the
  * real source files (`data/excel/Inventaris {Meubelair,Elektronik,Alat
  * Kebersihan}.xlsx`).

@@ -21,8 +21,8 @@ const ROLE_LABELS = {
  * R7.1 — each item's visibility is now driven by a named capability from
  * `useAuth()` (`show`) instead of a single hardcoded `adminOnly` flag, so a
  * `unit_admin`/`super_admin` sees exactly the functional surface backend
- * actually grants them (see `AuthContext.jsx`'s own docblock for which
- * legacy-gated capabilities they still don't have). Dashboard/Inventaris are
+ * actually grants them (R9.3: every flag is derived from the `/api/me`
+ * `abilities` list — see `AuthContext.jsx`). Dashboard/Inventaris are
  * `show: () => true` — every active role has at least read access to both,
  * unchanged from before; the PAGE itself still narrows what's rendered
  * inside (e.g. a viewer's Inventory has no write actions).
@@ -32,13 +32,13 @@ const NAV = [
   { label: 'Inventaris', to: '/inventory', ready: true, show: () => true },
   { label: 'Import Excel', to: '/imports', ready: true, show: (auth) => auth.canImport },
   { label: 'Laporan', to: '/reports', ready: true, show: (auth) => auth.canViewReports },
-  // R7.1 — a NEW dedicated entry point for `unit_admin`/`super_admin` room
-  // management (own-location for unit_admin, every location for
-  // super_admin), reusing the R7 `rooms.manage` ability. Legacy `admin`
-  // already manages rooms inside "Master Data" below — deliberately not
-  // shown this second entry too, to avoid two different UIs for the same
-  // admin doing the same thing.
-  { label: 'Ruangan', to: '/rooms', ready: true, show: (auth) => auth.canManageRooms && !auth.isAdmin },
+  // R7.1 — a dedicated room-management entry point (`rooms.manage`) for an
+  // actor WITHOUT the Master Data page — today that is `unit_admin` (own
+  // location only). Whoever has Master Data (admin, and since R9.3 also
+  // super_admin) already manages rooms in its Rooms panel, so this second
+  // entry is deliberately not shown to them too (one UI per actor for the
+  // same job; `/rooms` itself still works by URL).
+  { label: 'Ruangan', to: '/rooms', ready: true, show: (auth) => auth.canManageRooms && !auth.canManageMasterData },
   // Tahap 6.4 — unlike every other item above (always visible, gated only on
   // the page itself), this one is gated in the NAV LIST too, per the
   // stage's explicit requirement: an unauthorized role must not even see it.
@@ -46,11 +46,10 @@ const NAV = [
   // named ability already covers it — R2).
   { label: 'Pengguna', to: '/users', ready: true, show: (auth) => auth.canManageUsers },
   // Tahap 6.8.1 — same gated-in-the-nav-list treatment as 'Pengguna' above.
-  // R7.1: stays literal-`admin`-only (`canManageMasterData`) — its backend
-  // routes (locations/categories/subcategories/room admin-browser) are
-  // still the legacy `can:admin` Gate, never migrated to a named ability,
-  // so `super_admin` does NOT actually have access yet (a confirmed,
-  // pre-existing gap reported separately, not fixed by R7.1).
+  // R9.3: `canManageMasterData` = locations/categories/subcategories.manage
+  // (from /api/me abilities), now that those routes are named abilities
+  // instead of the legacy literal-`admin` Gate — so `super_admin` sees it
+  // too; unit_admin/operator/viewer hold none of them.
   { label: 'Master Data', to: '/master-data', ready: true, show: (auth) => auth.canManageMasterData },
 ];
 

@@ -7,7 +7,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `PUT|PATCH /api/locations/{location}` (Tahap 6.8.3), `can:admin`.
+ * `PUT|PATCH /api/locations/{location}` (Tahap 6.8.3), `can:locations.manage` (Stage 6.9 R9.3; was `can:admin`).
  *
  * Partial-patch semantics, same `sometimes` idiom as
  * {@see UpdateRoomRequest}. `code` is `prohibited` —
@@ -23,7 +23,7 @@ class UpdateLocationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:locations.manage
     }
 
     protected function prepareForValidation(): void

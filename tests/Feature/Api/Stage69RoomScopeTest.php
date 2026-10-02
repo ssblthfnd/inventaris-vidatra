@@ -389,8 +389,18 @@ class Stage69RoomScopeTest extends TestCase
         ])->assertCreated();
     }
 
-    /** unit_admin needs no roomAliases.manage to USE an existing alias mapping during their own authorized import — read access to aliases stays open (R7 explicitly does not restrict alias READ). */
-    public function test_unit_admin_can_still_read_existing_aliases(): void
+    /**
+     * Stage 6.9 R9.3 — rewritten from `test_unit_admin_can_still_read_existing_aliases`.
+     * R7 left the generic alias list (`GET /api/room-aliases`) open to
+     * unit_admin, but it is an unscoped every-location browser (room names +
+     * ids of other units, even when `?location_code=` is omitted). The R9.3
+     * product decision is that unit_admin may NOT list aliases through it —
+     * not even its own location's: 403 for both. Import alias matching
+     * itself never used this endpoint (RoomMatcher reads `room_aliases`
+     * server-side), so an authorized import still resolves via existing
+     * aliases — covered by ImportRoomMappingTest.
+     */
+    public function test_unit_admin_cannot_list_aliases_through_the_generic_browser(): void
     {
         $this->seedUnitLocations();
         $room = $this->roomIn('02');
@@ -402,7 +412,8 @@ class Stage69RoomScopeTest extends TestCase
         ]);
         Sanctum::actingAs($this->unitAdmin('02'));
 
-        $this->getJson('/api/room-aliases?location_code=02')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson('/api/room-aliases?location_code=02')->assertForbidden();
+        $this->getJson('/api/room-aliases')->assertForbidden();
     }
 
     /* ================================================================== H. multiple unit admins */

@@ -8,7 +8,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `POST /api/room-aliases` (Tahap 6.8.2), `can:operator` — see
+ * `POST /api/room-aliases` (Tahap 6.8.2), `can:roomAliases.manage` (Stage 6.9 R9.3; was `can:operator`) — see
  * `RoomAliasController`'s docblock for why this is operator-writable, unlike
  * every other master-data write in this app.
  *
@@ -23,7 +23,7 @@ class StoreRoomAliasRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:operator
+        return true; // route middleware: auth:sanctum + auth.active + can:roomAliases.manage
     }
 
     protected function prepareForValidation(): void

@@ -93,7 +93,7 @@ final class RoomMappingResolver
      *
      * @return array{location_code:string,match_key:string,room:array{id:int,name:string},updated_rows:int,alias_created:bool,alias_already_existed:bool}
      *
-     * @throws AuthorizationException  actor has no scope for `$locationCode` (403)
+     * @throws AuthorizationException  actor has no scope for `$locationCode`, or `$saveAsAlias` without `roomAliases.resolve` (403)
      * @throws RuntimeException        room/alias business-rule violation (caller maps this to 422)
      */
     public function resolve(
@@ -109,6 +109,19 @@ final class RoomMappingResolver
             throw new AuthorizationException(
                 "Actor is not authorized for location '{$locationCode}'."
             );
+        }
+
+        // Stage 6.9 R9.3 — persisting a PERMANENT alias is its own WHAT:
+        // `roomAliases.resolve`, deliberately narrower than the generic
+        // `roomAliases.manage` (which unit_admin does not hold). WHERE is the
+        // scope check above, which already ran for this exact location —
+        // an alias can only ever be created for a location the actor may
+        // map, and only through this import room-mapping path. Checked
+        // before the transaction so nothing (alias OR staged-row update) is
+        // written when it fails. A batch-only mapping (`$saveAsAlias=false`)
+        // needs only the route's `assets.import`, as before.
+        if ($saveAsAlias && $actor->cannot('roomAliases.resolve')) {
+            throw new AuthorizationException('Actor may not save a permanent room alias.');
         }
 
         $matchKey = ValueNormalizer::roomMatchKey($rawValue);

@@ -8,7 +8,7 @@ const SEARCH_DEBOUNCE_MS = 350;
 
 /**
  * Categories panel for the Master Data page (Tahap 6.8.4) — same shape as
- * `LocationsPanel`. Admin-only, matching the backend's `can:admin` gate.
+ * `LocationsPanel`. Shown only with `categories.manage` (admin/super_admin), matching the backend gate (R9.3).
  *
  * Deliberately fetches its own admin view directly via `?include_inactive=1`
  * rather than using `useMasterData()`'s shared active-only `categories`

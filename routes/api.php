@@ -23,13 +23,16 @@ use Illuminate\Support\Facades\Route;
 | API Routes  (prefix: /api)
 |--------------------------------------------------------------------------
 |
-| Auth: Sanctum SPA cookie/session (guard `web`). Authorization: role Gates via
-| the `can:` middleware. See docs/api_convention.md.
+| Auth: Sanctum SPA cookie/session (guard `web`). Authorization: the `can:`
+| middleware. See docs/api_convention.md.
 |
-| Tahap 5.3 — read-only inventory + master-data endpoints  (can:viewer).
-| Tahap 5.4 — asset write API & lifecycle                   (can:operator).
-| Tahap 5.5 — read-only mutation history                    (can:viewer).
-| Tahap 5.6 — read-only dashboard aggregation               (can:viewer).
+| Stage 6.9 R9.3 — every group below except the read group (`can:viewer`,
+| "any active user") is gated by a NAMED ability from
+| App\Support\PermissionRegistry (WHAT); location scope (WHERE) is enforced
+| inside the controller/policy/service. The legacy `can:operator` /
+| `can:admin` Gates are no longer used by any route — they only ever
+| matched literal `admin`/`operator` and silently blocked `super_admin`
+| (enforced by tests/Feature/Api/Stage693AuthorizationConsolidationTest).
 |
 */
 
@@ -48,8 +51,9 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('dashboard', [DashboardController::class, 'index'])->name('api.dashboard');
 
         Route::get('assets', [AssetController::class, 'index'])->name('api.assets.index');
-        // ->withTrashed(): operator/admin can read a soft-deleted asset (to restore it);
-        // AssetController::show() still 404s it for a viewer. (Tahap 5.8.5)
+        // ->withTrashed(): an actor holding `assets.restore` can read a soft-deleted
+        // asset (to restore it), within its own location scope; AssetController::show()
+        // still 404s it for everyone else, e.g. a viewer. (Tahap 5.8.5; R9.3)
         // ->whereNumber('asset') (Tahap 6.2): asset ids are always numeric — this is
         // what lets the literal `assets/export` route below win over this wildcard
         // instead of Eloquent trying (and failing) to bind an Asset with id "export".
@@ -79,19 +83,18 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::get('rooms/{room}', [RoomController::class, 'show'])->name('api.rooms.show');
 
         // Room aliases (Tahap 6.8.2) — read is viewer-open like every other
-        // master-data list; write is `can:operator` below (see
-        // RoomAliasController's docblock for why aliases differ from the
-        // rest of Tahap 6.8's admin-only master data).
+        // master-data list, but (Stage 6.9 R9.3) global-scope actors only:
+        // this is an unscoped, every-location alias browser, so a unit_admin
+        // gets 403 (RoomAliasController::index()). Write is
+        // `can:roomAliases.manage` below (see RoomAliasController's docblock
+        // for why aliases differ from the rest of Tahap 6.8's master data).
         Route::get('room-aliases', [RoomAliasController::class, 'index'])->name('api.room-aliases.index');
     });
 
     // --- reporting (Tahap 6.3; Stage 6.9 R4) — `can:assets.report`, NOT
-    // `can:operator`: unlike every other endpoint in the `can:operator` group
-    // below, this one deliberately also admits `unit_admin` (the named
-    // ability already included it in App\Support\PermissionRegistry's map
-    // since R1) while still excluding `viewer` exactly as before — moving
-    // this single route off `can:operator` does NOT touch canWriteInventory()
-    // or grant unit_admin anything else in that group. Same filter
+    // `can:operator`: this one deliberately also admits `unit_admin` (the
+    // named ability already included it in App\Support\PermissionRegistry's
+    // map since R1) while still excluding `viewer` exactly as before. Same filter
     // vocabulary as `GET /api/assets` / `GET /api/assets/export`
     // (AssetIndexRequest via FiltersAssets, which is where the actual
     // location scoping happens); see ReportController.
@@ -160,12 +163,16 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     // --- import (Tahap 6.1; Stage 6.9 R6) — `can:assets.import`, NOT
     // `can:operator`: admits `unit_admin` too, location-scoped (staging and
     // promotion both independently enforce it — see ImportManager /
-    // AssetPromoter). `imports` (the cross-batch history LIST) deliberately
-    // stays on `can:operator` below — unit_admin does not get a global
-    // import-history browser in this phase. `imports/template` is
-    // registered BEFORE `imports/{batch}` so the literal path wins over the
-    // wildcard. ---
+    // AssetPromoter). `imports/template` is registered BEFORE
+    // `imports/{batch}` so the literal path wins over the wildcard. ---
     Route::middleware('can:assets.import')->group(function () {
+        // Import history LIST (Tahap 6.1) — every batch across every user/
+        // location. Stage 6.9 R9.3: moved off `can:operator` onto
+        // `can:assets.import` (WHAT) so super_admin reaches it; the list is
+        // NOT location-scoped, so ImportController::index() itself admits
+        // only a GLOBAL-scope actor (WHERE) — unit_admin still gets 403,
+        // unchanged (Stage 6.9 R6 "Scope Control").
+        Route::get('imports', [ImportController::class, 'index'])->name('api.imports.index');
         Route::get('imports/template', [ImportTemplateController::class, 'show'])->name('api.imports.template');
         Route::post('imports', [ImportController::class, 'store'])->name('api.imports.store');
         Route::get('imports/{batch}', [ImportController::class, 'show'])->name('api.imports.show');
@@ -175,36 +182,44 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
 
         // Tahap 6.9 R9.2 — same `can:assets.import` gate, location-based (not
         // ImportBatchPolicy/ownership) authorization inside RoomMappingResolver,
-        // matching `promote` above.
+        // matching `promote` above. R9.3: `save_as_alias=true` additionally
+        // requires the narrow `roomAliases.resolve` ability, checked inside
+        // RoomMappingResolver::resolve() (it is a per-request flag, not a route).
         Route::get('imports/{batch}/room-mappings', [ImportController::class, 'roomMappings'])->name('api.imports.room-mappings.index');
         Route::post('imports/{batch}/room-mappings/resolve', [ImportController::class, 'resolveRoomMapping'])->name('api.imports.room-mappings.resolve');
     });
 
-    // --- everything else that was, and remains, operator/admin only:
-    // labels, export, import HISTORY LIST, room aliases — Stage 6.9 R5/R6
-    // deliberately do NOT touch these gates, so unit_admin stays fully
-    // blocked from all of them. ---
-    Route::middleware('can:operator')->group(function () {
-        // Printable label PDF (Tahap 6.0; ?size=small|medium|large added Tahap 6.0.2,
-        // default small). No ->withTrashed(): a soft-deleted asset is not something
-        // the app prints a fresh label for (see AssetLabelController).
+    // --- labels / export / generic room-alias writes. Stage 6.9 R9.3 moved
+    // each off the legacy `can:operator` Gate onto its own named ability.
+    // Same outcome as before for admin/operator/viewer/unit_admin (none of
+    // these abilities is granted to unit_admin or viewer); super_admin
+    // gains all three ('*'), which `can:operator` used to silently deny. ---
+
+    // Printable label PDF (Tahap 6.0; ?size=small|medium|large added Tahap 6.0.2,
+    // default small). No ->withTrashed(): a soft-deleted asset is not something
+    // the app prints a fresh label for (see AssetLabelController). No location
+    // check inside: every role holding `assets.printLabel` today is global —
+    // granting it to a scoped role later requires adding one first.
+    Route::middleware('can:assets.printLabel')->group(function () {
         Route::get('assets/{asset}/label', [AssetLabelController::class, 'show'])->name('api.assets.label.show')->whereNumber('asset');
         Route::post('assets/batch/label', [AssetLabelController::class, 'batch'])->name('api.assets.label.batch');
+    });
 
-        // Excel export (Tahap 6.2) — reuses the exact `GET /api/assets` filter
-        // vocabulary (AssetIndexRequest) via FiltersAssets; see AssetExportController.
-        // Deliberately left on `can:operator` (Stage 6.9 R4/R6 do not add export
-        // scope) — unit_admin stays fully blocked from export here, unchanged.
+    // Excel export (Tahap 6.2) — reuses the exact `GET /api/assets` filter
+    // vocabulary (AssetIndexRequest) via FiltersAssets (which also applies
+    // location scope); see AssetExportController. unit_admin does not hold
+    // `assets.export` (PermissionRegistry), so stays blocked, unchanged.
+    Route::middleware('can:assets.export')->group(function () {
         Route::get('assets/export', [AssetExportController::class, 'export'])->name('api.assets.export');
+    });
 
-        // Import history LIST (Tahap 6.1) — every batch across every user/
-        // location; deliberately NOT scoped for unit_admin (Stage 6.9 R6 §
-        // "Scope Control") — see ImportController's docblock.
-        Route::get('imports', [ImportController::class, 'index'])->name('api.imports.index');
-
-        // Room aliases (Tahap 6.8.2) — write side; read is `can:viewer` above.
-        // Real DELETE (unlike every other master-data entity in Tahap 6.8):
-        // RoomAlias is a leaf table with no dependents, see RoomAliasController.
+    // Room aliases (Tahap 6.8.2) — generic write side (`roomAliases.manage`);
+    // read is `can:viewer` above, global-scope actors only (see
+    // RoomAliasController::index()). Real DELETE (unlike every other
+    // master-data entity in Tahap 6.8): RoomAlias is a leaf table with no
+    // dependents, see RoomAliasController. NOT `roomAliases.resolve` — that
+    // narrower ability only ever authorizes the import room-mapping flow.
+    Route::middleware('can:roomAliases.manage')->group(function () {
         Route::post('room-aliases', [RoomAliasController::class, 'store'])->name('api.room-aliases.store');
         Route::match(['put', 'patch'], 'room-aliases/{roomAlias}', [RoomAliasController::class, 'update'])
             ->name('api.room-aliases.update');
@@ -233,54 +248,54 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     // RoomController's docblock. No DELETE: deactivation (`is_active`) is the
     // only lifecycle mechanism, same precedent as user management.
     //
-    // `GET /rooms` stays `can:admin` only — it is a flat, cross-location
-    // (active AND inactive) browser, and unit_admin's existing R4 read scope
-    // (`GET /api/locations/{location}/rooms`, `GET /api/rooms/{room}`) is the
-    // read surface they get instead; giving them this endpoint too would leak
-    // other units' room existence, which R7 does not ask for.
-    Route::middleware('can:admin')->group(function () {
-        Route::get('rooms', [RoomController::class, 'adminIndex'])->name('api.rooms.admin-index');
-    });
-
-    // `POST /rooms` / `PUT|PATCH /rooms/{room}` — regated from `can:admin` to
-    // the named `can:rooms.manage` ability (Stage 6.9 R7) so `unit_admin` can
-    // reach them too (App\Support\PermissionRegistry now grants unit_admin
-    // this ability). Unchanged for admin/super_admin (both still `*`) and a
-    // no-op for operator/viewer (neither has `rooms.manage`, same denial as
-    // `can:admin` before). WHERE (is this room's location in the actor's
-    // scope) is checked inside RoomController via RoomPolicy — the route
-    // gate alone never grants cross-unit access.
+    // `GET /rooms` is a flat, cross-location (active AND inactive) browser.
+    // Stage 6.9 R9.3: moved from `can:admin` to `can:rooms.manage` (WHAT),
+    // with RoomController::adminIndex() admitting only a GLOBAL-scope actor
+    // (WHERE) — unit_admin holds `rooms.manage` but still gets 403 here,
+    // unchanged: its read surface stays the scoped R4 endpoints
+    // (`GET /api/locations/{location}/rooms`, `GET /api/rooms/{room}`), since
+    // this endpoint would leak other units' room existence.
+    //
+    // `POST /rooms` / `PUT|PATCH /rooms/{room}` — `can:rooms.manage` since
+    // Stage 6.9 R7 (admin/super_admin '*', unit_admin scoped; operator/viewer
+    // never held it). WHERE (is this room's location in the actor's scope) is
+    // checked inside RoomController via RoomPolicy — the route gate alone
+    // never grants cross-unit access.
     Route::middleware('can:rooms.manage')->group(function () {
+        Route::get('rooms', [RoomController::class, 'adminIndex'])->name('api.rooms.admin-index');
         Route::post('rooms', [RoomController::class, 'store'])->name('api.rooms.store');
         Route::match(['put', 'patch'], 'rooms/{room}', [RoomController::class, 'update'])->name('api.rooms.update');
     });
 
-    // --- location master-data management (Tahap 6.8.3) — admin only ---
+    // --- location master-data management (Tahap 6.8.3; `locations.manage`
+    // since Stage 6.9 R9.3 — admin/super_admin) ---
     // Unlike rooms, no separate GET route: the existing `GET /locations` above
-    // gained an opt-in `?include_inactive=1` (honoured only for `can:admin`)
-    // instead — see LocationController's docblock for why. No DELETE: same
-    // is_active-only lifecycle precedent as every other Tahap 6.8 entity
-    // except room aliases.
-    Route::middleware('can:admin')->group(function () {
+    // gained an opt-in `?include_inactive=1` (honoured only for
+    // `locations.manage`) instead — see LocationController's docblock for
+    // why. No DELETE: same is_active-only lifecycle precedent as every other
+    // Tahap 6.8 entity except room aliases.
+    Route::middleware('can:locations.manage')->group(function () {
         Route::post('locations', [LocationController::class, 'store'])->name('api.locations.store');
         Route::match(['put', 'patch'], 'locations/{location}', [LocationController::class, 'update'])
             ->name('api.locations.update');
     });
 
-    // --- category master-data management (Tahap 6.8.4) — admin only ---
+    // --- category master-data management (Tahap 6.8.4; `categories.manage`
+    // since Stage 6.9 R9.3 — admin/super_admin) ---
     // Same opt-in `?include_inactive=1` pattern as locations — see
     // CategoryController's docblock. No DELETE.
-    Route::middleware('can:admin')->group(function () {
+    Route::middleware('can:categories.manage')->group(function () {
         Route::post('categories', [CategoryController::class, 'store'])->name('api.categories.store');
         Route::match(['put', 'patch'], 'categories/{category}', [CategoryController::class, 'update'])
             ->name('api.categories.update');
     });
 
-    // --- subcategory master-data management (Tahap 6.8.4) — admin only ---
+    // --- subcategory master-data management (Tahap 6.8.4;
+    // `subcategories.manage` since Stage 6.9 R9.3 — admin/super_admin) ---
     // A separate `GET /subcategories` (flat, all categories, active AND
     // inactive) rather than changing the existing nested `index()` — same
     // pattern as rooms, see SubcategoryController's docblock. No DELETE.
-    Route::middleware('can:admin')->group(function () {
+    Route::middleware('can:subcategories.manage')->group(function () {
         Route::get('subcategories', [SubcategoryController::class, 'adminIndex'])
             ->name('api.subcategories.admin-index');
         Route::post('subcategories', [SubcategoryController::class, 'store'])->name('api.subcategories.store');

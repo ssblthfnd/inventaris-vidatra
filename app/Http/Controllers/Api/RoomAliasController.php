@@ -7,7 +7,9 @@ use App\Http\Requests\Api\UpdateRoomAliasRequest;
 use App\Http\Resources\RoomAliasResource;
 use App\Import\Matching\RoomMatcher;
 use App\Import\Parsing\ValueNormalizer;
+use App\Import\RoomMapping\RoomMappingResolver;
 use App\Models\RoomAlias;
+use App\Support\LocationScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -16,13 +18,23 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  * Room alias management (Tahap 6.8.2).
  *
  * Unlike every other master-data write in this app (locations, categories,
- * subcategories, rooms — all `can:admin`, Tahap 6.8.1), room aliases are
- * `can:operator` for every verb including write. This is not a new decision:
+ * subcategories, rooms — all `can:admin` at Tahap 6.8.1), room aliases were
+ * `can:operator` for every verb including write (operator keeps that access
+ * via `roomAliases.manage` today — see the R9.3 note below). This was not a new decision:
  * `AuthServiceProvider`'s own docblock, written at Tahap 5.0 before any of
  * this code existed, already says "operator -> read + write assets /
  * mutations / imports / room aliases" vs. "admin -> ... structural
  * master-data management" — aliases are a day-to-day import-support tool
  * operators use directly, not structural data.
+ *
+ * Stage 6.9 R9.3 — writes are gated by the named `roomAliases.manage`
+ * ability (operator/admin/super_admin; unit_admin deliberately excluded)
+ * instead of `can:operator`. `index()` stays in the viewer-open read group,
+ * but is an unscoped every-location browser, so it admits only a
+ * GLOBAL-scope actor — a unit_admin gets 403 rather than other units' room
+ * names. The narrower `roomAliases.resolve` ability (unit_admin included,
+ * location-scoped) never reaches this controller: it only authorizes
+ * `save_as_alias` in {@see RoomMappingResolver}.
  *
  * `RoomAlias` has no `is_active` column and nothing references it (see the
  * migration's own docblock) — it is a pure leaf lookup table, so a real
@@ -41,6 +53,8 @@ class RoomAliasController extends ApiController
 {
     public function index(Request $request): AnonymousResourceCollection
     {
+        abort_unless(LocationScope::for($request->user())->isGlobal(), 403);
+
         $aliases = RoomAlias::query()
             ->with(['location', 'room', 'createdBy'])
             ->when($request->filled('location_code'), function ($query) use ($request) {

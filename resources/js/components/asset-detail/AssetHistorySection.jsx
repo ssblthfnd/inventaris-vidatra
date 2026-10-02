@@ -24,9 +24,9 @@ import {
  * full page reload — pass a value that changes (e.g. an incrementing counter).
  *
  * Tahap 6.5 — revert/undo: each event card gets a "Revert" action when the API
- * says `can_revert` (operator/admin only — `isOperator` gates it client-side,
+ * says `can_revert` (`canRevert` — the `assets.revert` ability from `/api/me` — gates it client-side,
  * same "UI-only convenience" philosophy as everywhere else in this app; the
- * backend's own `can:operator` gate is what actually enforces it). A
+ * backend's own `can:assets.revert` gate + location scope is what actually enforces it). A
  * successful revert refreshes this section's own history AND calls
  * `onReverted(assets)` so the parent can patch the asset it's showing without
  * a full page reload.
@@ -77,7 +77,7 @@ function historyErrorMessage(e) {
   return 'Riwayat perubahan tidak dapat dimuat.';
 }
 
-function HistoryEventCard({ event, isOperator, onRevertClick }) {
+function HistoryEventCard({ event, canRevert, onRevertClick }) {
   const label = eventLabel(event);
   const isCreate = event.event_type === 'CREATE';
   const { before, after } = getEventSnapshots(event);
@@ -109,7 +109,7 @@ function HistoryEventCard({ event, isOperator, onRevertClick }) {
         </div>
         {/* Prefer not showing an actionable button when the operation cannot be
             performed at all — never a disabled button with no explanation. */}
-        {isOperator && event.can_revert && (
+        {canRevert && event.can_revert && (
           <button
             type="button"
             onClick={() => onRevertClick(event)}
@@ -148,7 +148,7 @@ function HistoryEventCard({ event, isOperator, onRevertClick }) {
 export default function AssetHistorySection({
   assetId,
   refreshSignal,
-  isOperator = false,
+  canRevert = false,
   onReverted,
   initialFetch = null,
 }) {
@@ -268,7 +268,7 @@ export default function AssetHistorySection({
                 <HistoryEventCard
                   key={event.id}
                   event={event}
-                  isOperator={isOperator}
+                  canRevert={canRevert}
                   onRevertClick={setRevertTarget}
                 />
               ))}

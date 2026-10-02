@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Gate;
  * `index()`/`show()` (Tahap 5.3) stay read-only, active-only BY DEFAULT for
  * every role — untouched for every existing caller. `index()` gained exactly
  * one opt-in addition (Tahap 6.8.3): `?include_inactive=1`, honoured ONLY
- * when the actor passes `can:admin` — silently ignored otherwise, so a
+ * when the actor holds `locations.manage` (R9.3; was `can:admin`) — silently ignored otherwise, so a
  * non-admin (or any caller that never sends the param, which is every
  * existing consumer: `useMasterData()`, `MasterDataReadApiTest`) sees
  * byte-identical behaviour to before. This was chosen over a separate admin
@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Gate;
  * including admin, unless the Master Data page's own explicit request asks
  * for them.
  *
- * `store()`/`update()` (Tahap 6.8.3, `can:admin`) are new. No `destroy()` —
+ * `store()`/`update()` (Tahap 6.8.3, `can:admin`; `can:locations.manage` since R9.3) are new. No `destroy()` —
  * locations are structural master data; `is_active` is the only lifecycle
  * mechanism (same precedent as rooms). Deactivating a location performs NO
  * cascade: rooms, room_aliases, and assets referencing it are left
@@ -43,7 +43,7 @@ class LocationController extends ApiController
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $includeInactive = $request->boolean('include_inactive') && Gate::allows('admin');
+        $includeInactive = $request->boolean('include_inactive') && Gate::allows('locations.manage');
 
         $locations = Location::query()
             ->when(! $includeInactive, fn ($query) => $query->where('is_active', true))

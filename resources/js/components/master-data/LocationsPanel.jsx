@@ -8,7 +8,7 @@ const SEARCH_DEBOUNCE_MS = 350;
 
 /**
  * Locations panel for the Master Data page (Tahap 6.8.3) — same shape as
- * `RoomsPanel`. Admin-only, matching the backend's `can:admin` gate.
+ * `RoomsPanel`. Shown only with `locations.manage` (admin/super_admin), matching the backend gate (R9.3).
  *
  * Deliberately does NOT use `useMasterData()` for its list — that hook's
  * `locations` state is the plain active-only `GET /api/locations` result

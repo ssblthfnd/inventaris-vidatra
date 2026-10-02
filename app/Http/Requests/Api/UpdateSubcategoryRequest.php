@@ -7,7 +7,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `PUT|PATCH /api/subcategories/{subcategory}` (Tahap 6.8.4), `can:admin`.
+ * `PUT|PATCH /api/subcategories/{subcategory}` (Tahap 6.8.4), `can:subcategories.manage` (Stage 6.9 R9.3; was `can:admin`).
  *
  * Partial-patch semantics. `id`/`category_code`/`code` are all `prohibited`
  * — a subcategory's category and code are immutable once created (see
@@ -18,7 +18,7 @@ class UpdateSubcategoryRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:subcategories.manage
     }
 
     protected function prepareForValidation(): void

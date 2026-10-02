@@ -7,7 +7,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `PUT|PATCH /api/categories/{category}` (Tahap 6.8.4), `can:admin`.
+ * `PUT|PATCH /api/categories/{category}` (Tahap 6.8.4), `can:categories.manage` (Stage 6.9 R9.3; was `can:admin`).
  *
  * Partial-patch semantics, same `sometimes` idiom as
  * {@see UpdateLocationRequest}. `code` is
@@ -19,7 +19,7 @@ class UpdateCategoryRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:categories.manage
     }
 
     protected function prepareForValidation(): void

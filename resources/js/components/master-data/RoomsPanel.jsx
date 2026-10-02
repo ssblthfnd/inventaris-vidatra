@@ -7,9 +7,10 @@ import { api, ApiError } from '../../lib/api';
 const SEARCH_DEBOUNCE_MS = 350;
 
 /**
- * Rooms tab/panel for the Master Data page (Tahap 6.8.1). Admin-only — the
- * parent `MasterData.jsx` page already gates the whole page on `isAdmin`, so
- * this component assumes it is only ever rendered for an admin.
+ * Rooms tab/panel for the Master Data page (Tahap 6.8.1). The parent
+ * `MasterData.jsx` page renders it only for a global-scope actor holding
+ * `rooms.manage` (admin / super_admin since R9.3), so this component assumes
+ * it is only ever rendered for one.
  *
  * List is a plain unpaginated `{ data: [...] }` collection from the new
  * `GET /api/rooms` admin endpoint (active AND inactive, every location) —

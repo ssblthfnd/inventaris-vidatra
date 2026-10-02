@@ -8,7 +8,7 @@ use Illuminate\Http\Response;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
- * `GET /api/imports/template?category=02|03|06` (Tahap 6.1), `can:operator`.
+ * `GET /api/imports/template?category=02|03|06` (Tahap 6.1), `can:assets.import` (Stage 6.9 R6).
  *
  * Strictly READ-ONLY: {@see ImportTemplateService} only ever reads master data to
  * label the sheet for humans and never writes to the database. The workbook is

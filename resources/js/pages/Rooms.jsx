@@ -10,16 +10,15 @@ import { useMasterData } from '../lib/useMasterData';
 const SEARCH_DEBOUNCE_MS = 350;
 
 /**
- * R7.1 — `/rooms`, a NEW dedicated entry point for `unit_admin`/`super_admin`
- * room management (Stage 6.9 R7's `rooms.manage` ability), reusing the
- * SCOPED per-location read endpoint (`GET /api/locations/{code}/rooms`,
- * R4/R7.1) rather than the legacy `can:admin`-only flat `GET /api/rooms`
- * `RoomsPanel.jsx` (inside `/master-data`) uses — neither `unit_admin` nor
- * `super_admin` can reach that one (confirmed by reading routes/api.php: it
- * was never migrated off the legacy Gate). Legacy `admin` already manages
- * rooms via `/master-data` and deliberately does NOT get this page too (see
- * `AppShell.jsx`'s nav `show` predicate) — one room-management UI per actor,
- * not two.
+ * R7.1 — `/rooms`, a dedicated room-management entry point (Stage 6.9 R7's
+ * `rooms.manage` ability), reusing the SCOPED per-location read endpoint
+ * (`GET /api/locations/{code}/rooms`, R4/R7.1) rather than the flat
+ * `GET /api/rooms` `RoomsPanel.jsx` (inside `/master-data`) uses — that one
+ * admits only a global-scope actor, so `unit_admin` can never use it.
+ * Since R9.3 the nav shows this page only to an actor WITHOUT `/master-data`
+ * (today: unit_admin); admin and super_admin manage rooms via `/master-data`
+ * instead (see `AppShell.jsx`'s nav `show` predicate) — one room-management
+ * UI per actor, not two. The page itself still works for them by URL.
  *
  * For `unit_admin` the location is FIXED to their own assigned unit (no
  * selector at all — there is nothing else to pick). For `super_admin` (or
@@ -27,8 +26,8 @@ const SEARCH_DEBOUNCE_MS = 350;
  * offered via `useMasterData()`'s UNSCOPED list (that hook only narrows
  * `locations` for a `unit_admin` actor) and exactly one is browsed at a
  * time, since the underlying endpoint is inherently per-location — there is
- * no flat "all locations, one page" call available to a non-admin actor
- * (see R7's own docblock on why `GET /api/rooms` stays `can:admin`-only).
+ * no flat "all locations, one page" call available to a scoped actor
+ * (`GET /api/rooms` admits only a global-scope actor, see RoomController).
  *
  * `?include_inactive=1` (R7.1) is what lets a deactivated room still show up
  * here at all, so "reactivate" is actually reachable — without it, a room a

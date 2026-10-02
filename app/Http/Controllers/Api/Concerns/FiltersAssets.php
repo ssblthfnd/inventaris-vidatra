@@ -25,8 +25,8 @@ use Illuminate\Database\Eloquent\Builder;
  * and `ReportController::index()` (via `ReportService`, which only ever sees
  * the `Builder` this method already returns) all inherit the same
  * {@see LocationScope}-enforced scope automatically, with no duplicated
- * WHERE clause anywhere. `export` currently stays fully `can:operator`-gated
- * (unit_admin can't reach it — unaffected by this change in practice), and
+ * WHERE clause anywhere. `export` is `can:assets.export`-gated (R9.3)
+ * (unit_admin does not hold it — unaffected by this scope in practice), and
  * `reports/inventory` is deliberately regated to `can:assets.report` (see
  * routes/api.php) specifically so unit_admin CAN reach it, scoped, per R4.
  */

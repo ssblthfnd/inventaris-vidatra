@@ -7,8 +7,8 @@ import { controlClass } from '../../lib/assetFields';
 /**
  * Create/edit room modal (Tahap 6.8.1), one component for both via `mode`
  * (mirrors `UserFormModal`'s own `mode="create"|"edit"` convention). Shared
- * (R7.1) by both `RoomsPanel` (legacy `admin`'s `/master-data` Rooms panel)
- * and `Rooms.jsx` (the newer `/rooms` page for `unit_admin`/`super_admin`) —
+ * (R7.1) by both `RoomsPanel` (the `/master-data` Rooms panel — admin/super_admin)
+ * and `Rooms.jsx` (the `/rooms` page — unit_admin) —
  * neither knows or cares which caller is rendering it, since it just
  * POSTs/PATCHes `/api/rooms(/…)`, which R7's `RoomPolicy` already
  * authorizes correctly per-actor.

@@ -8,7 +8,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `PUT|PATCH /api/room-aliases/{roomAlias}` (Tahap 6.8.2), `can:operator`.
+ * `PUT|PATCH /api/room-aliases/{roomAlias}` (Tahap 6.8.2), `can:roomAliases.manage` (Stage 6.9 R9.3; was `can:operator`).
  *
  * Partial-patch semantics, same `sometimes` idiom as
  * {@see UpdateRoomRequest}. `location_code` is
@@ -22,7 +22,7 @@ class UpdateRoomAliasRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:operator
+        return true; // route middleware: auth:sanctum + auth.active + can:roomAliases.manage
     }
 
     protected function prepareForValidation(): void

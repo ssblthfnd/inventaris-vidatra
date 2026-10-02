@@ -17,9 +17,11 @@ use App\Providers\AuthServiceProvider;
  * As of R4 (`users.manage`, `assets.report`) and R5 (the `assets.*` write
  * abilities), several of these are now wired into real routes/policies —
  * see {@see AuthServiceProvider::boot()} for the Gate registration and
- * routes/api.php for which named ability gates which route. The three
- * legacy Gates (`viewer`/`operator`/`admin`) that some routes still use are
- * untouched by this registry.
+ * routes/api.php for which named ability gates which route. As of R9.3,
+ * every route is gated by a named ability from this registry except the
+ * read group's `can:viewer` ("any active user"); the legacy `operator`/
+ * `admin` Gates are no longer used by any route (enforced by
+ * `tests/Feature/Api/Stage693AuthorizationConsolidationTest`).
  *
  * This intentionally does NOT model location — "may this role ever perform
  * this action" (WHAT) is answered here; "in which location" (WHERE) is
@@ -45,18 +47,33 @@ final class PermissionRegistry
     public const ABILITIES = [
         'assets.view', 'assets.create', 'assets.edit', 'assets.batchEdit', 'assets.delete',
         'assets.writeOff', 'assets.restore', 'assets.revert', 'assets.moveRoom',
-        'assets.import', 'assets.export', 'assets.report',
+        'assets.import', 'assets.export', 'assets.report', 'assets.printLabel',
         'dashboard.view',
         'rooms.view', 'rooms.manage',
-        'roomAliases.manage',
+        'roomAliases.manage', 'roomAliases.resolve',
         'locations.manage', 'categories.manage', 'subcategories.manage',
         'users.manage',
     ];
 
+    /**
+     * Stage 6.9 R9.3 — two abilities added while retiring the legacy
+     * `can:operator` route gate, each only because no existing ability
+     * matched its meaning:
+     *
+     *   - `assets.printLabel` — label PDF routes. Distinct from
+     *     `assets.export` (an Excel data dump) even though both are held by
+     *     the same roles today; tying one to the other would make a future
+     *     change to either silently change both.
+     *   - `roomAliases.resolve` — create a permanent alias ONLY as part of
+     *     the import room-mapping workflow (`RoomMappingResolver`,
+     *     `save_as_alias=true`), always location-scoped. Deliberately
+     *     narrower than `roomAliases.manage` (generic alias list/CRUD), which
+     *     unit_admin still does not get.
+     */
     private const FULL_INVENTORY_AND_ROOMS = [
         'assets.view', 'assets.create', 'assets.edit', 'assets.batchEdit', 'assets.delete',
         'assets.writeOff', 'assets.restore', 'assets.revert', 'assets.moveRoom',
-        'assets.import', 'assets.export', 'assets.report',
+        'assets.import', 'assets.export', 'assets.report', 'assets.printLabel',
         'dashboard.view', 'rooms.view',
     ];
 
@@ -81,6 +98,11 @@ final class PermissionRegistry
      * import-mapping mechanism, per R7 §"ROOM ALIAS — IMPORTANT" — this is
      * intentional, not an oversight.
      *
+     * Stage 6.9 R9.3 adds `roomAliases.resolve` — permanent aliases created
+     * through the import room-mapping workflow only, own location only
+     * (`RoomMappingResolver`). `roomAliases.manage`, `assets.export` and
+     * `assets.printLabel` all stay excluded.
+     *
      * @var list<string>
      */
     private const UNIT_ADMIN_INVENTORY = [
@@ -88,13 +110,15 @@ final class PermissionRegistry
         'assets.writeOff', 'assets.restore', 'assets.revert', 'assets.moveRoom',
         'assets.import', 'assets.report',
         'dashboard.view', 'rooms.view', 'rooms.manage',
+        'roomAliases.resolve',
     ];
 
     /**
      * Intended ability set per role. `'*'` is shorthand for every ability in
-     * {@see ABILITIES} (used for `admin`/`super_admin`, which are meant to
-     * be functionally equivalent in scope even though they are not yet
-     * treated as equivalent for Gate purposes — see UserRole's docblock).
+     * {@see ABILITIES} (used for `admin`/`super_admin`, which are
+     * functionally equivalent for every named-ability route — as of R9.3 no
+     * route still uses the legacy `admin`/`operator` Gates that only
+     * literal `admin` satisfied).
      *
      * @var array<string, list<string>|'*'>
      */
@@ -102,7 +126,7 @@ final class PermissionRegistry
         'super_admin' => '*',
         'admin' => '*',
         'unit_admin' => self::UNIT_ADMIN_INVENTORY,
-        'operator' => [...self::FULL_INVENTORY_AND_ROOMS, 'roomAliases.manage'],
+        'operator' => [...self::FULL_INVENTORY_AND_ROOMS, 'roomAliases.manage', 'roomAliases.resolve'],
         'viewer' => ['assets.view', 'dashboard.view', 'rooms.view'],
     ];
 

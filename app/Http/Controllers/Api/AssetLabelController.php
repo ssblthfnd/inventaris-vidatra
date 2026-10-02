@@ -10,7 +10,7 @@ use Illuminate\Http\Response;
 
 /**
  * Printable asset-label PDF generation (Tahap 6.0; Individual mode added R8),
- * `can:operator` (see routes/api.php) — printing a physical label is treated as an
+ * `can:assets.printLabel` (Stage 6.9 R9.3; was `can:operator` — see routes/api.php) — printing a physical label is treated as an
  * operational action, not a plain read, even though generation itself never writes
  * to the asset domain.
  *

@@ -14,6 +14,7 @@ use App\Import\Reporting\ImportReporter;
 use App\Import\RoomMapping\RoomMappingResolver;
 use App\Models\ImportBatch;
 use App\Policies\ImportBatchPolicy;
+use App\Support\LocationScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -25,10 +26,11 @@ use RuntimeException;
 /**
  * Import Excel UI (Tahap 6.1). Stage 6.9 R6 regates `store`/`show`/`rows`/
  * `promote`/`report` from `can:operator` to `can:assets.import` — so
- * `unit_admin` can reach them too — but `index` (the cross-batch history
- * list) deliberately stays `can:operator`: unit_admin has no need to browse
- * every OTHER user's import history, and this phase does not invent a
- * "which batches may this actor list" scheme for it. A thin HTTP layer over
+ * `unit_admin` can reach them too. `index` (the cross-batch history list)
+ * moved to `can:assets.import` too in R9.3, but admits only a global-scope
+ * actor: unit_admin still has no way to browse every OTHER user's import
+ * history, and no "which batches may this actor list" scheme is invented
+ * for it here. A thin HTTP layer over
  * the EXISTING staging pipeline either way — every actual import decision
  * (parsing, room matching, validation, duplicate detection, promotion) is
  * made by {@see ImportManager} / its collaborators, exactly as it is for
@@ -49,9 +51,17 @@ class ImportController extends ApiController
 
     /**
      * Import history — every batch, newest first (Tahap 6.1's "Import History").
+     *
+     * Stage 6.9 R9.3 — route gate is `can:assets.import` (WHAT). This list is
+     * NOT location-scoped (every batch, every uploader, every location), so
+     * WHERE is answered here: only a GLOBAL-scope actor may list it. A
+     * unit_admin holds `assets.import` but gets 403, exactly as under the
+     * old `can:operator` gate; super_admin now reaches it.
      */
     public function index(Request $request): ImportBatchCollection
     {
+        abort_unless(LocationScope::for($request->user())->isGlobal(), 403);
+
         $perPage = (int) $request->integer('per_page', 20);
         $perPage = max(1, min($perPage, 100));
 

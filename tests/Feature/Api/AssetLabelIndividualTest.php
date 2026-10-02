@@ -31,13 +31,13 @@ use Tests\TestCase;
  * same as `renderBatch()` always was) — no temp-file test section exists
  * here anymore.
  *
- * Route authorization is the pre-existing, unmigrated `can:operator` Gate
- * (routes/api.php) — confirmed by reading the route group, not assumed. This
- * means `unit_admin` and `super_admin` are BOTH still fully blocked from
- * every label route, individual or A4, regardless of the requested assets'
- * location — R8 deliberately does not touch this (see the top-level
- * instructions' "KNOWN BACKLOG — DO NOT FIX" list). The authorization tests
- * below assert this ACTUAL behaviour, not an assumed one.
+ * Route authorization (Stage 6.9 R9.3) is the named `assets.printLabel`
+ * ability (routes/api.php), replacing the legacy `can:operator` Gate R8 left
+ * untouched. `super_admin` now reaches every label route (PermissionRegistry
+ * grants it '*', which `can:operator` used to silently deny); `unit_admin`
+ * stays fully blocked from every label route, individual or A4, regardless
+ * of the requested assets' location — a deliberate product decision
+ * (unit_admin does not hold `assets.printLabel`), not a gap.
  */
 class AssetLabelIndividualTest extends TestCase
 {
@@ -386,23 +386,23 @@ class AssetLabelIndividualTest extends TestCase
     }
 
     /**
-     * Confirmed by reading routes/api.php: label routes are still the legacy
-     * `can:operator` Gate, which only literal `admin`/`operator` satisfy
-     * (`User::canWriteInventory()`). `super_admin` is therefore BLOCKED from
-     * every label route today, individual or A4 — R8 does not fix this
-     * (see this class's own docblock / the top-level "KNOWN BACKLOG" list).
+     * Stage 6.9 R9.3 — rewritten from `test_super_admin_is_still_blocked_from_individual_mode`.
+     * Label routes moved off the legacy `can:operator` Gate (literal admin/
+     * operator only) onto the named `assets.printLabel` ability, which
+     * PermissionRegistry grants super_admin via '*' — the intended parity
+     * fix, so the old 403 assertion is deliberately inverted.
      */
-    public function test_super_admin_is_still_blocked_from_individual_mode(): void
+    public function test_super_admin_can_use_individual_mode(): void
     {
         Sanctum::actingAs($this->superAdmin());
         $asset = $this->existingAsset('001');
 
         $this->postJson('/api/assets/batch/label', ['asset_ids' => [$asset->id], 'mode' => 'individual'])
-            ->assertStatus(403);
+            ->assertOk();
     }
 
     /**
-     * Same pre-existing gate blocks `unit_admin` entirely — confirmed here for
+     * `unit_admin` does not hold `assets.printLabel` (R9.3 product decision), so it is blocked entirely — confirmed here for
      * an asset in their OWN location, proving there is no location-based
      * differentiation to speak of (the actor never gets far enough for
      * location scope to matter at all).

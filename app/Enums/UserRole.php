@@ -17,14 +17,18 @@ namespace App\Enums;
  *                 Global scope (Yayasan-level): App\Support\LocationScope
  *                 treats it as global. Existing `admin` accounts are NOT
  *                 migrated to this automatically (business decision, later
- *                 phase) and this case is not yet wired into the `admin`/
- *                 `operator` Gates in App\Providers\AuthServiceProvider.
+ *                 phase). It never satisfies the legacy `admin`/`operator`
+ *                 Gates, but since Stage 6.9 R9.3 no route uses those — every
+ *                 route is a named ability, and PermissionRegistry grants
+ *                 super_admin all of them ('*'), same as `admin`.
  *   unit_admin  = Stage 6.9 — location-scoped admin, exactly one location in
  *                 {02, 03, 04} (SD/SMP/SMA — never 01/Yayasan). Multiple
  *                 unit_admin users may share the same location.
- *                 App\Support\LocationScope enforces this scope; NOTHING in
- *                 the request/controller layer grants this role inventory
- *                 access yet — that is deferred to a later Stage 6.9 phase.
+ *                 App\Support\LocationScope enforces this scope (WHERE);
+ *                 what it may do (WHAT) is its named-ability set in
+ *                 App\Support\PermissionRegistry (scoped inventory, import,
+ *                 reports, rooms, import room-mapping aliases — Stage 6.9
+ *                 R4–R9.3).
  *
  * This is deliberately a small, type-safe enum — not a permission system.
  */
@@ -57,13 +61,21 @@ enum UserRole: string
         };
     }
 
-    /** Roles allowed to create/modify inventory data (assets, mutations, imports, aliases). */
+    /**
+     * LEGACY — backs only the legacy `operator` Gate, which no route uses
+     * since Stage 6.9 R9.3. Literal admin/operator only (never super_admin/
+     * unit_admin): use a named PermissionRegistry ability instead.
+     */
     public function canWriteInventory(): bool
     {
         return $this === self::Admin || $this === self::Operator;
     }
 
-    /** Roles allowed to manage users and master data structurally. */
+    /**
+     * LEGACY — backs only the legacy `admin` Gate, which no route uses since
+     * Stage 6.9 R9.3. Literal `admin` only (never super_admin): use a named
+     * PermissionRegistry ability instead.
+     */
     public function isAdmin(): bool
     {
         return $this === self::Admin;

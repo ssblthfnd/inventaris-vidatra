@@ -115,7 +115,7 @@ final class AssetExportService
 
     /**
      * Defense-in-depth filename sanitizer (Tahap 6.9 R8.2, P3-6) — `Category::name`
-     * is only ever writable via `can:admin`-gated `categories.manage`, so this is
+     * is only ever writable via the admin/super_admin-only `categories.manage` ability, so this is
      * not closing a reachable exploit for a lower-privileged role today, but the
      * `Content-Disposition` header this feeds is still built by simple string
      * interpolation, so an admin-set name containing a `"`, a path separator, or a

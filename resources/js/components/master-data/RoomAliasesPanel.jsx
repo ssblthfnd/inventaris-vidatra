@@ -10,11 +10,12 @@ const SEARCH_DEBOUNCE_MS = 350;
 /**
  * Room Aliases panel for the Master Data page (Tahap 6.8.2) — same shape as
  * `RoomsPanel`, but operator (not just admin) can reach every write action
- * here, matching the backend's `can:operator` gate (see
- * `RoomAliasController`'s docblock). The parent `MasterData.jsx` page only
- * gates the whole page on `isAdmin`, so an operator never sees this panel at
- * all today — it is still built role-correctly (not hardcoded admin-only)
- * so a future stage can surface it to operators without touching this file.
+ * here, matching the backend's `can:roomAliases.manage` gate (see
+ * `RoomAliasController`'s docblock). The parent `MasterData.jsx` page is
+ * itself reachable only with structural master-data abilities (admin /
+ * super_admin), so an operator never sees this panel at all today — it is
+ * still built role-correctly (not hardcoded admin-only) so a future stage
+ * can surface it to operators without touching this file.
  *
  * List is a plain unpaginated `{ data: [...] }` collection from
  * `GET /api/room-aliases` (no `is_active` concept for aliases — see the

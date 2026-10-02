@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `POST /api/locations` (Tahap 6.8.3), `can:admin`.
+ * `POST /api/locations` (Tahap 6.8.3), `can:locations.manage` (Stage 6.9 R9.3; was `can:admin`).
  *
  * `code` is exactly 2 characters, unique, and — unlike `name`/`alias` —
  * never editable again after creation (see `UpdateLocationRequest`, which
@@ -20,7 +20,7 @@ class StoreLocationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:locations.manage
     }
 
     protected function prepareForValidation(): void

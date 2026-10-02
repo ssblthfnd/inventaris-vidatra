@@ -18,12 +18,12 @@ use Illuminate\Support\Facades\Gate;
  * every role — untouched for every existing caller. `index()` gained
  * exactly one opt-in addition (Tahap 6.8.4, same pattern as
  * `LocationController`): `?include_inactive=1`, honoured ONLY when the
- * actor passes `can:admin`, silently ignored otherwise. Every existing
+ * actor holds `categories.manage` (R9.3; was `can:admin`), silently ignored otherwise. Every existing
  * consumer (`useMasterData()`, `MasterDataReadApiTest`, `ExportMenu.jsx`,
  * `lib/imports.js`) never sends this param, so the default result stays
  * byte-identical to before for every role including admin.
  *
- * `store()`/`update()` (Tahap 6.8.4, `can:admin`) are new. No `destroy()` —
+ * `store()`/`update()` (Tahap 6.8.4, `can:admin`; `can:categories.manage` since R9.3) are new. No `destroy()` —
  * `is_active` is the only lifecycle mechanism (same precedent as locations/
  * rooms). Deactivating a category performs NO cascade: subcategories and
  * assets referencing it are left completely untouched — their
@@ -37,7 +37,7 @@ class CategoryController extends ApiController
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $includeInactive = $request->boolean('include_inactive') && Gate::allows('admin');
+        $includeInactive = $request->boolean('include_inactive') && Gate::allows('categories.manage');
 
         $categories = Category::query()
             ->when(! $includeInactive, fn ($query) => $query->where('is_active', true))

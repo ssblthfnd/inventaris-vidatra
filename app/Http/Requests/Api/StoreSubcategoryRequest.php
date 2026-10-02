@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * `POST /api/subcategories` (Tahap 6.8.4), `can:admin`.
+ * `POST /api/subcategories` (Tahap 6.8.4), `can:subcategories.manage` (Stage 6.9 R9.3; was `can:admin`).
  *
  * `category_code` must reference an ACTIVE category — mirrors
  * {@see StoreRoomRequest}'s "location must be active" rule exactly (a new
@@ -20,7 +20,7 @@ class StoreSubcategoryRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:admin
+        return true; // route middleware: auth:sanctum + auth.active + can:subcategories.manage
     }
 
     protected function prepareForValidation(): void

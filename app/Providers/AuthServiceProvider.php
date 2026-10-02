@@ -22,18 +22,21 @@ use Illuminate\Support\ServiceProvider;
  *   operator → read + write assets / mutations / imports / room aliases
  *   admin    → everything, incl. user & structural master-data management
  *
- * These three Gates are the single source of truth actually used by
- * controllers (`$this->authorize()` / `Gate::allows()`) and by the `can:`
- * route middleware — unchanged by Stage 6.9 R1.
- *
  * Stage 6.9 adds `super_admin`/`unit_admin` (App\Enums\UserRole) but does
- * NOT touch these three Gates or what satisfies them: `admin` alone still
- * satisfies `admin`, `admin`/`operator` still satisfy `operator`, so a
- * `unit_admin` (or `super_admin`) account passes NONE of them yet. That is
- * intentional for this phase — see App\Support\LocationScope's docblock and
- * Stage 6.9's R1 critical security rule: a unit_admin account must never be
- * granted access through these existing Gates before location-scope
- * enforcement (a later phase) actually exists.
+ * NOT touch these three legacy Gates or what satisfies them: `admin` alone
+ * still satisfies `admin`, `admin`/`operator` still satisfy `operator`, so a
+ * `unit_admin` (or `super_admin`) account passes NONE of them.
+ *
+ * Stage 6.9 R9.3 — authorization is now WHO (role) / WHERE
+ * (App\Support\LocationScope) / WHAT (a named ability from
+ * App\Support\PermissionRegistry, registered in the loop below). No route
+ * or controller uses the legacy `operator`/`admin` Gates anymore (they only
+ * ever matched literal `admin`/`operator` and therefore silently blocked
+ * `super_admin`); `tests/Feature/Api/Stage693AuthorizationConsolidationTest`
+ * fails if a route reintroduces them. They stay defined, unchanged, only so
+ * their own long-standing unit tests keep describing exactly what they
+ * mean — new code must use a named ability instead. `viewer` ("any active
+ * user") is still the read group's route gate.
  *
  * An INACTIVE user always fails every Gate, including every named ability
  * below.
@@ -45,17 +48,14 @@ class AuthServiceProvider extends ServiceProvider
         // Any authenticated + active user may read.
         Gate::define('viewer', fn (User $user) => $user->is_active === true);
 
-        // Operators and admins may create/modify inventory data.
+        // LEGACY (unused by any route since Stage 6.9 R9.3 — see class docblock).
         Gate::define('operator', fn (User $user) => $user->is_active === true && $user->canWriteInventory());
 
-        // Admins only: user management and structural master-data changes.
+        // LEGACY (unused by any route since Stage 6.9 R9.3 — see class docblock).
         Gate::define('admin', fn (User $user) => $user->is_active === true && $user->isAdmin());
 
-        // Stage 6.9 R1 — named-ability skeleton (App\Support\PermissionRegistry).
-        // Defined so phases can adopt them one call site at a time. As of R2,
-        // `users.manage` is the first ability actually wired into a route
-        // (`can:users.manage` on the user-management group in routes/api.php)
-        // — every other ability here is still unused by any route/controller.
+        // Stage 6.9 R1 — named abilities (App\Support\PermissionRegistry). As of
+        // R9.3 these gate every non-read route in routes/api.php.
         foreach (PermissionRegistry::ABILITIES as $ability) {
             Gate::define($ability, fn (User $user) => $user->is_active === true && PermissionRegistry::has($user->role, $ability));
         }

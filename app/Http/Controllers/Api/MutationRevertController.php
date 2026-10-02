@@ -11,9 +11,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * `POST /api/mutations/{mutation}/revert` (Tahap 6.5), `can:operator` — a
+ * `POST /api/mutations/{mutation}/revert` (Tahap 6.5), `can:assets.revert` (Stage 6.9 R5; was `can:operator`) — a
  * viewer gets 403, matching every other inventory-write endpoint's gate
- * (unlike Tahap 6.4's user management, which is stricter at `can:admin`).
+ * (unlike Tahap 6.4's user management, which is stricter at `can:users.manage`).
  *
  * All business logic — conflict detection, batch-group atomicity, locking,
  * audit logging — lives in {@see MutationRevertService}; this controller only

@@ -418,8 +418,8 @@ export default function Inventory() {
                 </Link>
               </>
             )}
-            {/* R7.1 — export stays on the legacy can:operator Gate (admin/
-                operator only); unit_admin/super_admin don't have it yet, so
+            {/* Export is its own ability (`assets.export`, R9.3): admin/
+                operator/super_admin yes, unit_admin no (product decision), so
                 it's gated separately from the create actions above. */}
             {canExportAssets && (
               <ExportMenu
@@ -462,7 +462,7 @@ export default function Inventory() {
             >
               Edit massal
             </button>
-            {/* R7.1 — label printing stays admin/operator-only (legacy can:operator Gate) */}
+            {/* Label printing: `assets.printLabel` (R9.3) — admin/operator/super_admin, not unit_admin */}
             {canPrintLabels && (
               <PrintLabelMenu
                 onSelect={handlePrintLabels}

@@ -13,7 +13,7 @@ import { printAssetLabel } from '../lib/labels';
  * Asset Detail page — `/inventory/:assetId` (Tahap 5.8.2, lifecycle Tahap 5.8.5).
  *
  * Read for everyone; lifecycle actions (write-off / unwrite-off / soft delete /
- * restore) for operator + admin, each behind a confirmation dialog and the existing
+ * restore) for whoever holds the matching `/api/me` ability (R9.3), each behind a confirmation dialog and the existing
  * backend endpoints. Soft delete and write-off are kept strictly separate:
  *  - soft delete  → row survives, hidden from the active list, `is_trashed = true`,
  *    restorable (same id / code / sequence).
@@ -160,7 +160,7 @@ export default function AssetDetail() {
   const { assetId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { refreshUser, canWriteInventory, canPrintLabels } = useAuth();
+  const { refreshUser, can, canWriteInventory, canPrintLabels } = useAuth();
 
   const [phase, setPhase] = useState('loading'); // loading | ready | notfound | forbidden | error
   const [asset, setAsset] = useState(null);
@@ -421,10 +421,10 @@ export default function AssetDetail() {
             >
               Hapus Aset
             </button>
-            {/* R7.1 — label printing stays on the legacy can:operator Gate
-                (admin/operator only); unlike the actions above, unit_admin
-                and super_admin do not have it yet, so this button is gated
-                separately here rather than folded into canWriteInventory. */}
+            {/* Label printing is its own ability (`assets.printLabel`, R9.3):
+                super_admin/admin/operator hold it, unit_admin deliberately
+                does not, so this button is gated separately here rather than
+                folded into canWriteInventory. */}
             {canPrintLabels && (
               <PrintLabelMenu
                 onSelect={doPrintLabel}
@@ -436,7 +436,7 @@ export default function AssetDetail() {
           </div>
         )}
 
-        {canWriteInventory && isTrashed && (
+        {can('assets.restore') && isTrashed && (
           <button
             type="button"
             onClick={() => setAction('restore')}
@@ -555,7 +555,7 @@ export default function AssetDetail() {
       <AssetHistorySection
         assetId={asset.id}
         refreshSignal={historyRefreshKey}
-        isOperator={canWriteInventory}
+        canRevert={can('assets.revert')}
         initialFetch={historyPrefetchRef.current}
         onReverted={(reverted) => {
           const updated = reverted.find((a) => a.id === asset.id);

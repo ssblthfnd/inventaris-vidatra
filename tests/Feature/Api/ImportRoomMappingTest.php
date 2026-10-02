@@ -12,6 +12,7 @@ use App\Models\RoomAlias;
 use App\Models\Subcategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\InteractsWithImportFixtures;
@@ -469,6 +470,102 @@ class ImportRoomMappingTest extends TestCase
         ])->assertOk()->assertJsonPath('data.alias_created', true);
 
         $this->assertSame($admin->id, RoomAlias::where('location_code', '02')->first()->created_by);
+    }
+
+    /* ================================================================== R9.3 — roomAliases.resolve */
+
+    public function test_unit_admin_can_map_to_an_existing_room_for_this_import_only(): void
+    {
+        $admin = $this->unitAdmin('02');
+        $room = $this->roomIn('02', ['name' => 'Laboratorium Komputer Utama']);
+        $batchId = $this->stageUnmapped($admin, '02', 'LAB KOMPUTER', 2);
+
+        $this->resolve($batchId, [
+            'location_code' => '02', 'raw_value' => 'LAB KOMPUTER', 'room_id' => $room->id, 'save_as_alias' => false,
+        ])->assertOk()->assertJsonPath('data.updated_rows', 2)->assertJsonPath('data.alias_created', false);
+
+        $this->assertSame(0, RoomAlias::count());
+    }
+
+    /** R9.3 — `roomAliases.resolve` is still bound to WHERE: a foreign location's group can't be aliased, and nothing (alias OR rows) is written. */
+    public function test_unit_admin_cannot_save_alias_for_a_foreign_location_group(): void
+    {
+        $global = $this->globalUser(UserRole::Operator);
+        $room04 = $this->roomIn('04', ['name' => 'Ruang Cadangan Lain']);
+        $batchId = $this->stageUnmapped($global, '04', 'RUANG LAIN');
+
+        Sanctum::actingAs($this->unitAdmin('02'));
+        $this->resolve($batchId, [
+            'location_code' => '04', 'raw_value' => 'RUANG LAIN', 'room_id' => $room04->id, 'save_as_alias' => true,
+        ])->assertForbidden();
+
+        $this->assertSame(0, RoomAlias::count());
+        $this->assertSame(0, ImportRow::whereNotNull('matched_room_id')->count());
+    }
+
+    /**
+     * R9.3 — the alias half of `resolve` is enforced server-side by its own
+     * ability, not by the frontend hiding the "Simpan sebagai alias" option.
+     * No real role today holds `assets.import` without `roomAliases.resolve`,
+     * so the ability is revoked for this test only to prove the check exists
+     * and runs before anything is written.
+     */
+    public function test_save_as_alias_requires_room_aliases_resolve_even_with_import_access(): void
+    {
+        $operator = $this->globalUser(UserRole::Operator);
+        $room = $this->roomIn('02', ['name' => 'Laboratorium Komputer Utama']);
+        $batchId = $this->stageUnmapped($operator, '02', 'LAB KOMPUTER', 2);
+
+        Gate::define('roomAliases.resolve', fn () => false);
+
+        $this->resolve($batchId, [
+            'location_code' => '02', 'raw_value' => 'LAB KOMPUTER', 'room_id' => $room->id, 'save_as_alias' => true,
+        ])->assertForbidden();
+
+        $this->assertSame(0, RoomAlias::count());
+        $this->assertSame(0, ImportRow::where('import_batch_id', $batchId)->whereNotNull('matched_room_id')->count());
+
+        // the batch-only mapping needs only `assets.import`, unaffected
+        $this->resolve($batchId, [
+            'location_code' => '02', 'raw_value' => 'LAB KOMPUTER', 'room_id' => $room->id, 'save_as_alias' => false,
+        ])->assertOk()->assertJsonPath('data.updated_rows', 2);
+    }
+
+    /** R9.3 — creating an alias through import room mapping must not open the generic alias list/CRUD to unit_admin. */
+    public function test_alias_created_via_mapping_does_not_grant_unit_admin_generic_alias_crud(): void
+    {
+        $admin = $this->unitAdmin('02');
+        $room = $this->roomIn('02', ['name' => 'Laboratorium Komputer Utama']);
+        $batchId = $this->stageUnmapped($admin, '02', 'LAB KOMPUTER');
+
+        $this->resolve($batchId, [
+            'location_code' => '02', 'raw_value' => 'LAB KOMPUTER', 'room_id' => $room->id, 'save_as_alias' => true,
+        ])->assertOk()->assertJsonPath('data.alias_created', true);
+        $alias = RoomAlias::query()->sole();
+
+        $this->getJson('/api/room-aliases')->assertForbidden();
+        $this->getJson('/api/room-aliases?location_code=02')->assertForbidden();
+        $this->postJson('/api/room-aliases', ['location_code' => '02', 'room_id' => $room->id, 'raw_value' => 'LAB BARU'])
+            ->assertForbidden();
+        $this->patchJson("/api/room-aliases/{$alias->id}", ['raw_value' => 'DIUBAH'])->assertForbidden();
+        $this->deleteJson("/api/room-aliases/{$alias->id}")->assertForbidden();
+
+        $this->assertSame('LAB KOMPUTER', $alias->fresh()->raw_value);
+        $this->assertSame(1, RoomAlias::count());
+    }
+
+    /** R9.3 — operator may map rooms (incl. permanent alias) but may NOT create a room: the API refuses it regardless of what the UI shows. */
+    public function test_operator_can_save_alias_but_cannot_create_a_room(): void
+    {
+        $operator = $this->globalUser(UserRole::Operator);
+        $room = $this->roomIn('02', ['name' => 'Laboratorium Komputer Utama']);
+        $batchId = $this->stageUnmapped($operator, '02', 'LAB KOMPUTER');
+
+        $this->postJson('/api/rooms', ['location_code' => '02', 'name' => 'Ruang Baru Operator'])->assertForbidden();
+
+        $this->resolve($batchId, [
+            'location_code' => '02', 'raw_value' => 'LAB KOMPUTER', 'room_id' => $room->id, 'save_as_alias' => true,
+        ])->assertOk()->assertJsonPath('data.alias_created', true);
     }
 
     public function test_viewer_is_forbidden(): void

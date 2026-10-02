@@ -33,7 +33,7 @@ class BatchUpdateAssetRequest extends FormRequest
 
     public function authorize(): bool
     {
-        return true; // route middleware: auth:sanctum + auth.active + can:operator
+        return true; // route middleware: auth:sanctum + auth.active + can:assets.batchEdit
     }
 
     /**

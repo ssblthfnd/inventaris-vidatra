@@ -8,7 +8,7 @@ use App\Http\Resources\ReportResource;
 use App\Services\Report\ReportService;
 
 /**
- * `GET /api/reports/inventory` (Tahap 6.3), `can:operator` — a viewer is
+ * `GET /api/reports/inventory` (Tahap 6.3), `can:assets.report` (Stage 6.9 R4; was `can:operator`) — a viewer is
  * forbidden here even though `GET /api/assets` is `can:viewer`, per this
  * stage's explicit authorization requirement.
  *

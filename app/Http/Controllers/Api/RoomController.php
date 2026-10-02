@@ -27,14 +27,15 @@ use Illuminate\Support\Facades\Gate;
  * existence is never confirmed. This is READ scope only; `unit_admin` gains
  * no create/update/delete ability here (that's a later phase).
  *
- * `adminIndex()` (Tahap 6.8.1, `can:admin`) is a new, separate endpoint for
+ * `adminIndex()` (Tahap 6.8.1) is a new, separate endpoint for
  * the Master Data management UI — deliberately a different route
  * (`GET /api/rooms`, flat, all locations, active AND inactive) rather than
  * adding an "include inactive" mode to the existing `index()`/`show()`, so
  * their well-tested read contract is never at risk of regressing.
- * `unit_admin` never reaches it (`can:admin` gate) — see this class's R7 note
- * on `store()`/`update()` for why that stays admin-only even though room
- * management itself is no longer admin-only.
+ * Stage 6.9 R9.3 moved it from `can:admin` to `can:rooms.manage` (so
+ * super_admin reaches it) plus a global-scope check inside: `unit_admin`
+ * still never reaches it, since this list is not location-scoped and would
+ * leak other units' rooms.
  *
  * `store()`/`update()` (Tahap 6.8.1, `can:admin`; Stage 6.9 R7 regated to
  * `can:rooms.manage` so `unit_admin` can reach them too, location-scoped via
@@ -59,8 +60,8 @@ use Illuminate\Support\Facades\Gate;
  * consumer of this route), so default behaviour is byte-identical to
  * before. Necessary because `unit_admin`/`super_admin` have no other way to
  * see a room they deactivated in order to reactivate it — the only other
- * "see inactive rooms" endpoint, `adminIndex()` above, stays legacy
- * `can:admin`-only and was never extended to them.
+ * "see inactive rooms" endpoint, `adminIndex()` above, admits only a
+ * global-scope actor (R9.3), so it is never extended to unit_admin.
  */
 class RoomController extends ApiController
 {
@@ -95,13 +96,19 @@ class RoomController extends ApiController
     }
 
     /**
-     * `GET /api/rooms` (Tahap 6.8.1), `can:admin` — every room across every
+     * `GET /api/rooms` (Tahap 6.8.1), `can:rooms.manage` + global scope (R9.3; was `can:admin`) — every room across every
      * location, active AND inactive, for the Master Data management list.
      * Unpaginated like every other master-data collection (docs/api_convention.md):
      * even with SD/SMP/SMA populated this stays a small, finite list.
      */
     public function adminIndex(Request $request): AnonymousResourceCollection
     {
+        // Stage 6.9 R9.3 — route gate is `can:rooms.manage` (WHAT); this flat
+        // every-location browser is not location-scoped, so only a GLOBAL-scope
+        // actor may use it (WHERE). unit_admin holds `rooms.manage` but gets
+        // 403 here, unchanged from the old `can:admin` gate.
+        abort_unless(LocationScope::for($request->user())->isGlobal(), 403);
+
         $rooms = Room::query()
             ->with('location')
             ->when($request->filled('location_code'), function ($query) use ($request) {

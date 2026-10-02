@@ -19,7 +19,8 @@ import {
 import { useMasterData } from '../lib/useMasterData';
 
 /**
- * Import Excel UI (Tahap 6.1) — `/imports`, operator/admin only.
+ * Import Excel UI (Tahap 6.1) — `/imports`, for whoever holds `assets.import`
+ * (`canImport`, from `/api/me` abilities — R9.3).
  *
  * Follows the existing staging workflow end to end:
  *   Download Template -> Upload -> Stage/Preview -> Review -> Promote -> Result
@@ -424,13 +425,13 @@ export default function Imports() {
         </section>
       )}
 
-      {/* History — stays admin/operator-only (legacy can:operator Gate on
-          GET /api/imports); a unit_admin gets real import access (R6) but
-          not this cross-user, unscoped history browser (R6 "Scope Control"),
-          and super_admin doesn't have it yet either (the same unmigrated
-          Gate). Hidden entirely rather than shown-then-empty, since an empty
-          list here would misleadingly read as "no imports yet" rather than
-          "you can't see this". */}
+      {/* History — GET /api/imports is an unscoped, cross-user list, so it
+          needs `assets.import` AND a global scope (`canViewImportHistory`,
+          R9.3): admin/operator/super_admin yes; a unit_admin gets real import
+          access (R6) but not this browser (R6 "Scope Control"). Hidden
+          entirely rather than shown-then-empty, since an empty list here
+          would misleadingly read as "no imports yet" rather than "you can't
+          see this". */}
       {canViewImportHistory && (
       <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-gray-800">Riwayat Import</h2>

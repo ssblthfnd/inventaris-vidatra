@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { useAuth } from '../../auth/AuthContext';
 import { api, ApiError } from '../../lib/api';
 import { getRoomMappings, resolveRoomMapping } from '../../lib/imports';
 import { useMasterData } from '../../lib/useMasterData';
@@ -18,6 +19,12 @@ import { useMasterData } from '../../lib/useMasterData';
  * duplicate aliases, and cross-location rejection — this component only
  * renders what the API returns and surfaces its errors; it never decides
  * on its own what a user "should" be allowed to map.
+ *
+ * Stage 6.9 R9.3 — per-ACTION visibility from `/api/me` abilities, never
+ * hiding the section itself (anyone who can import can map to an existing
+ * room): "+ Tambah Ruangan" needs `rooms.manage` (operator does not hold
+ * it), and "Simpan sebagai alias" needs `roomAliases.resolve`. Both are
+ * still enforced server-side (`POST /api/rooms`, `RoomMappingResolver`).
  */
 
 function extractErrorMessage(e) {
@@ -26,6 +33,7 @@ function extractErrorMessage(e) {
 }
 
 function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
+  const { canManageRooms, canResolveRoomAliases } = useAuth();
   const { roomsByLocation, ensureRooms } = useMasterData();
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [saveAsAlias, setSaveAsAlias] = useState(false);
@@ -84,7 +92,7 @@ function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
         locationCode: group.location_code,
         rawValue: group.raw_value,
         roomId: Number(selectedRoomId),
-        saveAsAlias,
+        saveAsAlias: canResolveRoomAliases && saveAsAlias,
       });
       const data = res?.data;
       setResolved({
@@ -140,17 +148,19 @@ function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          onClick={() => setCreatingRoom((v) => !v)}
-          disabled={applyBusy}
-          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-gray-400 disabled:opacity-60"
-        >
-          {creatingRoom ? 'Batal' : '+ Tambah Ruangan'}
-        </button>
+        {canManageRooms && (
+          <button
+            type="button"
+            onClick={() => setCreatingRoom((v) => !v)}
+            disabled={applyBusy}
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-gray-400 disabled:opacity-60"
+          >
+            {creatingRoom ? 'Batal' : '+ Tambah Ruangan'}
+          </button>
+        )}
       </div>
 
-      {creatingRoom && (
+      {canManageRooms && creatingRoom && (
         <div className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
           <div className="flex flex-wrap gap-2">
             <input
@@ -182,28 +192,32 @@ function RoomMappingGroupCard({ group, locationName, batchId, onResolved }) {
         </div>
       )}
 
-      <div className="mt-3 flex flex-col gap-1.5 text-sm text-gray-700">
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name={`save-as-alias-${group.location_code}-${group.match_key}`}
-            checked={!saveAsAlias}
-            onChange={() => setSaveAsAlias(false)}
-            disabled={applyBusy}
-          />
-          Gunakan untuk import ini saja
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name={`save-as-alias-${group.location_code}-${group.match_key}`}
-            checked={saveAsAlias}
-            onChange={() => setSaveAsAlias(true)}
-            disabled={applyBusy}
-          />
-          Simpan sebagai alias untuk import berikutnya
-        </label>
-      </div>
+      {canResolveRoomAliases ? (
+        <div className="mt-3 flex flex-col gap-1.5 text-sm text-gray-700">
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name={`save-as-alias-${group.location_code}-${group.match_key}`}
+              checked={!saveAsAlias}
+              onChange={() => setSaveAsAlias(false)}
+              disabled={applyBusy}
+            />
+            Gunakan untuk import ini saja
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name={`save-as-alias-${group.location_code}-${group.match_key}`}
+              checked={saveAsAlias}
+              onChange={() => setSaveAsAlias(true)}
+              disabled={applyBusy}
+            />
+            Simpan sebagai alias untuk import berikutnya
+          </label>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-gray-500">Pemetaan hanya berlaku untuk import ini.</p>
+      )}
 
       {selectedRoom && (
         <p className="mt-2 text-xs text-gray-500">
