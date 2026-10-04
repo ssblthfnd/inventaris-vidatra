@@ -15,7 +15,7 @@ return new class extends Migration
     {
         Schema::create('subcategories', function (Blueprint $table) {
             $table->charset('utf8mb4');
-            $table->collation('utf8mb4_0900_ai_ci');
+            $table->collation('utf8mb4_unicode_ci');
 
             $table->id();
             $table->char('category_code', 2);

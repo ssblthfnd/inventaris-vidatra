@@ -36,7 +36,7 @@ Pastikan software berikut sudah terinstall:
 - Composer 2.x
 - Node.js 22+
 - npm 10+
-- MySQL 8.x atau compatible
+- MySQL 8.x atau MariaDB 10.6+
 - Git
 
 ## Clone Repository

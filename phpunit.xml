@@ -27,7 +27,7 @@
         <!--
           Dedicated MySQL test database. The inventory domain schema uses MySQL-only
           features (STORED generated column, CHECK constraints, composite FKs,
-          utf8mb4_0900_ai_ci) so SQLite :memory: cannot host it.
+          utf8mb4_unicode_ci) so SQLite :memory: cannot host it.
           This MUST NOT be the development database (inventaris_vidatra) — a safety
           guard in tests/TestCase.php aborts the run if the connected DB is wrong.
         -->

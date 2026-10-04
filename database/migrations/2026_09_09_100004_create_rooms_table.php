@@ -19,7 +19,7 @@ return new class extends Migration
     {
         Schema::create('rooms', function (Blueprint $table) {
             $table->charset('utf8mb4');
-            $table->collation('utf8mb4_0900_ai_ci');
+            $table->collation('utf8mb4_unicode_ci');
 
             $table->id();
             $table->char('location_code', 2);

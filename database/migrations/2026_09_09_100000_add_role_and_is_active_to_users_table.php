@@ -24,11 +24,12 @@ return new class extends Migration
             $table->index('role', 'ix_users_role');
         });
 
-        // schema_design.md "Target DBMS" — semua tabel domain memakai utf8mb4_0900_ai_ci.
+        // Semua tabel domain memakai utf8mb4_unicode_ci (didukung MySQL 8 dan MariaDB 10.x;
+        // utf8mb4_0900_ai_ci dari schema_design.md hanya ada di MySQL 8).
         // `users` is domain table #8; align its collation with the other 9 domain tables.
         // Infra tables (sessions, password_reset_tokens, cache*, jobs*) are left at the
         // connection default per schema_design.md §13.2 (non-domain, out of scope).
-        DB::statement('ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci');
+        DB::statement('ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
     }
 
     public function down(): void

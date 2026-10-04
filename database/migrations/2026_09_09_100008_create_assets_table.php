@@ -29,7 +29,7 @@ return new class extends Migration
     {
         Schema::create('assets', function (Blueprint $table) {
             $table->charset('utf8mb4');
-            $table->collation('utf8mb4_0900_ai_ci');
+            $table->collation('utf8mb4_unicode_ci');
 
             $table->id();
 
@@ -41,8 +41,10 @@ return new class extends Migration
             $table->unsignedSmallInteger('asset_year');
 
             // --- turunan: rekonstruksi kanonik, separator titik (dihasilkan DB) ---
+            // RTRIM() pada kolom CHAR: MariaDB menolak kolom CHAR mentah di STORED generated
+            // column (bergantung sql_mode PAD_CHAR_TO_FULL_LENGTH). Hasilnya identik di MySQL 8.
             $table->string('asset_code', 40)
-                ->storedAs("concat_ws('.', location_code, category_code, subcategory_code, sequence_no, asset_year)");
+                ->storedAs("concat_ws('.', rtrim(location_code), rtrim(category_code), rtrim(subcategory_code), sequence_no, asset_year)");
 
             // --- penempatan ruangan (P6, P7, P10) ---
             $table->unsignedBigInteger('room_id')->nullable();      // NULL = belum terpetakan

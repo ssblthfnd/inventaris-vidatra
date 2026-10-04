@@ -51,7 +51,7 @@ final class ImportReporter
         $canonical = DB::table('rooms')->pluck('name', 'id');
 
         // Group in PHP with exact (case-sensitive) string keys — a MySQL GROUP BY under the
-        // utf8mb4_0900_ai_ci collation would merge "KETUA HARIAN" and "Ketua Harian".
+        // utf8mb4_unicode_ci collation would merge "KETUA HARIAN" and "Ketua Harian".
         $buckets = [];
         foreach ($this->rows()->get(['room_raw_value', 'location_code', 'room_match_method', 'matched_room_id']) as $r) {
             $raw = $r->room_raw_value ?? '(blank)';
