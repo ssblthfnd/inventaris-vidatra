@@ -202,10 +202,13 @@ class DashboardApiTest extends TestCase
 
         $rows = $this->getJson(self::URL)->assertOk()->json('data.by_room');
 
-        $this->assertSame(['Ruang Satu'], array_column($rows, 'name'), 'empty room hidden');
+        // R9.4-15 (D15-3): the 2 roomless assets now follow as the virtual
+        // "Tanpa Ruangan" bucket (was: not listed); the empty real room stays hidden
+        $this->assertSame(['Ruang Satu', 'Tanpa Ruangan'], array_column($rows, 'name'), 'empty room hidden');
         $this->assertSame(5, $rows[0]['asset_count']);
         $this->assertSame('LA', $rows[0]['location_code']);
         $this->assertSame('Lokasi Alpha', $rows[0]['location_name']);
+        $this->assertSame([null, 2], [$rows[1]['id'], $rows[1]['asset_count']]);
     }
 
     public function test_by_room_keeps_same_named_rooms_in_different_locations_separate(): void

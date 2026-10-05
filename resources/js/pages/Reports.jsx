@@ -265,6 +265,10 @@ export default function Reports() {
   const byCategory = data?.by_category ?? [];
   const byRoom = (data?.by_room ?? []).map((r) => ({ ...r, location_label: r.location_name }));
   const byYear = (data?.by_year ?? []).map((r) => ({ ...r, id: r.year }));
+  // R9.4-15 — an inactive location/category is listed only while it still holds
+  // matching assets (D15-5): mark it; the "Terdaftar" cards count active master rows (D15-4)
+  const markInactive = (rows) =>
+    rows.map((r) => (r.is_active === false ? { ...r, name: `${r.name} (nonaktif)` } : r));
 
   return (
     <div className="space-y-5">
@@ -384,12 +388,19 @@ export default function Reports() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Total Aset Aktif" value={summary.active_assets} />
-            <StatCard label="Written-off" value={summary.written_off_assets} />
-            <StatCard label="Lokasi" value={byLocation.length} />
-            <StatCard label="Kategori" value={byCategory.length} />
+          {/* R9.4-15 (D15-1) — both populations explicit: the tables below add up to
+              "Total Aset" (written-off included), not to "Aset Aktif". */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <StatCard label="Total Aset" value={summary.total_assets} />
+            <StatCard label="Aset Aktif" value={summary.active_assets} />
+            <StatCard label="Aset Ditulis Off" value={summary.written_off_assets} />
+            <StatCard label="Lokasi Terdaftar" value={byLocation.filter((r) => r.is_active !== false).length} />
+            <StatCard label="Kategori Terdaftar" value={byCategory.filter((r) => r.is_active !== false).length} />
           </div>
+          <p className="-mt-2 text-xs text-gray-500">
+            Distribusi di bawah menghitung Total Aset (termasuk aset yang ditulis off). Gunakan filter
+            Status untuk melihat aset aktif saja.
+          </p>
 
           <section className="rounded-xl border border-gray-200 bg-white">
             <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
@@ -412,13 +423,13 @@ export default function Reports() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <CountTable
               title="Distribusi Aset per Lokasi"
-              rows={byLocation}
+              rows={markInactive(byLocation)}
               labelKey="name"
               headers={['Lokasi', 'Jumlah']}
             />
             <CountTable
               title="Distribusi Aset per Kategori"
-              rows={byCategory}
+              rows={markInactive(byCategory)}
               labelKey="name"
               headers={['Kategori', 'Jumlah']}
             />

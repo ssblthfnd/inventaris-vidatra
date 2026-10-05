@@ -96,6 +96,12 @@ export default function Dashboard() {
 
   const summary = data?.summary ?? { total_assets: 0, written_off: 0, by_condition: {} };
   const byCondition = summary.by_condition ?? {};
+  // R9.4-15 — an inactive location/category is listed only while it still holds
+  // assets (D15-5): mark it, and keep the "Terdaftar" cards counting active master rows (D15-4)
+  const markInactive = (rows) =>
+    rows.map((r) => (r.is_active === false ? { ...r, name: `${r.name} (nonaktif)` } : r));
+  const byLocation = data?.by_location ?? [];
+  const byCategory = data?.by_category ?? [];
 
   return (
     <div className="space-y-6">
@@ -104,8 +110,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total Aset" value={summary.total_assets} />
         <StatCard label="Written-off" value={summary.written_off} />
-        <StatCard label="Lokasi" value={(data?.by_location ?? []).length} />
-        <StatCard label="Kategori" value={(data?.by_category ?? []).length} />
+        <StatCard label="Lokasi Terdaftar" value={byLocation.filter((r) => r.is_active !== false).length} />
+        <StatCard label="Kategori Terdaftar" value={byCategory.filter((r) => r.is_active !== false).length} />
       </div>
 
       <section className="rounded-xl border border-gray-200 bg-white">
@@ -127,13 +133,13 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <CountTable
           title="Aset per Lokasi"
-          rows={data?.by_location ?? []}
+          rows={markInactive(byLocation)}
           labelKey="name"
           headers={['Lokasi', 'Jumlah']}
         />
         <CountTable
           title="Aset per Kategori"
-          rows={data?.by_category ?? []}
+          rows={markInactive(byCategory)}
           labelKey="name"
           headers={['Kategori', 'Jumlah']}
         />
@@ -141,7 +147,11 @@ export default function Dashboard() {
 
       <CountTable
         title="Aset per Ruangan"
-        rows={(data?.by_room ?? []).map((r) => ({ ...r, name: `${r.name} — ${r.location_name}` }))}
+        rows={(data?.by_room ?? []).map((r) => ({
+          ...r,
+          // the "Tanpa Ruangan" bucket (D15-3) has no room/location of its own
+          name: r.location_name ? `${r.name} — ${r.location_name}` : r.name,
+        }))}
         labelKey="name"
         headers={['Ruangan', 'Jumlah']}
       />

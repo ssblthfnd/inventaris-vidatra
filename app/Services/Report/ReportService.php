@@ -23,17 +23,21 @@ use Illuminate\Support\Facades\DB;
  * data breakdowns (location/category) LEFT JOIN the filtered asset subquery onto
  * every active master row, so a location/category with zero matching assets
  * still appears with `asset_count = 0` (mirrors the Tahap 5.6 dashboard's own
- * "show zero-count master rows" convention). Rooms stay an INNER join (only
+ * "show zero-count master rows" convention); an inactive one appears only while
+ * it still holds matching assets (R9.4-15 D15-5). Rooms stay an INNER join (only
  * rooms that actually hold a matching asset) — same convention the dashboard
- * already uses, since listing every room in the building would be noise.
+ * already uses, since listing every room in the building would be noise — plus
+ * the virtual "Tanpa Ruangan" bucket for matching assets with no room (D15-3).
  *
  * Scope note: `assetsMatchingFilters()` never resolves soft-deleted rows (no
  * `withTrashed()`), so trashed assets are structurally outside every number this
  * service produces — deliberately consistent with `/inventory`, which has no
  * trashed-asset filter either. `summary.total_assets` (all matching non-trashed
- * assets) is what the location/category/room breakdowns sum back to; the
- * active/written-off split is a separate lifecycle cut of that same total, not a
- * different scope (see `summary()`).
+ * assets) is what the location/category/room/condition/year breakdowns sum back
+ * to; the active/written-off split is a separate lifecycle cut of that same
+ * total, not a different scope (see `summary()`) — the Reports page shows all
+ * three cards ("Total Aset", "Aset Aktif", "Aset Ditulis Off", D15-1) so a
+ * reader can tell which one the breakdowns add up to.
  */
 class ReportService
 {
@@ -89,7 +93,9 @@ class ReportService
     }
 
     /**
-     * All active locations, including those with zero matching assets.
+     * All active locations, including those with zero matching assets, plus any
+     * INACTIVE location that still holds matching assets (Tahap 6.9 R9.4-15,
+     * D15-5 — same rule as the dashboard), each row with `is_active`.
      *
      * @return list<array<string, mixed>>
      */
@@ -97,22 +103,25 @@ class ReportService
     {
         return DB::table('locations as l')
             ->leftJoinSub($this->filteredSubquery($assets), 'a', fn ($join) => $join->on('a.location_code', '=', 'l.code'))
-            ->where('l.is_active', true)
-            ->groupBy('l.code', 'l.name')
+            ->groupBy('l.code', 'l.name', 'l.is_active')
+            ->havingRaw('l.is_active = 1 OR COUNT(a.id) > 0')
             ->orderBy('l.code')
-            ->select('l.code', 'l.name')
+            ->select('l.code', 'l.name', 'l.is_active')
             ->selectRaw('COUNT(a.id) as asset_count')
             ->get()
             ->map(fn ($r) => [
                 'code' => $r->code,
                 'name' => $r->name,
+                'is_active' => (bool) $r->is_active,
                 'asset_count' => (int) $r->asset_count,
             ])
             ->all();
     }
 
     /**
-     * All active categories, including those with zero matching assets.
+     * All active categories, including those with zero matching assets, plus any
+     * inactive category that still holds matching assets (D15-5), each row with
+     * `is_active`.
      *
      * @return list<array<string, mixed>>
      */
@@ -120,15 +129,16 @@ class ReportService
     {
         return DB::table('categories as c')
             ->leftJoinSub($this->filteredSubquery($assets), 'a', fn ($join) => $join->on('a.category_code', '=', 'c.code'))
-            ->where('c.is_active', true)
-            ->groupBy('c.code', 'c.name')
+            ->groupBy('c.code', 'c.name', 'c.is_active')
+            ->havingRaw('c.is_active = 1 OR COUNT(a.id) > 0')
             ->orderBy('c.code')
-            ->select('c.code', 'c.name')
+            ->select('c.code', 'c.name', 'c.is_active')
             ->selectRaw('COUNT(a.id) as asset_count')
             ->get()
             ->map(fn ($r) => [
                 'code' => $r->code,
                 'name' => $r->name,
+                'is_active' => (bool) $r->is_active,
                 'asset_count' => (int) $r->asset_count,
             ])
             ->all();
@@ -138,13 +148,16 @@ class ReportService
      * Rooms that hold at least one matching asset (INNER join, same convention as
      * the dashboard's `by_room` — listing every empty room would be noise).
      * Grouping is location-aware (`r.id`) so same-named rooms in different
-     * locations stay separate.
+     * locations stay separate. Matching assets with no room follow last as the
+     * virtual "Tanpa Ruangan" bucket (R9.4-15 D15-3, same shape and rule as the
+     * dashboard's — {@see DashboardService::ROOMLESS_LABEL}), counted from the
+     * same filtered scope.
      *
      * @return list<array<string, mixed>>
      */
     private function byRoom(Builder $assets): array
     {
-        return DB::table('rooms as r')
+        $rooms = DB::table('rooms as r')
             ->joinSub($this->filteredSubquery($assets), 'a', fn ($join) => $join->on('a.room_id', '=', 'r.id'))
             ->join('locations as l', 'l.code', '=', 'r.location_code')
             ->groupBy('r.id', 'r.name', 'r.location_code', 'l.name')
@@ -163,6 +176,20 @@ class ReportService
                 'asset_count' => (int) $r->asset_count,
             ])
             ->all();
+
+        $roomless = (clone $assets)->toBase()->whereNull('room_id')->count();
+
+        if ($roomless > 0) {
+            $rooms[] = [
+                'id' => null,
+                'name' => DashboardService::ROOMLESS_LABEL,
+                'location_code' => null,
+                'location_name' => null,
+                'asset_count' => $roomless,
+            ];
+        }
+
+        return $rooms;
     }
 
     /**

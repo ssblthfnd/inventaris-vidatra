@@ -18,9 +18,12 @@ use Illuminate\Support\Facades\DB;
  * SUM / JOIN") — never `Asset::all()` then group in PHP — so the endpoint stays
  * cheap as the table grows.
  *
- * Asset scope everywhere: **active assets only** = the default `assets` query
- * (`deleted_at IS NULL`). A written-off asset is still an asset and is counted;
- * a soft-deleted asset is not. No `withTrashed()`.
+ * Asset scope everywhere: **all non-deleted assets** = the default `assets`
+ * query (`deleted_at IS NULL`). A written-off asset is still an asset and is
+ * counted (R9.4-15 D15-2: "Total Aset" keeps this meaning); a soft-deleted
+ * asset is not (it is in the Trash). No `withTrashed()`. Every breakdown —
+ * condition, location, category, room incl. the "Tanpa Ruangan" bucket — sums
+ * to `summary.total_assets`.
  *
  * Stage 6.9 R4 — a global role (admin/super_admin/operator/viewer) gets
  * exactly the same numbers as before (no location constraint added at all).
@@ -33,6 +36,9 @@ use Illuminate\Support\Facades\DB;
  */
 class DashboardService
 {
+    /** Tahap 6.9 R9.4-15 (D15-3) — label of the virtual `room_id IS NULL` bucket in `by_room` (never a real room). */
+    public const ROOMLESS_LABEL = 'Tanpa Ruangan';
+
     /**
      * @return array<string, mixed>
      */
@@ -85,8 +91,12 @@ class DashboardService
     }
 
     /**
-     * All active locations, including those with zero (matching) assets.
-     * Ordered by code. When scoped, the JOIN condition itself excludes
+     * All active locations, including those with zero (matching) assets, plus
+     * (Tahap 6.9 R9.4-15, D15-5) any INACTIVE location that still holds
+     * matching assets — deactivating a location does not remove its assets, so
+     * they stay represented and the rows keep summing to `summary.total_assets`.
+     * An inactive location with no matching asset stays hidden, as before.
+     * Each row carries `is_active`. Ordered by code. When scoped, the JOIN condition itself excludes
      * out-of-scope assets — every active location still appears (same
      * "zero-count master rows" convention as before R4), but a location
      * outside the actor's scope always shows `asset_count = 0`, never the
@@ -104,23 +114,25 @@ class DashboardService
                     $join->whereIn('a.location_code', $locationCodes);
                 }
             })
-            ->where('l.is_active', true)
-            ->groupBy('l.code', 'l.name')
+            ->groupBy('l.code', 'l.name', 'l.is_active')
+            ->havingRaw('l.is_active = 1 OR COUNT(a.id) > 0')
             ->orderBy('l.code')
-            ->select('l.code', 'l.name')
+            ->select('l.code', 'l.name', 'l.is_active')
             ->selectRaw('COUNT(a.id) as asset_count')
             ->get()
             ->map(fn ($r) => [
                 'code' => $r->code,
                 'name' => $r->name,
+                'is_active' => (bool) $r->is_active,
                 'asset_count' => (int) $r->asset_count,
             ])
             ->all();
     }
 
     /**
-     * All active categories, including those with zero (matching) assets.
-     * Ordered by code. Same scoped-JOIN treatment as {@see byLocation()}.
+     * All active categories, including those with zero (matching) assets, plus
+     * any inactive category that still holds matching assets (D15-5, same rule
+     * as {@see byLocation()}). Ordered by code. Same scoped-JOIN treatment.
      *
      * @param  ?list<string>  $locationCodes
      * @return list<array<string, mixed>>
@@ -134,15 +146,16 @@ class DashboardService
                     $join->whereIn('a.location_code', $locationCodes);
                 }
             })
-            ->where('c.is_active', true)
-            ->groupBy('c.code', 'c.name')
+            ->groupBy('c.code', 'c.name', 'c.is_active')
+            ->havingRaw('c.is_active = 1 OR COUNT(a.id) > 0')
             ->orderBy('c.code')
-            ->select('c.code', 'c.name')
+            ->select('c.code', 'c.name', 'c.is_active')
             ->selectRaw('COUNT(a.id) as asset_count')
             ->get()
             ->map(fn ($r) => [
                 'code' => $r->code,
                 'name' => $r->name,
+                'is_active' => (bool) $r->is_active,
                 'asset_count' => (int) $r->asset_count,
             ])
             ->all();
@@ -157,12 +170,19 @@ class DashboardService
      * join them to, so unlike `byLocation()`/`byCategory()` this list is
      * naturally narrowed, not just zero-counted.
      *
+     * Tahap 6.9 R9.4-15 (D15-3) — matching assets with no room (`room_id IS
+     * NULL`) follow LAST as one virtual bucket ({@see ROOMLESS_LABEL}; `id`,
+     * `location_code`, `location_name` NULL), only when there is at least one —
+     * the same "only buckets that hold an asset" rule as real rooms. Scoped by
+     * the asset's own `location_code` (a roomless asset has no room to scope
+     * by). With it, the rows sum to `summary.total_assets`.
+     *
      * @param  ?list<string>  $locationCodes
      * @return list<array<string, mixed>>
      */
     private function byRoom(?array $locationCodes): array
     {
-        return DB::table('rooms as r')
+        $rooms = DB::table('rooms as r')
             ->join('assets as a', function (JoinClause $join) use ($locationCodes): void {
                 $join->on('a.room_id', '=', 'r.id')->whereNull('a.deleted_at');
                 if ($locationCodes !== null) {
@@ -186,6 +206,23 @@ class DashboardService
                 'asset_count' => (int) $r->asset_count,
             ])
             ->all();
+
+        $roomless = Asset::query()
+            ->whereNull('room_id')
+            ->when($locationCodes !== null, fn ($q) => $q->whereIn('location_code', $locationCodes))
+            ->count();
+
+        if ($roomless > 0) {
+            $rooms[] = [
+                'id' => null,
+                'name' => self::ROOMLESS_LABEL,
+                'location_code' => null,
+                'location_name' => null,
+                'asset_count' => $roomless,
+            ];
+        }
+
+        return $rooms;
     }
 
     /**
