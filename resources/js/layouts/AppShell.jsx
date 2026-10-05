@@ -30,6 +30,9 @@ const ROLE_LABELS = {
 const NAV = [
   { label: 'Dashboard', to: '/dashboard', ready: true, show: () => true },
   { label: 'Inventaris', to: '/inventory', ready: true, show: () => true },
+  // R9.4-14 — the asset Trash, for whoever may restore (`assets.restore`; the page and
+  // `GET /api/assets/trash` enforce it too): global roles and unit_admin, never viewer.
+  { label: 'Sampah Aset', to: '/trash', ready: true, show: (auth) => auth.can('assets.restore') },
   { label: 'Import Excel', to: '/imports', ready: true, show: (auth) => auth.canImport },
   { label: 'Laporan', to: '/reports', ready: true, show: (auth) => auth.canViewReports },
   // R7.1 — a dedicated room-management entry point (`rooms.manage`) for an

@@ -35,11 +35,18 @@ trait FiltersAssets
     /** Columns `?q=` searches directly; room name is matched via the relation. */
     private const SEARCHABLE = ['asset_code', 'sequence_no', 'brand_model', 'serial_no', 'material', 'notes'];
 
-    protected function assetsMatchingFilters(AssetIndexRequest $request): Builder
+    /**
+     * `$base` (Tahap 6.9 R9.4-14 D4) lets a caller start from a different set of
+     * assets than the active list — the Trash passes `Asset::onlyTrashed()`. Every
+     * filter, the search and the LocationScope WHERE are applied on top of it
+     * unchanged; omitted, it is the default `Asset::query()` (active assets only,
+     * SoftDeletes scope) exactly as before.
+     */
+    protected function assetsMatchingFilters(AssetIndexRequest $request, ?Builder $base = null): Builder
     {
         $locationCodes = LocationScope::for($request->user())->resolveFilterCodes($request->locationCodes());
 
-        return Asset::query()
+        return ($base ?? Asset::query())
             ->with(['location', 'category', 'room'])
             ->when($locationCodes !== null, fn (Builder $q) => $q->whereIn('location_code', $locationCodes))
             ->when($request->categoryCodes(), fn (Builder $q, array $codes) => $q->whereIn('category_code', $codes))

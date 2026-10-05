@@ -14,6 +14,7 @@ import Login from './pages/Login';
 import MasterData from './pages/MasterData';
 import Reports from './pages/Reports';
 import Rooms from './pages/Rooms';
+import Trash from './pages/Trash';
 import Users from './pages/Users';
 import GuestRoute from './routes/GuestRoute';
 import ProtectedRoute from './routes/ProtectedRoute';
@@ -48,6 +49,7 @@ function App() {
             <Route path="/imports" element={<Imports />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/rooms" element={<Rooms />} />
+            <Route path="/trash" element={<Trash />} />
             <Route path="/users" element={<Users />} />
             <Route path="/master-data" element={<MasterData />} />
           </Route>

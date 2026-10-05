@@ -12,6 +12,7 @@ use App\Http\Requests\Api\UpdateAssetRequest;
 use App\Http\Requests\Api\WriteOffAssetRequest;
 use App\Http\Resources\AssetCollection;
 use App\Http\Resources\AssetResource;
+use App\Http\Resources\TrashedAssetCollection;
 use App\Models\Asset;
 use App\Models\Room;
 use App\Services\Asset\AssetWriteService;
@@ -24,6 +25,7 @@ use Illuminate\Http\Response;
  *
  * Read (Tahap 5.3, `can:viewer`):
  *  - Soft-deleted assets are NEVER returned (SoftDeletes default scope) — no withTrashed().
+ *    The one list of deleted assets is the separate Trash, `trash()` (R9.4-14, `can:assets.restore`).
  *  - `is_written_off` is a filterable STATUS, not a deletion — written-off assets appear
  *    normally and can be filtered with `is_written_off=1|0`.
  *  - `subcategory` is resolved from the composite `(category_code, subcategory_code)` and
@@ -63,6 +65,31 @@ class AssetController extends ApiController
         Asset::loadSubcategoriesFor($assets->getCollection());
 
         return new AssetCollection($assets);
+    }
+
+    /**
+     * Tahap 6.9 R9.4-14 (D4) — the asset Trash: soft-deleted assets only, so an
+     * actor who may restore can find them first. Route gate is the existing
+     * `can:assets.restore` (no new ability); WHERE is the same LocationScope
+     * clause the active list uses (FiltersAssets), so a unit_admin only ever
+     * sees its own location's deleted assets — a foreign location requested in
+     * `location_code[]` simply matches nothing, never a 403 that would confirm
+     * anything. Same filter vocabulary as `index()` ({@see AssetIndexRequest}),
+     * applied on top of `onlyTrashed()`. Fixed order: most recently deleted
+     * first, id as tie-breaker (`sort`/`direction` are not used here).
+     * Restoring goes through the existing `POST assets/{asset}/restore`.
+     */
+    public function trash(AssetIndexRequest $request): TrashedAssetCollection
+    {
+        $assets = $this->assetsMatchingFilters($request, Asset::onlyTrashed())
+            ->orderByDesc('deleted_at')
+            ->orderByDesc('id')
+            ->paginate($request->perPage())
+            ->withQueryString();
+
+        Asset::loadSubcategoriesFor($assets->getCollection());
+
+        return new TrashedAssetCollection($assets);
     }
 
     public function show(Request $request, Asset $asset): AssetResource

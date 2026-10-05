@@ -104,13 +104,13 @@ function Section({ title, children, list = true }) {
   );
 }
 
-function BackLink({ to }) {
+function BackLink({ to, label = 'Kembali ke Inventaris' }) {
   return (
     <Link
       to={to}
       className="inline-flex items-center gap-1.5 rounded text-sm font-medium text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
     >
-      <span aria-hidden="true">←</span> Kembali ke Inventaris
+      <span aria-hidden="true">←</span> {label}
     </Link>
   );
 }
@@ -143,10 +143,10 @@ function DetailSkeleton() {
   );
 }
 
-function CenteredState({ backTo, title, message, action }) {
+function CenteredState({ backTo, backLabel, title, message, action }) {
   return (
     <div className="mx-auto max-w-2xl">
-      <BackLink to={backTo} />
+      <BackLink to={backTo} label={backLabel} />
       <div className="mt-6 rounded-xl border border-gray-200 bg-white px-6 py-14 text-center">
         <h1 className="text-base font-semibold text-gray-900">{title}</h1>
         <p className="mx-auto mt-1.5 max-w-sm text-sm text-gray-500">{message}</p>
@@ -190,7 +190,15 @@ export default function AssetDetail() {
   const [labelError, setLabelError] = useState('');
 
   const from = location.state?.from;
-  const backTo = typeof from === 'string' && from ? `/inventory?${from}` : '/inventory';
+  // R9.4-14 — opened from the asset Trash: go back there (with its filters), not to the Inventory list
+  const fromTrash = location.state?.fromTrash;
+  const backLabel = typeof fromTrash === 'string' ? 'Kembali ke Sampah Aset' : undefined;
+  const backTo =
+    typeof fromTrash === 'string'
+      ? `/trash${fromTrash ? `?${fromTrash}` : ''}`
+      : typeof from === 'string' && from
+        ? `/inventory?${from}`
+        : '/inventory';
 
   // Tahap 6.9 R9.1 (P2, request-waterfall hardening): starts the mutation-history
   // request at the same time as the asset-detail request below, instead of
@@ -342,6 +350,7 @@ export default function AssetDetail() {
     return (
       <CenteredState
         backTo={backTo}
+        backLabel={backLabel}
         title="Aset tidak ditemukan"
         message="Aset yang Anda cari tidak tersedia atau mungkin sudah dihapus permanen."
       />
@@ -351,6 +360,7 @@ export default function AssetDetail() {
     return (
       <CenteredState
         backTo={backTo}
+        backLabel={backLabel}
         title="Akses ditolak"
         message="Anda tidak memiliki izin untuk melihat aset ini."
       />
@@ -360,6 +370,7 @@ export default function AssetDetail() {
     return (
       <CenteredState
         backTo={backTo}
+        backLabel={backLabel}
         title="Gagal memuat data aset"
         message="Terjadi kendala saat memuat data. Silakan coba lagi."
         action={
@@ -382,7 +393,7 @@ export default function AssetDetail() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <BackLink to={backTo} />
+        <BackLink to={backTo} label={backLabel} />
 
         {canWriteInventory && !isTrashed && (
           <div className="flex flex-wrap gap-2">

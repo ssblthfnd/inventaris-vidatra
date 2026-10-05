@@ -137,6 +137,11 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     });
 
     Route::middleware('can:assets.restore')->group(function () {
+        // Tahap 6.9 R9.4-14 (D4) — the asset Trash: lists soft-deleted assets
+        // (onlyTrashed, LocationScope-filtered) for whoever may restore them.
+        // A literal path; `assets/{asset}` routes are whereNumber-constrained.
+        Route::get('assets/trash', [AssetController::class, 'trash'])->name('api.assets.trash');
+
         // restore resolves a soft-deleted asset — the only route that does
         Route::post('assets/{asset}/restore', [AssetController::class, 'restore'])
             ->withTrashed()
