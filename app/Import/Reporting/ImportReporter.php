@@ -246,6 +246,18 @@ final class ImportReporter
     /**
      * The single set of numbers every section of the report must agree with.
      *
+     * Tahap 6.9 R9.4-D6 — the three promotion states of a promotable row are
+     * mutually exclusive, each read from the row itself:
+     *   - `promoted`         has `promoted_asset_id`
+     *   - `promotion_failed` not promoted, carries a `promotion_failed` message
+     *                        (AssetPromoter records it and leaves the row
+     *                        retryable; a later successful retry makes it
+     *                        `promoted`, so it stops counting here)
+     *   - `not_yet_promoted` not promoted and never failed — genuinely pending
+     * so `promoted + promotion_failed + not_yet_promoted == promotable`.
+     * `not_yet_promoted` used to be `promotable - promoted`, which also counted
+     * every failed row and made that check fail whenever a failure was pending.
+     *
      * @return array{total:int,valid:int,warning:int,error:int,promotable:int,
      *               promoted:int,promotion_failed:int,not_yet_promoted:int,assets_created:int}
      */
@@ -260,12 +272,16 @@ final class ImportReporter
         $promotable = $valid + $warning;
         $promoted = (clone $base)->whereNotNull('promoted_asset_id')->count();
 
-        $promotionFailed = (clone $base)
+        $unpromoted = (clone $base)
             ->where('validation_status', '!=', 'error')
             ->whereNull('promoted_asset_id')
-            ->get(['validation_messages'])
-            ->filter(fn ($r) => collect(json_decode((string) $r->validation_messages, true) ?: [])
-                ->contains(fn ($m) => $m['code'] === 'promotion_failed'))
+            ->get(['validation_status', 'validation_messages']);
+        $hasFailed = fn ($r): bool => collect(json_decode((string) $r->validation_messages, true) ?: [])
+            ->contains(fn ($m) => $m['code'] === 'promotion_failed');
+
+        $promotionFailed = $unpromoted->filter($hasFailed)->count();
+        $notYetPromoted = $unpromoted
+            ->filter(fn ($r): bool => in_array($r->validation_status, ['valid', 'warning'], true) && ! $hasFailed($r))
             ->count();
 
         $assetsCreated = DB::table('assets')
@@ -280,7 +296,7 @@ final class ImportReporter
             'promotable' => $promotable,
             'promoted' => $promoted,
             'promotion_failed' => $promotionFailed,
-            'not_yet_promoted' => $promotable - $promoted,
+            'not_yet_promoted' => $notYetPromoted,
             'assets_created' => $assetsCreated,
         ];
     }

@@ -325,6 +325,83 @@ class Stage694ImportIntegrityTest extends TestCase
         $this->assertSame(0, Asset::where('sequence_no', '723')->count());
     }
 
+    /* ================================================================== R9.4-D6 promotion accounting */
+
+    private const PROMOTION_CHECK = 'promoted + promotion_failed + not_yet_promoted == promotable';
+
+    /** @return array{0: array<string, int>, 1: array{check:string, ok:bool, detail:string}} */
+    private function promotionAccounting(int $batchId): array
+    {
+        return [(new ImportReporter([$batchId]))->promotionSummary(), $this->checks($batchId)[self::PROMOTION_CHECK]];
+    }
+
+    /** @param array<string, int> $summary */
+    private function assertAccounting(array $summary, int $promotable, int $promoted, int $failed, int $pending): void
+    {
+        $this->assertSame(
+            [$promotable, $promoted, $failed, $pending],
+            [$summary['promotable'], $summary['promoted'], $summary['promotion_failed'], $summary['not_yet_promoted']],
+            'promotable / promoted / promotion_failed / not_yet_promoted',
+        );
+    }
+
+    /** Case A + B: a failed row is counted once (as failed), and moves to promoted after a successful retry. */
+    public function test_failed_row_is_not_also_counted_as_pending_and_moves_to_promoted_after_retry(): void
+    {
+        $room = $this->roomIn('02', 'Gudang Uji');
+        $batchId = $this->stage([
+            $this->rowFor('02', '761'),                          // promotes
+            $this->rowFor('02', '762', ['O' => 'Gudang Uji']),   // fails: room deactivated below
+        ]);
+        $room->update(['is_active' => false]);
+        Sanctum::actingAs($this->globalUser(UserRole::Operator));
+
+        $this->promote($batchId)->assertOk()->assertJsonPath('promotion.promoted', 1)->assertJsonPath('promotion.failed', 1);
+        [$summary, $check] = $this->promotionAccounting($batchId);
+        $this->assertAccounting($summary, promotable: 2, promoted: 1, failed: 1, pending: 0);
+        $this->assertTrue($check['ok'], $check['detail']);
+        $this->assertSame('1 + 1 + 0 == 2', $check['detail']);
+
+        $room->update(['is_active' => true]);
+        $this->promote($batchId)->assertOk()->assertJsonPath('promotion.promoted', 1);
+        [$summary, $check] = $this->promotionAccounting($batchId);
+        $this->assertAccounting($summary, promotable: 2, promoted: 2, failed: 0, pending: 0);
+        $this->assertTrue($check['ok'], $check['detail']);
+        $this->assertSame(2, $summary['assets_created']);
+    }
+
+    /** Case C: nothing promoted yet — every promotable row is genuinely pending. */
+    public function test_unpromoted_batch_counts_every_promotable_row_as_pending(): void
+    {
+        $batchId = $this->stage([
+            $this->rowFor('02', '771'),
+            $this->rowFor('02', '772', ['O' => 'PLANET MARS']),  // warning (unmapped room), still promotable
+            $this->rowFor('02', '773', ['D' => '999']),           // error: not promotable, not pending
+        ]);
+
+        [$summary, $check] = $this->promotionAccounting($batchId);
+        $this->assertAccounting($summary, promotable: 2, promoted: 0, failed: 0, pending: 2);
+        $this->assertTrue($check['ok'], $check['detail']);
+    }
+
+    /** Case D + E: a fully promoted batch, then an idempotent re-promote — accounting and assets unchanged. */
+    public function test_fully_promoted_batch_accounting_survives_an_idempotent_re_promote(): void
+    {
+        $batchId = $this->stage([$this->rowFor('02', '781'), $this->rowFor('02', '782', ['O' => 'PLANET MARS'])]);
+        Sanctum::actingAs($this->globalUser(UserRole::Operator));
+
+        $this->promote($batchId)->assertOk()->assertJsonPath('promotion.promoted', 2);
+        [$first, $check] = $this->promotionAccounting($batchId);
+        $this->assertAccounting($first, promotable: 2, promoted: 2, failed: 0, pending: 0);
+        $this->assertTrue($check['ok'], $check['detail']);
+
+        $this->promote($batchId)->assertOk()->assertJsonPath('promotion.promoted', 0)->assertJsonPath('promotion.skipped_already', 2);
+        [$second, $check] = $this->promotionAccounting($batchId);
+        $this->assertSame($first, $second);
+        $this->assertTrue($check['ok'], $check['detail']);
+        $this->assertSame(2, Asset::whereIn('sequence_no', ['781', '782'])->count());
+    }
+
     /* ================================================================== R9.4-12 consistency checks */
 
     /** Mixed batch: matched room, unmapped room (NULL), error row; plus unrelated mutation_logs elsewhere. */
