@@ -39,6 +39,11 @@ class ImportBatchResource extends JsonResource
                 : null,
             'notes' => $batch->notes,
             'imported_at' => $batch->imported_at?->toIso8601String(),
+            // Tahap 6.9 R9.4-11 — actor of the first promotion that imported something
+            // (pairs with imported_at; NULL for CLI or batches promoted before R9.4-11).
+            'imported_by' => $batch->relationLoaded('importedBy') && $batch->importedBy !== null
+                ? ['id' => $batch->importedBy->id, 'name' => $batch->importedBy->name]
+                : null,
             'created_at' => $batch->created_at?->toIso8601String(),
         ];
     }

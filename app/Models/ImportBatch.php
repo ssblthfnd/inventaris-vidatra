@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'uploaded_by',
     'notes',
     'imported_at',
+    'imported_by',
 ])]
 class ImportBatch extends Model
 {
@@ -62,9 +63,21 @@ class ImportBatch extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
+    /** Tahap 6.9 R9.4-11 — who ran the first promotion that imported something (pairs with `imported_at`). @return BelongsTo<User, $this> */
+    public function importedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'imported_by');
+    }
+
     /** @return HasMany<ImportRow, $this> */
     public function importRows(): HasMany
     {
         return $this->hasMany(ImportRow::class, 'import_batch_id');
+    }
+
+    /** @return HasMany<ImportRoomMappingResolution, $this> */
+    public function roomMappingResolutions(): HasMany
+    {
+        return $this->hasMany(ImportRoomMappingResolution::class, 'import_batch_id');
     }
 }

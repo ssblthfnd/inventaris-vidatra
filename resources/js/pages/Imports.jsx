@@ -307,11 +307,27 @@ export default function Imports() {
         rawValue: group.raw_value,
         roomName: result?.room?.name ?? fallbackRoomName,
         updatedRows: result?.updated_rows ?? 0,
+        rowsBecameValid: result?.rows_became_valid ?? 0,
+        resolvedBy: result?.resolution?.resolved_by?.name ?? null,
         aliasCreated: Boolean(result?.alias_created),
         aliasAlreadyExisted: Boolean(result?.alias_already_existed),
       },
     ]);
     setMappingGroups((current) => current.filter((g) => roomMappingGroupKey(g) !== key));
+    // R9.4-01 — rows whose only issue was the unmapped room are now valid; apply
+    // the server-reported delta to the counters instead of refetching the batch.
+    const becameValid = result?.rows_became_valid ?? 0;
+    if (becameValid > 0) {
+      setBatch((current) =>
+        current && current.id === batch.id
+          ? {
+              ...current,
+              valid_rows: current.valid_rows + becameValid,
+              warning_rows: Math.max(0, current.warning_rows - becameValid),
+            }
+          : current,
+      );
+    }
     loadRows(batch.id, statusFilter, rowsPage);
     loadMappings(batch.id, { background: true });
   };
@@ -505,6 +521,12 @@ export default function Imports() {
                   {batch.category_name ?? batch.category_code ?? 'Kategori tidak dikenal'} · Status:{' '}
                   {BATCH_STATUS_LABEL[batch.status] ?? batch.status}
                 </p>
+                {batch.imported_at && (
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    Pertama diimpor: {new Date(batch.imported_at).toLocaleString('id-ID')}
+                    {batch.imported_by ? ` oleh ${batch.imported_by.name}` : ''}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button

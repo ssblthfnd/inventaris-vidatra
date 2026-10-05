@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'room_raw_value',
     'matched_room_id',
     'room_match_method',
+    'room_mapping_resolution_id',
     'condition_raw',
     'condition_parsed',
     'validation_status',
@@ -37,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'duplicate_of_asset_id',
     'promoted_asset_id',
     'promoted_at',
+    'promoted_by',
 ])]
 class ImportRow extends Model
 {
@@ -65,6 +67,18 @@ class ImportRow extends Model
     public function matchedRoom(): BelongsTo
     {
         return $this->belongsTo(Room::class, 'matched_room_id');
+    }
+
+    /** Tahap 6.9 R9.4-11 — the manual mapping action that set `matched_room_id` (NULL for automatic matches). @return BelongsTo<ImportRoomMappingResolution, $this> */
+    public function roomMappingResolution(): BelongsTo
+    {
+        return $this->belongsTo(ImportRoomMappingResolution::class, 'room_mapping_resolution_id');
+    }
+
+    /** Tahap 6.9 R9.4-11 — who promoted this row (NULL: CLI or before R9.4-11). @return BelongsTo<User, $this> */
+    public function promotedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'promoted_by');
     }
 
     /** The asset successfully created from this row. @return BelongsTo<Asset, $this> */

@@ -83,7 +83,7 @@ class InventoryReportCommand extends Command
 
         // ---------------------------------------------------------------- C
         $rm = $reporter->roomMethodTotals();
-        $this->section("C. ROOM MAPPING  (distinct raw = {$rm['distinct_raw']}  |  exact_name={$rm['exact_name']}  alias={$rm['alias']}  none={$rm['none']}  total={$rm['total']})");
+        $this->section("C. ROOM MAPPING  (distinct raw = {$rm['distinct_raw']}  |  exact_name={$rm['exact_name']}  alias={$rm['alias']}  manual={$rm['manual']}  manual_alias={$rm['manual_alias']}  none={$rm['none']}  total={$rm['total']})");
         $this->table(
             ['location_code', 'raw_value', 'normalized_match_key', 'match_method', 'matched_room_id', 'canonical_room_name', 'count'],
             array_map(fn ($r) => [

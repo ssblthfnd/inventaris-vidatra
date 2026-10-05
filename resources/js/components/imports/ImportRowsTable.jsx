@@ -35,6 +35,27 @@ function StatusBadge({ status, isDuplicate }) {
   );
 }
 
+// R9.4-02/11 — only manual mappings get a note (automatic exact-name/alias
+// matches stay unlabelled, as before); who/when come from the resolution record.
+const MANUAL_METHOD_LABEL = {
+  manual: 'Dipetakan manual (import ini saja)',
+  manual_alias: 'Dipetakan manual · alias permanen',
+};
+
+function ManualMappingNote({ row }) {
+  const label = MANUAL_METHOD_LABEL[row.room_match_method];
+  if (!label) return null;
+  const resolution = row.room_mapping_resolution;
+
+  return (
+    <span className="mt-0.5 block text-[11px] text-gray-500">
+      {label}
+      {resolution?.resolved_by && ` · oleh ${resolution.resolved_by.name}`}
+      {resolution?.resolved_at && `, ${new Date(resolution.resolved_at).toLocaleString('id-ID')}`}
+    </span>
+  );
+}
+
 function SkeletonRows() {
   return Array.from({ length: 6 }).map((_, i) => (
     <tr key={i} className="border-t border-gray-100">
@@ -84,7 +105,10 @@ export default function ImportRowsTable({ rows, loading }) {
                   </td>
                   <td className="px-4 py-3">
                     {row.matched_room_name ? (
-                      <span className="text-gray-700">{row.matched_room_name}</span>
+                      <>
+                        <span className="block text-gray-700">{row.matched_room_name}</span>
+                        <ManualMappingNote row={row} />
+                      </>
                     ) : (
                       <span className="text-gray-400">
                         {row.room_raw_value ? `${row.room_raw_value} (belum dipetakan)` : 'Belum diisi'}

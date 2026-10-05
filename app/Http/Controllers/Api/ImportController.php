@@ -66,7 +66,7 @@ class ImportController extends ApiController
         $perPage = max(1, min($perPage, 100));
 
         $batches = ImportBatch::query()
-            ->with(['category', 'uploadedBy'])
+            ->with(['category', 'uploadedBy', 'importedBy'])
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
@@ -141,7 +141,7 @@ class ImportController extends ApiController
             abort(404);
         }
 
-        $batch->load(['category', 'uploadedBy']);
+        $batch->load(['category', 'uploadedBy', 'importedBy']);
 
         return new ImportBatchResource($batch);
     }
@@ -157,7 +157,9 @@ class ImportController extends ApiController
             abort(404);
         }
 
-        $query = $batch->importRows()->with('matchedRoom')->orderBy('row_number');
+        $query = $batch->importRows()
+            ->with(['matchedRoom', 'roomMappingResolution.resolvedBy', 'promotedBy'])
+            ->orderBy('row_number');
 
         $status = $request->status();
         if ($status === 'duplicate') {
@@ -199,7 +201,7 @@ class ImportController extends ApiController
             throw ValidationException::withMessages(['batch' => [$e->getMessage()]]);
         }
 
-        $batch->refresh()->load(['category', 'uploadedBy']);
+        $batch->refresh()->load(['category', 'uploadedBy', 'importedBy']);
 
         return response()->json([
             'data' => new ImportBatchResource($batch),

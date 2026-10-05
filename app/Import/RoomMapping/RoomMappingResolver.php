@@ -3,6 +3,7 @@
 namespace App\Import\RoomMapping;
 
 use App\Import\Parsing\ValueNormalizer;
+use App\Import\Validation\RowValidation;
 use App\Models\ImportBatch;
 use App\Models\User;
 use App\Support\LocationScope;
@@ -34,6 +35,11 @@ use RuntimeException;
  */
 final class RoomMappingResolver
 {
+    /** Tahap 6.9 R9.4-02 — `import_rows.room_match_method` values written by this class. */
+    public const METHOD_MANUAL = 'manual';
+
+    public const METHOD_MANUAL_ALIAS = 'manual_alias';
+
     /**
      * Distinct (location_code, normalized raw value) groups this actor may see —
      * silently narrowed to the actor's own location for `unit_admin` (never a
@@ -91,7 +97,7 @@ final class RoomMappingResolver
      * room deactivated/reassigned or a scope changed between the GET list and
      * this call is caught here, not assumed from stale frontend data.
      *
-     * @return array{location_code:string,match_key:string,room:array{id:int,name:string},updated_rows:int,alias_created:bool,alias_already_existed:bool}
+     * @return array{location_code:string,match_key:string,room:array{id:int,name:string},room_match_method:string,updated_rows:int,rows_became_valid:int,alias_created:bool,alias_already_existed:bool,resolution:array{id:int,resolved_by:array{id:int,name:string},resolved_at:string}|null}
      *
      * @throws AuthorizationException  actor has no scope for `$locationCode`, or `$saveAsAlias` without `roomAliases.resolve` (403)
      * @throws RuntimeException        room/alias business-rule violation (caller maps this to 422)
@@ -140,6 +146,7 @@ final class RoomMappingResolver
 
             $aliasCreated = false;
             $aliasAlreadyExisted = false;
+            $aliasId = null;
 
             if ($saveAsAlias) {
                 $existingAlias = DB::table('room_aliases')
@@ -159,9 +166,10 @@ final class RoomMappingResolver
                     // never silently overwritten, never duplicated (unique constraint
                     // uq_room_aliases_location_match_key backs this up either way).
                     $aliasAlreadyExisted = true;
+                    $aliasId = (int) $existingAlias->id;
                 } else {
                     $now = now();
-                    DB::table('room_aliases')->insert([
+                    $aliasId = DB::table('room_aliases')->insertGetId([
                         'location_code' => $locationCode,
                         'raw_value' => $rawValue,
                         'match_key' => $matchKey,
@@ -192,32 +200,131 @@ final class RoomMappingResolver
                 ->whereNull('promoted_asset_id')
                 ->whereNotNull('room_raw_value')
                 ->lockForUpdate()
-                ->get(['id', 'room_raw_value']);
+                ->get(['id', 'room_raw_value', 'validation_status', 'validation_messages']);
 
-            $ids = $candidateRows
+            $rows = $candidateRows
                 ->filter(fn ($r) => ValueNormalizer::roomMatchKey($r->room_raw_value) === $matchKey)
-                ->pluck('id')
-                ->all();
+                ->values();
 
+            // Tahap 6.9 R9.4-02 — the method records where THIS matched_room_id came
+            // from: a user's pick, backed by a permanent alias or not. Never `alias`
+            // (that value means RoomMatcher found an alias automatically at staging).
+            $method = $saveAsAlias ? self::METHOD_MANUAL_ALIAS : self::METHOD_MANUAL;
+
+            $resolution = null;
             $updated = 0;
-            if ($ids !== []) {
-                $updated = DB::table('import_rows')
-                    ->whereIn('id', $ids)
-                    ->update([
-                        'matched_room_id' => $roomId,
-                        'room_match_method' => 'alias',
-                        'updated_at' => now(),
+            $becameValid = 0;
+
+            // Nothing left to map (e.g. a stale UI resubmitting an already-resolved
+            // group): no row changed, so no resolution is recorded. A permanent alias
+            // created above still stands on its own `created_by`, as before.
+            if ($rows->isNotEmpty()) {
+                $now = now();
+
+                // Tahap 6.9 R9.4-11 — one record per successful action, written in
+                // this transaction so it exists only if the row updates commit too.
+                $resolutionId = DB::table('import_room_mapping_resolutions')->insertGetId([
+                    'import_batch_id' => $batch->id,
+                    'location_code' => $locationCode,
+                    'raw_value' => $rawValue,
+                    'match_key' => $matchKey,
+                    'room_id' => $roomId,
+                    'method' => $method,
+                    'room_alias_id' => $aliasId,
+                    'alias_created' => $aliasCreated,
+                    'affected_rows' => $rows->count(),
+                    'resolved_by' => $actor->id,
+                    'resolved_at' => $now,
+                ]);
+
+                foreach ($rows as $row) {
+                    [$status, $messages] = $this->withoutRoomUnmapped($row);
+                    if ($status === RowValidation::VALID && $row->validation_status !== RowValidation::VALID) {
+                        $becameValid++;
+                    }
+
+                    $updated += DB::table('import_rows')
+                        ->where('id', $row->id)
+                        ->update([
+                            'matched_room_id' => $roomId,
+                            'room_match_method' => $method,
+                            'room_mapping_resolution_id' => $resolutionId,
+                            'validation_status' => $status,
+                            'validation_messages' => $messages,
+                            'updated_at' => $now,
+                        ]);
+                }
+
+                // Keep the batch counters AssetPromoter maintains in step with the
+                // rows just changed. Every candidate row was `warning` and is locked
+                // above, so the delta is exact; `promotable` (valid + warning) and
+                // therefore the batch status are unchanged.
+                if ($becameValid > 0) {
+                    DB::table('import_batches')->where('id', $batch->id)->update([
+                        'valid_rows' => DB::raw('valid_rows + '.$becameValid),
+                        'warning_rows' => DB::raw('warning_rows - '.$becameValid),
+                        'updated_at' => $now,
                     ]);
+                }
+
+                $resolution = [
+                    'id' => $resolutionId,
+                    'resolved_by' => ['id' => $actor->id, 'name' => $actor->name],
+                    'resolved_at' => $now->toIso8601String(),
+                ];
             }
 
             return [
                 'location_code' => $locationCode,
                 'match_key' => $matchKey,
                 'room' => ['id' => $room->id, 'name' => $room->name],
+                'room_match_method' => $method,
                 'updated_rows' => $updated,
+                'rows_became_valid' => $becameValid,
                 'alias_created' => $aliasCreated,
                 'alias_already_existed' => $aliasAlreadyExisted,
+                'resolution' => $resolution,
             ];
         });
+    }
+
+    /**
+     * Tahap 6.9 R9.4-01 — the mapping resolves exactly one condition:
+     * `room_unmapped`. That message is dropped; every other message stays
+     * verbatim. The row becomes `valid` only when nothing else keeps it at
+     * `warning` — any other warning (unknown condition, category mismatch, …) or
+     * any validation error leaves the status as it was.
+     *
+     * `promotion_failed` is not a validation result: AssetPromoter appends it
+     * (severity `error`) WITHOUT changing `validation_status`, so the row stays
+     * retryable. It is kept as history and ignored here, so resolving never turns
+     * a retryable row into an `error` row (never re-derived via
+     * {@see RowValidation::fromMessages()}, which would).
+     *
+     * @return array{0:string, 1:string}  new validation_status, JSON-encoded messages (`[]` when none, as staging writes)
+     */
+    private function withoutRoomUnmapped(object $row): array
+    {
+        $messages = json_decode((string) $row->validation_messages, true) ?: [];
+        $remaining = array_values(array_filter(
+            $messages,
+            fn (array $m): bool => ($m['code'] ?? null) !== 'room_unmapped',
+        ));
+
+        $stillFlagged = false;
+        foreach ($remaining as $m) {
+            $severity = $m['severity'] ?? null;
+            if ($severity === 'warning' || ($severity === 'error' && ($m['code'] ?? null) !== 'promotion_failed')) {
+                $stillFlagged = true;
+                break;
+            }
+        }
+
+        $status = $stillFlagged ? $row->validation_status : RowValidation::VALID;
+
+        return [
+            $status,
+            json_encode($remaining, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        ];
     }
 }

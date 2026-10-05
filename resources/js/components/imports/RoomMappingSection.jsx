@@ -237,9 +237,11 @@ function ResolvedNotice({ notice, locationName }) {
       </p>
       <p className="mt-1 text-emerald-800">
         ✓ {notice.updatedRows} baris dipetakan
+        {notice.rowsBecameValid > 0 && ` · ${notice.rowsBecameValid} baris kini Valid`}
         {notice.aliasCreated && ' · alias permanen dibuat'}
         {notice.aliasAlreadyExisted && ' · alias permanen sudah ada sebelumnya'}
       </p>
+      {notice.resolvedBy && <p className="mt-0.5 text-xs text-emerald-700">Dipetakan oleh {notice.resolvedBy}</p>}
     </div>
   );
 }

@@ -82,12 +82,15 @@ final class ImportReporter
      *         (Tahap 6.9 R9.1 — see {@see consistencyCheck()}'s docblock); omitted/null keeps the
      *         original self-contained behavior (computes it internally), unchanged for existing
      *         callers like `InventoryReportCommand`.
-     * @return array{exact_name:int, alias:int, none:int, total:int, distinct_raw:int}
+     * Tahap 6.9 R9.4-02: `manual` / `manual_alias` (rows resolved in the import room-mapping
+     * flow) are counted separately from the automatic `exact_name` / `alias`.
+     *
+     * @return array{exact_name:int, alias:int, manual:int, manual_alias:int, none:int, total:int, distinct_raw:int}
      */
     public function roomMethodTotals(?array $roomMapping = null): array
     {
         $rows = $roomMapping ?? $this->roomMapping();
-        $out = ['exact_name' => 0, 'alias' => 0, 'none' => 0, 'total' => 0, 'distinct_raw' => count($rows)];
+        $out = ['exact_name' => 0, 'alias' => 0, 'manual' => 0, 'manual_alias' => 0, 'none' => 0, 'total' => 0, 'distinct_raw' => count($rows)];
         foreach ($rows as $r) {
             $out[$r['match_method']] += $r['count'];
             $out['total'] += $r['count'];
@@ -295,7 +298,7 @@ final class ImportReporter
      * ever call `consistencyCheck()` on its own.
      *
      * @param  array{total:int,valid:int,warning:int,error:int,promotable:int,promoted:int,promotion_failed:int,not_yet_promoted:int,assets_created:int}|null  $summary
-     * @param  array{exact_name:int, alias:int, none:int, total:int, distinct_raw:int}|null  $roomMethodTotals
+     * @param  array{exact_name:int, alias:int, manual:int, manual_alias:int, none:int, total:int, distinct_raw:int}|null  $roomMethodTotals
      * @return list<array{check:string, ok:bool, detail:string}>
      */
     public function consistencyCheck(?array $summary = null, ?array $roomMethodTotals = null): array
@@ -334,9 +337,9 @@ final class ImportReporter
             "{$s['assets_created']} == {$s['promoted']}",
         );
         $add(
-            'room methods: exact_name + alias + none == total rows',
-            $rm['exact_name'] + $rm['alias'] + $rm['none'] === $rm['total'] && $rm['total'] === $s['total'],
-            "{$rm['exact_name']} + {$rm['alias']} + {$rm['none']} == {$rm['total']} (== total {$s['total']})",
+            'room methods: exact_name + alias + manual + manual_alias + none == total rows',
+            $rm['exact_name'] + $rm['alias'] + $rm['manual'] + $rm['manual_alias'] + $rm['none'] === $rm['total'] && $rm['total'] === $s['total'],
+            "{$rm['exact_name']} + {$rm['alias']} + {$rm['manual']} + {$rm['manual_alias']} + {$rm['none']} == {$rm['total']} (== total {$s['total']})",
         );
         $room = $this->promotedRoomConsistency();
         $add(

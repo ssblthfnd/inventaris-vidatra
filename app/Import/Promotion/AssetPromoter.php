@@ -80,7 +80,7 @@ final class AssetPromoter
             }
 
             try {
-                $assetId = $this->promoteOne($stagedRow);
+                $assetId = $this->promoteOne($stagedRow, $actor?->id);
                 $result['promoted']++;
             } catch (Throwable $e) {
                 $result['failed']++;
@@ -89,7 +89,7 @@ final class AssetPromoter
             }
         }
 
-        $this->refreshBatchCounters($batchId);
+        $this->refreshBatchCounters($batchId, $result['promoted'] > 0, $actor?->id);
 
         return $result;
     }
@@ -137,7 +137,7 @@ final class AssetPromoter
         }
     }
 
-    private function promoteOne(object $stagedRow): int
+    private function promoteOne(object $stagedRow, ?int $actorId): int
     {
         $payload = json_decode((string) $stagedRow->raw_payload, true, flags: JSON_THROW_ON_ERROR);
         $parsed = $payload['parsed'] ?? null;
@@ -145,7 +145,7 @@ final class AssetPromoter
             throw new RuntimeException('raw_payload has no "parsed" section');
         }
 
-        return DB::transaction(function () use ($stagedRow, $parsed): int {
+        return DB::transaction(function () use ($stagedRow, $parsed, $actorId): int {
             // final-state duplicate guard (§29) — another batch may have promoted the same
             // identity since this row was validated.
             $identity = new ParsedRow(
@@ -214,10 +214,13 @@ final class AssetPromoter
                 'updated_at' => $now,
             ]);
 
+            // Tahap 6.9 R9.4-11 — `promoted_by` is written by the same UPDATE that
+            // claims the row, inside this transaction: a row whose promotion fails
+            // never gets an actor. NULL for the CLI (no user).
             $affected = DB::table('import_rows')
                 ->where('id', $stagedRow->id)
                 ->whereNull('promoted_asset_id')
-                ->update(['promoted_asset_id' => $assetId, 'promoted_at' => $now, 'updated_at' => $now]);
+                ->update(['promoted_asset_id' => $assetId, 'promoted_at' => $now, 'promoted_by' => $actorId, 'updated_at' => $now]);
 
             if ($affected !== 1) {
                 // concurrent promotion of the same row — abort so we don't double count
@@ -243,7 +246,7 @@ final class AssetPromoter
         ]);
     }
 
-    private function refreshBatchCounters(int $batchId): void
+    private function refreshBatchCounters(int $batchId, bool $promotedAny, ?int $actorId): void
     {
         $base = DB::table('import_rows')->where('import_batch_id', $batchId);
 
@@ -281,8 +284,17 @@ final class AssetPromoter
         // nothing never sets it. Previously it was rewritten to now() on every
         // call with imported > 0. The `whereNull` makes the write-once rule hold
         // even under concurrent promotes.
-        if ($imported > 0) {
-            DB::table('import_batches')->where('id', $batchId)->whereNull('imported_at')->update(['imported_at' => $now]);
+        //
+        // Tahap 6.9 R9.4-11 — `imported_by` is the actor of that same first
+        // promotion, written by the same guarded UPDATE so the pair can never
+        // disagree or be replaced later. Only a call that itself promoted a row
+        // may claim it (`$promotedAny`), so a no-op/all-failed promote racing a
+        // successful one never takes the credit. NULL actor = CLI.
+        if ($imported > 0 && $promotedAny) {
+            DB::table('import_batches')->where('id', $batchId)->whereNull('imported_at')->update([
+                'imported_at' => $now,
+                'imported_by' => $actorId,
+            ]);
         }
     }
 }

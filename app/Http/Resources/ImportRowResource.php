@@ -56,6 +56,9 @@ class ImportRowResource extends JsonResource
             'matched_room_id' => $row->matched_room_id,
             'matched_room_name' => $row->relationLoaded('matchedRoom') ? $row->matchedRoom?->name : null,
             'room_match_method' => $row->room_match_method,
+            // Tahap 6.9 R9.4-11 — the manual mapping action behind matched_room_id
+            // (manual / manual_alias only; NULL for automatic matches and unresolved rows).
+            'room_mapping_resolution' => $this->roomMappingResolution($row),
 
             'condition_raw' => $row->condition_raw,
             'condition_parsed' => $row->condition_parsed?->value,
@@ -67,6 +70,27 @@ class ImportRowResource extends JsonResource
 
             'promoted_asset_id' => $row->promoted_asset_id,
             'promoted_at' => $row->promoted_at?->toIso8601String(),
+            'promoted_by' => $row->relationLoaded('promotedBy') && $row->promotedBy !== null
+                ? ['id' => $row->promotedBy->id, 'name' => $row->promotedBy->name]
+                : null,
+        ];
+    }
+
+    /** @return array{id:int,method:string,resolved_by:array{id:int,name:string}|null,resolved_at:?string}|null */
+    private function roomMappingResolution(ImportRow $row): ?array
+    {
+        if (! $row->relationLoaded('roomMappingResolution') || $row->roomMappingResolution === null) {
+            return null;
+        }
+
+        $resolution = $row->roomMappingResolution;
+        $resolvedBy = $resolution->relationLoaded('resolvedBy') ? $resolution->resolvedBy : null;
+
+        return [
+            'id' => $resolution->id,
+            'method' => $resolution->method,
+            'resolved_by' => $resolvedBy !== null ? ['id' => $resolvedBy->id, 'name' => $resolvedBy->name] : null,
+            'resolved_at' => $resolution->resolved_at?->toIso8601String(),
         ];
     }
 }
