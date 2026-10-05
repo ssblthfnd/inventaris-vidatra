@@ -133,6 +133,66 @@ final class AssetPromoter
         }
     }
 
+    /**
+     * Tahap 6.9 R9.4-10 (D3) — how many assets the NEXT promotion of this batch
+     * would create without a room, for the confirmation warning. Same scope check
+     * as {@see promoteBatch()} (403 for an out-of-scope actor; `$actor === null`
+     * = unrestricted) and the same per-row decision as the promotion loop: a row
+     * counts only if it would actually become an asset — not yet promoted,
+     * `valid`/`warning`, a usable `parsed` payload, and no existing asset with
+     * its identity (the final-state duplicate guard in {@see promoteOne()}) —
+     * and its `matched_room_id` is NULL. A row with a matched room is never
+     * roomless (if that room was deactivated, the row fails instead of being
+     * promoted without it — R9.4-19).
+     *
+     * Advisory only: promotion re-checks everything itself, so a batch that
+     * changes between this preview and the promotion is still handled safely.
+     * Read-only.
+     *
+     * @throws AuthorizationException
+     */
+    public function roomlessPendingCount(int $batchId, ?User $actor = null): int
+    {
+        if ($actor !== null) {
+            $this->assertBatchWithinScope($batchId, LocationScope::for($actor));
+        }
+
+        $rows = DB::table('import_rows')
+            ->where('import_batch_id', $batchId)
+            ->whereNull('promoted_asset_id')
+            ->whereIn('validation_status', ['valid', 'warning'])
+            ->whereNull('matched_room_id')
+            ->get(['row_number', 'raw_payload']);
+
+        $count = 0;
+        foreach ($rows as $row) {
+            $parsed = json_decode((string) $row->raw_payload, true)['parsed'] ?? null;
+            if (is_array($parsed) && $this->duplicates->existingAssetId($this->identityOf($row, $parsed)) === null) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /** The business identity of a staged row, as the duplicate guard checks it. */
+    private function identityOf(object $stagedRow, array $parsed): ParsedRow
+    {
+        return new ParsedRow(
+            rowNumber: (int) $stagedRow->row_number,
+            locationCode: $parsed['location_code'] ?? null,
+            categoryCode: $parsed['category_code'] ?? null,
+            subcategoryCode: $parsed['subcategory_code'] ?? null,
+            sequenceNo: $parsed['sequence_no'] ?? null,
+            assetYear: $parsed['asset_year'] ?? null,
+            roomRawValue: null, conditionRaw: '', conditionParsed: null,
+            isWrittenOff: false, writtenOffOn: null, writtenOffNote: null,
+            brandModel: null, serialNo: null, material: null, purchaseDate: null,
+            fundingSource: null, detailType: null, capacityNote: null,
+            quantity: 1, notes: null, blockSubcategoryCode: null,
+        );
+    }
+
     private function promoteOne(object $stagedRow, ?int $actorId): int
     {
         $payload = json_decode((string) $stagedRow->raw_payload, true, flags: JSON_THROW_ON_ERROR);
@@ -144,20 +204,7 @@ final class AssetPromoter
         return DB::transaction(function () use ($stagedRow, $parsed, $actorId): int {
             // final-state duplicate guard (§29) — another batch may have promoted the same
             // identity since this row was validated.
-            $identity = new ParsedRow(
-                rowNumber: (int) $stagedRow->row_number,
-                locationCode: $parsed['location_code'] ?? null,
-                categoryCode: $parsed['category_code'] ?? null,
-                subcategoryCode: $parsed['subcategory_code'] ?? null,
-                sequenceNo: $parsed['sequence_no'] ?? null,
-                assetYear: $parsed['asset_year'] ?? null,
-                roomRawValue: null, conditionRaw: '', conditionParsed: null,
-                isWrittenOff: false, writtenOffOn: null, writtenOffNote: null,
-                brandModel: null, serialNo: null, material: null, purchaseDate: null,
-                fundingSource: null, detailType: null, capacityNote: null,
-                quantity: 1, notes: null, blockSubcategoryCode: null,
-            );
-            $existing = $this->duplicates->existingAssetId($identity);
+            $existing = $this->duplicates->existingAssetId($this->identityOf($stagedRow, $parsed));
             if ($existing !== null) {
                 throw new RuntimeException("identity already exists as asset id {$existing}");
             }

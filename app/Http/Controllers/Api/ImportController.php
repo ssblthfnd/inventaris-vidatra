@@ -134,7 +134,7 @@ class ImportController extends ApiController
      * One batch's own summary — the counters {@see ImportManager} /
      * {@see AssetPromoter} already maintain, nothing recomputed.
      */
-    public function show(Request $request, ImportBatch $batch): ImportBatchResource
+    public function show(Request $request, ImportBatch $batch, AssetPromoter $promoter): ImportBatchResource
     {
         // Tahap 6.9 R9.4-07 (D2) — a unit_admin may view a batch whose rows are
         // ALL in its own location, whoever uploaded it (App\Policies\ImportBatchPolicy,
@@ -145,7 +145,11 @@ class ImportController extends ApiController
 
         $batch->load(['category', 'uploadedBy', 'importedBy']);
 
-        return new ImportBatchResource($batch);
+        // Tahap 6.9 R9.4-10 (D3) — the promotion confirmation reads this fresh
+        // batch right before asking, so it carries how many assets the next
+        // promotion would create without a room (same rule as the promotion).
+        return (new ImportBatchResource($batch))
+            ->withRoomlessPendingCount($promoter->roomlessPendingCount($batch->id, $request->user()));
     }
 
     /**
@@ -182,7 +186,7 @@ class ImportController extends ApiController
      * Idempotent: re-promoting an already-imported batch just reports
      * `skipped_already` for rows it already created.
      */
-    public function promote(Request $request, ImportBatch $batch, ImportManager $manager): JsonResponse
+    public function promote(Request $request, ImportBatch $batch, ImportManager $manager, AssetPromoter $promoter): JsonResponse
     {
         // Stage 6.9 R6 — promotion authority is LOCATION-based: a different
         // unit_admin who shares the SAME location as whoever staged this
@@ -203,7 +207,10 @@ class ImportController extends ApiController
         $batch->refresh()->load(['category', 'uploadedBy', 'importedBy']);
 
         return response()->json([
-            'data' => new ImportBatchResource($batch),
+            // R9.4-10 (D3) — what a further promotion would still create without a
+            // room after this run (normally 0).
+            'data' => (new ImportBatchResource($batch))
+                ->withRoomlessPendingCount($promoter->roomlessPendingCount($batch->id, $request->user())),
             'promotion' => $result,
         ]);
     }

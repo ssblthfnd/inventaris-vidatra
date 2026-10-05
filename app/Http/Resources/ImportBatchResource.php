@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Import\Promotion\AssetPromoter;
 use App\Models\ImportBatch;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -12,9 +13,24 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * Read shape for one import batch (Tahap 6.1) — every count is the SAME column
  * `App\Import\ImportManager` / `App\Import\Promotion\AssetPromoter` already
  * maintain on `import_batches`; nothing here is recomputed independently.
+ *
+ * Tahap 6.9 R9.4-10 (D3) — `roomless_pending_count` (assets the next promotion
+ * would create without a room, from {@see AssetPromoter::roomlessPendingCount()})
+ * is the one computed field, present only where the controller supplies it via
+ * {@see withRoomlessPendingCount()} (single-batch show + promote responses), never
+ * on the batch list.
  */
 class ImportBatchResource extends JsonResource
 {
+    private ?int $roomlessPendingCount = null;
+
+    public function withRoomlessPendingCount(int $count): static
+    {
+        $this->roomlessPendingCount = $count;
+
+        return $this;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -45,6 +61,7 @@ class ImportBatchResource extends JsonResource
                 ? ['id' => $batch->importedBy->id, 'name' => $batch->importedBy->name]
                 : null,
             'created_at' => $batch->created_at?->toIso8601String(),
+            'roomless_pending_count' => $this->when($this->roomlessPendingCount !== null, fn () => $this->roomlessPendingCount),
         ];
     }
 }

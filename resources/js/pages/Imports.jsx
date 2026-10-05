@@ -145,6 +145,7 @@ export default function Imports() {
   const [rowsPage, setRowsPage] = useState(1);
 
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [promotePreparing, setPromotePreparing] = useState(false);
   const [promoteBusy, setPromoteBusy] = useState(false);
   const [promoteError, setPromoteError] = useState('');
   const [promotionResult, setPromotionResult] = useState(null);
@@ -382,6 +383,30 @@ export default function Imports() {
     if (batch) loadRows(batch.id, statusFilter, nextPage);
   };
 
+  // R9.4-10 — before asking, re-read the batch: the server says how many assets
+  // the promotion would create without a room (`roomless_pending_count`, same rule
+  // as the promotion itself) and the counters are current. Advisory only — the
+  // promote request below is validated again server-side.
+  const openPromote = async () => {
+    if (!batch || promotePreparing) return;
+    const batchId = batch.id;
+    setPromotePreparing(true);
+    setPromoteError('');
+    try {
+      const res = await getImportBatch(batchId);
+      if (activeBatchIdRef.current !== batchId) return;
+      const fresh = res?.data ?? null;
+      setBatch(fresh);
+      if (fresh && fresh.valid_rows + fresh.warning_rows > fresh.imported_rows) setPromoteOpen(true);
+    } catch (e) {
+      if (activeBatchIdRef.current !== batchId) return;
+      setFlashTone('error');
+      setFlash(e?.message || 'Gagal memuat data import.');
+    } finally {
+      setPromotePreparing(false);
+    }
+  };
+
   const handlePromote = async () => {
     if (!batch) return;
     setPromoteBusy(true);
@@ -423,6 +448,8 @@ export default function Imports() {
   const promotable = batch ? batch.valid_rows + batch.warning_rows : 0;
   const alreadyImported = batch ? batch.imported_rows : 0;
   const canPromote = batch && promotable > alreadyImported;
+  // R9.4-10 — only present on a freshly read batch (show / promote responses)
+  const roomlessPending = batch?.roomless_pending_count ?? 0;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -538,11 +565,11 @@ export default function Imports() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPromoteOpen(true)}
-                  disabled={!canPromote}
+                  onClick={openPromote}
+                  disabled={!canPromote || promotePreparing}
                   className="rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Promote / Import ke Inventaris
+                  {promotePreparing ? 'Memuat…' : 'Promote / Import ke Inventaris'}
                 </button>
               </div>
             </div>
@@ -691,7 +718,7 @@ export default function Imports() {
       <LifecycleConfirmDialog
         open={promoteOpen}
         title="Promosikan batch ini ke Inventaris?"
-        confirmLabel="Promote"
+        confirmLabel={roomlessPending > 0 ? 'Lanjutkan' : 'Promote'}
         busy={promoteBusy}
         error={promoteError}
         onConfirm={handlePromote}
@@ -709,6 +736,19 @@ export default function Imports() {
               Baris berstatus Valid/Warning yang belum dipromosikan akan dibuat sebagai aset baru. Baris
               Error tidak akan diproses.
             </p>
+            {roomlessPending > 0 && (
+              <div
+                role="status"
+                className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900"
+              >
+                <p className="font-medium">Ada aset tanpa ruangan</p>
+                <p className="mt-1 text-xs">
+                  {roomlessPending} aset belum memiliki ruangan. Jika dilanjutkan, aset tersebut akan tetap
+                  dibuat tanpa ruangan. Anda dapat menemukannya kembali menggunakan filter &quot;Tanpa
+                  Ruangan&quot; di Inventaris.
+                </p>
+              </div>
+            )}
           </>
         )}
       </LifecycleConfirmDialog>
