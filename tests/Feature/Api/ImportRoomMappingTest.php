@@ -407,7 +407,13 @@ class ImportRoomMappingTest extends TestCase
 
     /* ================================================================== F. authorization */
 
-    public function test_unit_admin_sees_only_own_location_unmapped_groups(): void
+    /**
+     * Tahap 6.9 R9.4-07 (D2) — was "unit_admin sees only own location unmapped
+     * groups" (200 with the 02 group out of a mixed 02+04 batch). A mixed batch is
+     * now out of reach as a whole for a unit_admin of EITHER location (404, same as
+     * show/rows/report); only a global actor lists its groups.
+     */
+    public function test_unit_admin_cannot_list_groups_of_a_mixed_location_batch(): void
     {
         $global = $this->globalUser(UserRole::Operator);
         $this->ensureLocation('02');
@@ -419,11 +425,13 @@ class ImportRoomMappingTest extends TestCase
         ])->assertCreated();
         $batchId = ImportBatch::latest('id')->first()->id;
 
-        Sanctum::actingAs($this->unitAdmin('02'));
-        $groups = $this->listMappings($batchId)->assertOk()->json('data');
+        foreach (['02', '04'] as $code) {
+            Sanctum::actingAs($this->unitAdmin($code));
+            $this->listMappings($batchId)->assertNotFound();
+        }
 
-        $this->assertCount(1, $groups);
-        $this->assertSame('02', $groups[0]['location_code']);
+        Sanctum::actingAs($global);
+        $this->assertCount(2, $this->listMappings($batchId)->assertOk()->json('data'));
     }
 
     public function test_unit_admin_cannot_resolve_mapping_outside_own_location(): void
@@ -679,24 +687,20 @@ class ImportRoomMappingTest extends TestCase
     public function test_location_code_claimed_in_payload_cannot_override_actual_scope_check(): void
     {
         // A unit_admin for 02 cannot resolve a group that is REALLY in location
-        // 04 just by claiming location_code=02 in the payload — the group must
-        // still exist for that exact (batch, location_code, raw_value) tuple,
-        // and 02 is genuinely within scope so the request reaches the room/
-        // location match check, which then finds nothing to update.
+        // 04 just by claiming location_code=02 in the payload.
         $global = $this->globalUser(UserRole::Operator);
         $room02 = $this->roomIn('02', ['name' => 'Laboratorium Komputer Utama']);
         $batchId = $this->stageUnmapped($global, '04', 'RUANG LAIN 04');
 
         Sanctum::actingAs($this->unitAdmin('02'));
-        $response = $this->resolve($batchId, [
+        // Tahap 6.9 R9.4-07 (D2) — the batch itself (all rows in 04) is outside
+        // the actor's scope, so the request is refused before the payload's
+        // location is even considered (was 200 with updated_rows=0: the claimed
+        // '02' passed and simply matched nothing). Nothing is written either way.
+        $this->resolve($batchId, [
             'location_code' => '02', 'raw_value' => 'RUANG LAIN 04', 'room_id' => $room02->id, 'save_as_alias' => false,
-        ])->assertOk();
+        ])->assertForbidden();
 
-        // scope check for '02' passes (it's the actor's own location), but
-        // there is genuinely no unresolved row for (batch, '02', that raw
-        // value) since the staged row is actually location '04' — nothing
-        // updated, no cross-location leakage.
-        $response->assertJsonPath('data.updated_rows', 0);
         $this->assertSame(0, ImportRow::whereNotNull('matched_room_id')->count());
     }
 }

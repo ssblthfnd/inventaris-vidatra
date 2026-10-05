@@ -6,6 +6,7 @@ use App\Import\Parsing\ValueNormalizer;
 use App\Import\Validation\RowValidation;
 use App\Models\ImportBatch;
 use App\Models\User;
+use App\Policies\ImportBatchPolicy;
 use App\Support\LocationScope;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -24,14 +25,16 @@ use RuntimeException;
  * matching the required "resolve BEFORE promote" workflow without either class
  * needing to know the other exists.
  *
- * Authorization is deliberately LOCATION-scoped, not ownership-scoped — the
- * SAME precedent {@see \App\Import\Promotion\AssetPromoter::promoteBatch()}
- * already established for the identical "colocated unit_admins share a batch"
- * scenario (Stage 6.9 R6, re-affirmed as R8.1 finding P2-2): a batch has no
- * single owner-only meaning once it's staged, so `ImportBatchPolicy`
- * (ownership-based) is intentionally NOT used here, exactly like `promote()`
- * skips it. Every method re-derives {@see LocationScope} fresh from the
- * current actor, never trusting a cached/frontend-supplied scope.
+ * Authorization is LOCATION-scoped, not ownership-scoped — the same
+ * precedent {@see \App\Import\Promotion\AssetPromoter::promoteBatch()}
+ * established for the "colocated unit_admins share a batch" scenario (Stage
+ * 6.9 R6, re-affirmed as R8.1 finding P2-2). Since Tahap 6.9 R9.4-07 (D2) the
+ * batch-level rule is the shared {@see ImportBatchPolicy::batchWithinScope()}
+ * (the whole batch must be inside the actor's scope — a mixed, foreign or
+ * location-less batch is out of reach for a unit_admin), checked by the
+ * controller for `unmappedGroups()` and by `resolve()` itself. Every method
+ * re-derives {@see LocationScope} fresh from the current actor, never trusting
+ * a cached/frontend-supplied scope.
  */
 final class RoomMappingResolver
 {
@@ -41,11 +44,10 @@ final class RoomMappingResolver
     public const METHOD_MANUAL_ALIAS = 'manual_alias';
 
     /**
-     * Distinct (location_code, normalized raw value) groups this actor may see —
-     * silently narrowed to the actor's own location for `unit_admin` (never a
-     * 403 — an out-of-scope group simply doesn't appear, same "filter, don't
-     * reject" convention {@see \App\Http\Controllers\Api\Concerns\FiltersAssets}
-     * already uses for reads). Only rows that could still become a mapped
+     * Distinct (location_code, normalized raw value) groups this actor may see.
+     * The caller has already passed {@see ImportBatchPolicy} (R9.4-07 D2), so
+     * for a `unit_admin` every located row is in its own location; the narrowing
+     * below is kept as a second line of defence. Only rows that could still become a mapped
      * asset are counted: not yet promoted, not yet mapped, a real non-blank raw
      * value, and `validation_status = 'warning'` specifically — a row that is
      * `error` for some OTHER reason (e.g. invalid category) will never be
@@ -99,7 +101,7 @@ final class RoomMappingResolver
      *
      * @return array{location_code:string,match_key:string,room:array{id:int,name:string},room_match_method:string,updated_rows:int,rows_became_valid:int,alias_created:bool,alias_already_existed:bool,resolution:array{id:int,resolved_by:array{id:int,name:string},resolved_at:string}|null}
      *
-     * @throws AuthorizationException  actor has no scope for `$locationCode`, or `$saveAsAlias` without `roomAliases.resolve` (403)
+     * @throws AuthorizationException  batch not entirely within the actor's scope, actor has no scope for `$locationCode`, or `$saveAsAlias` without `roomAliases.resolve` (403)
      * @throws RuntimeException        room/alias business-rule violation (caller maps this to 422)
      */
     public function resolve(
@@ -111,6 +113,17 @@ final class RoomMappingResolver
         User $actor,
     ): array {
         $scope = LocationScope::for($actor);
+
+        // Tahap 6.9 R9.4-07 (D2) — the same whole-batch boundary as viewing and
+        // promotion, before anything else is checked or written: a unit_admin
+        // can no longer resolve its own location's group inside a mixed batch,
+        // nor reach a foreign batch by claiming its own location in the payload.
+        if (! ImportBatchPolicy::batchWithinScope($batch->id, $scope)) {
+            throw new AuthorizationException(
+                "Batch {$batch->id} contains data outside your assigned location."
+            );
+        }
+
         if (! $scope->allows($locationCode)) {
             throw new AuthorizationException(
                 "Actor is not authorized for location '{$locationCode}'."

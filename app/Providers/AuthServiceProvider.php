@@ -67,7 +67,7 @@ class AuthServiceProvider extends ServiceProvider
         Gate::policy(Asset::class, AssetPolicy::class);
 
         // Stage 6.9 R6 — single-resource import-batch authorization
-        // (App\Policies\ImportBatchPolicy).
+        // (App\Policies\ImportBatchPolicy; location scope since R9.4-07 D2).
         Gate::policy(ImportBatch::class, ImportBatchPolicy::class);
 
         // Stage 6.9 R7 — single-resource room authorization (App\Policies\RoomPolicy).

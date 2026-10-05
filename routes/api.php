@@ -180,9 +180,9 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         Route::post('imports/{batch}/promote', [ImportController::class, 'promote'])->name('api.imports.promote');
         Route::get('imports/{batch}/report', [ImportController::class, 'report'])->name('api.imports.report');
 
-        // Tahap 6.9 R9.2 — same `can:assets.import` gate, location-based (not
-        // ImportBatchPolicy/ownership) authorization inside RoomMappingResolver,
-        // matching `promote` above. R9.3: `save_as_alias=true` additionally
+        // Tahap 6.9 R9.2 — same `can:assets.import` gate; WHERE is the shared
+        // location-scope rule (ImportBatchPolicy::batchWithinScope(), R9.4-07
+        // D2) used by every `imports/{batch}` endpoint. R9.3: `save_as_alias=true` additionally
         // requires the narrow `roomAliases.resolve` ability, checked inside
         // RoomMappingResolver::resolve() (it is a per-request flag, not a route).
         Route::get('imports/{batch}/room-mappings', [ImportController::class, 'roomMappings'])->name('api.imports.room-mappings.index');

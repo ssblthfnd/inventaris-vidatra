@@ -5,6 +5,7 @@ namespace App\Import\Promotion;
 use App\Import\Parsing\ParsedRow;
 use App\Import\Validation\DuplicateChecker;
 use App\Models\User;
+use App\Policies\ImportBatchPolicy;
 use App\Support\LocationScope;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -116,21 +117,16 @@ final class AssetPromoter
      * The batch-level `import_batches.location_code` is never used: it is NULL
      * for multi-location batches, so only the rows themselves are authoritative.
      *
+     * Tahap 6.9 R9.4-07 (D2) — the rule itself now lives in
+     * {@see ImportBatchPolicy::batchWithinScope()} (unchanged), so viewing,
+     * room mapping and promotion all share one boundary. Promotion keeps its
+     * 403 here.
+     *
      * @throws AuthorizationException
      */
     private function assertBatchWithinScope(int $batchId, LocationScope $scope): void
     {
-        if ($scope->isGlobal()) {
-            return;
-        }
-
-        $locationCodes = DB::table('import_rows')
-            ->where('import_batch_id', $batchId)
-            ->whereNotNull('location_code')
-            ->distinct()
-            ->pluck('location_code');
-
-        if ($locationCodes->isEmpty() || $locationCodes->contains(fn (string $code): bool => ! $scope->allows($code))) {
+        if (! ImportBatchPolicy::batchWithinScope($batchId, $scope)) {
             throw new AuthorizationException(
                 "Batch {$batchId} contains data outside your assigned location."
             );

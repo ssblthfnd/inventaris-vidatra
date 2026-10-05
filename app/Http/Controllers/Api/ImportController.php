@@ -15,6 +15,7 @@ use App\Import\RoomMapping\RoomMappingResolver;
 use App\Models\ImportBatch;
 use App\Policies\ImportBatchPolicy;
 use App\Support\LocationScope;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -36,8 +37,10 @@ use RuntimeException;
  * made by {@see ImportManager} / its collaborators, exactly as it is for
  * `php artisan inventory:import` / `inventory:promote`. This controller
  * adds no import logic of its own — only upload handling, pagination,
- * read shaping, and (R6) the per-batch ownership check via
- * {@see ImportBatchPolicy} for the single-batch endpoints.
+ * read shaping, and the per-batch LOCATION-scope check via
+ * {@see ImportBatchPolicy} for the single-batch endpoints (R6 introduced it
+ * as an ownership check; R9.4-07 D2 made location scope the one boundary for
+ * every batch operation — the uploader is audit metadata only).
  */
 class ImportController extends ApiController
 {
@@ -133,13 +136,12 @@ class ImportController extends ApiController
      */
     public function show(Request $request, ImportBatch $batch): ImportBatchResource
     {
-        // Stage 6.9 R6 — a unit_admin may only view a batch THEY uploaded
-        // (App\Policies\ImportBatchPolicy); 404, not 403, matching this
-        // app's read-path convention of never confirming a resource exists
-        // to a caller who isn't allowed to see it.
-        if ($request->user()->cannot('view', $batch)) {
-            abort(404);
-        }
+        // Tahap 6.9 R9.4-07 (D2) — a unit_admin may view a batch whose rows are
+        // ALL in its own location, whoever uploaded it (App\Policies\ImportBatchPolicy,
+        // same rule as mapping/promotion); 404, not 403, matching this app's
+        // read-path convention of never confirming a resource exists to a
+        // caller who isn't allowed to see it.
+        $this->ensureVisible($request, $batch);
 
         $batch->load(['category', 'uploadedBy', 'importedBy']);
 
@@ -153,9 +155,7 @@ class ImportController extends ApiController
      */
     public function rows(ImportRowIndexRequest $request, ImportBatch $batch): ImportRowCollection
     {
-        if ($request->user()->cannot('view', $batch)) {
-            abort(404);
-        }
+        $this->ensureVisible($request, $batch);
 
         $query = $batch->importRows()
             ->with(['matchedRoom', 'roomMappingResolution.resolvedBy', 'promotedBy'])
@@ -184,14 +184,13 @@ class ImportController extends ApiController
      */
     public function promote(Request $request, ImportBatch $batch, ImportManager $manager): JsonResponse
     {
-        // Stage 6.9 R6 — deliberately NOT an ImportBatchPolicy (ownership)
-        // check here, unlike show()/rows()/report() above: promotion
-        // authority is LOCATION-based, not ownership-based — a different
+        // Stage 6.9 R6 — promotion authority is LOCATION-based: a different
         // unit_admin who shares the SAME location as whoever staged this
         // batch is legitimately allowed to promote it too (multiple
         // unit_admins per unit is an explicitly supported Stage 6.9
-        // scenario since R1). AssetPromoter re-checks the CURRENT actor's
-        // location scope independently below (AuthorizationException,
+        // scenario since R1). AssetPromoter applies the shared
+        // ImportBatchPolicy::batchWithinScope() rule (R9.4-07 D2 — the same
+        // one show()/rows()/report() use) to the CURRENT actor (AuthorizationException,
         // uncaught here on purpose — Laravel's default handler turns it
         // into a 403, matching every other scope violation in this app; it
         // is NOT a RuntimeException, so the catch below never intercepts it).
@@ -215,9 +214,7 @@ class ImportController extends ApiController
      */
     public function report(Request $request, ImportBatch $batch): JsonResponse
     {
-        if ($request->user()->cannot('view', $batch)) {
-            abort(404);
-        }
+        $this->ensureVisible($request, $batch);
 
         $reporter = new ImportReporter([$batch->id]);
 
@@ -245,13 +242,19 @@ class ImportController extends ApiController
 
     /**
      * Tahap 6.9 R9.2 — distinct (location_code, normalized raw value) unmapped
-     * room groups for this batch, silently narrowed to the actor's own
-     * location for `unit_admin`. Deliberately NOT an `ImportBatchPolicy`
-     * (ownership) check — see {@see RoomMappingResolver}'s class docblock for
-     * why this mirrors `promote()`'s location-based precedent instead.
+     * room groups for this batch.
+     *
+     * Tahap 6.9 R9.4-07 (D2) — gated by the same {@see ImportBatchPolicy} as
+     * show()/rows()/report(): a batch outside the actor's scope (foreign,
+     * mixed, or with no located row) is a 404, exactly like a batch that does
+     * not exist. Previously a unit_admin got 200 with only its own location's
+     * groups — an empty list for a foreign batch (which confirmed the batch
+     * existed) and its own groups out of a mixed batch.
      */
     public function roomMappings(Request $request, ImportBatch $batch, RoomMappingResolver $resolver): JsonResponse
     {
+        $this->ensureVisible($request, $batch);
+
         return response()->json([
             'data' => $resolver->unmappedGroups($batch, $request->user()),
         ]);
@@ -282,5 +285,22 @@ class ImportController extends ApiController
         }
 
         return response()->json(['data' => $result]);
+    }
+
+    /**
+     * Tahap 6.9 R9.4-07 (D2) — the one visibility check for the read endpoints
+     * (show / rows / report / room-mappings), via {@see ImportBatchPolicy}.
+     *
+     * A batch the actor may not reach must read exactly like one that does not
+     * exist. Route-model binding answers a missing id with this same
+     * ModelNotFoundException, so status AND body match; a bare abort(404) (used
+     * before D2) produced a different message, which revealed that the batch
+     * existed.
+     */
+    private function ensureVisible(Request $request, ImportBatch $batch): void
+    {
+        if ($request->user()->cannot('view', $batch)) {
+            throw (new ModelNotFoundException)->setModel(ImportBatch::class, [$batch->getRouteKey()]);
+        }
     }
 }

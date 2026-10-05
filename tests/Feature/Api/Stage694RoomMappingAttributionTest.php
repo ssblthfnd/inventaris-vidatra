@@ -623,15 +623,17 @@ class Stage694RoomMappingAttributionTest extends TestCase
         $room = $this->roomIn('02', 'Laboratorium Komputer');
         $batchId = $this->upload($owner, [$this->rowFor('02', '271', 'LAB KOMP'), $this->rowFor('02', '272', 'PERPUS')]);
 
-        // ownership-scoped reads: colleague still cannot view the batch (404), foreign neither
+        // reads are location-scoped since R9.4-07 (D2): the colocated colleague may view
+        // the batch (ownership is audit metadata only); the foreign unit may not (404)
         Sanctum::actingAs($colleague);
-        $this->getJson("/api/imports/{$batchId}")->assertNotFound();
-        $this->getJson("/api/imports/{$batchId}/rows")->assertNotFound();
+        $this->getJson("/api/imports/{$batchId}")->assertOk();
+        $this->getJson("/api/imports/{$batchId}/rows")->assertOk();
         Sanctum::actingAs($foreign);
         $this->getJson("/api/imports/{$batchId}")->assertNotFound();
 
-        // location-scoped mapping: foreign unit sees no groups and is refused; colleague may map
-        $this->getJson("/api/imports/{$batchId}/room-mappings")->assertOk()->assertJsonCount(0, 'data');
+        // location-scoped mapping: foreign unit cannot see the batch's groups (404 since
+        // R9.4-07 D2, was 200 []) and is refused; colleague may map
+        $this->getJson("/api/imports/{$batchId}/room-mappings")->assertNotFound();
         $this->resolve($batchId, '02', 'LAB KOMP', $room->id)->assertForbidden();
         Sanctum::actingAs($colleague);
         $this->resolve($batchId, '02', 'LAB KOMP', $room->id)->assertOk();
