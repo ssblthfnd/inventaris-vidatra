@@ -17,8 +17,12 @@ import { controlClass } from '../../lib/assetFields';
  * each caller passes as its own active-only, already-scoped subset — never
  * free text); on edit it is shown read-only, since the backend rejects a
  * `location_code` change outright.
+ *
+ * Tahap 6.9 R10 — `defaultLocationCode` (create only, optional) pre-selects a
+ * location when the modal opens, e.g. the asset-entry row the room is being
+ * created for. It only pre-selects: the choice is still limited to `locations`.
  */
-export default function RoomFormModal({ open, mode, room, locations, onClose, onSuccess }) {
+export default function RoomFormModal({ open, mode, room, locations, defaultLocationCode = '', onClose, onSuccess }) {
   const isEdit = mode === 'edit';
 
   const [locationCode, setLocationCode] = useState('');
@@ -33,13 +37,22 @@ export default function RoomFormModal({ open, mode, room, locations, onClose, on
 
   useEffect(() => {
     if (!open) return;
-    setLocationCode(isEdit ? (room?.location?.code ?? '') : '');
+    setLocationCode(
+      isEdit
+        ? (room?.location?.code ?? '')
+        : locations.some((l) => l.code === defaultLocationCode)
+          ? defaultLocationCode
+          : '',
+    );
     setName(isEdit ? (room?.name ?? '') : '');
     setPic(isEdit ? (room?.pic ?? '') : '');
     setNotes(isEdit ? (room?.notes ?? '') : '');
     setIsActive(isEdit ? (room?.is_active ?? true) : true);
     setError('');
     setFieldErrors({});
+    // `locations`/`defaultLocationCode` are read once per opening, on purpose: a
+    // parent re-render must not reset what the user already picked
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEdit, room]);
 
   if (!open) return null;

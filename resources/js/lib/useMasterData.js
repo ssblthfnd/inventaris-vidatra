@@ -115,6 +115,24 @@ export function useMasterData() {
     }
   }, []);
 
+  /**
+   * Tahap 6.9 R10 — put a room the page just created (the `RoomResource` from
+   * `POST /api/rooms`) into its location's cached list, in the same name order
+   * the API returns, so every select reading `roomsByLocation` offers it at once
+   * — no refetch. A location whose list was never loaded is left alone (its first
+   * `ensureRooms()` will fetch it, room included).
+   */
+  const addRoom = useCallback((room) => {
+    const code = room?.location?.code;
+    if (!code || room?.id == null) return;
+    setRoomsByLocation((current) => {
+      if (!current[code]) return current;
+      const others = current[code].filter((r) => r.id !== room.id);
+      const next = [...others, room].sort((a, b) => a.name.localeCompare(b.name, 'id'));
+      return { ...current, [code]: next };
+    });
+  }, []);
+
   const locations = useMemo(
     () => (isUnitAdmin ? locationsRaw.filter((l) => l.code === locationCode) : locationsRaw),
     [locationsRaw, isUnitAdmin, locationCode],
@@ -128,5 +146,6 @@ export function useMasterData() {
     roomsByLocation,
     ensureSubcategories,
     ensureRooms,
+    addRoom,
   };
 }

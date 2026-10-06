@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Requests\Api\StoreRoomEntriesRequest;
 use App\Http\Requests\Api\StoreRoomRequest;
 use App\Http\Requests\Api\UpdateRoomRequest;
 use App\Http\Resources\RoomResource;
@@ -9,10 +10,14 @@ use App\Models\Location;
 use App\Models\Room;
 use App\Policies\RoomPolicy;
 use App\Support\LocationScope;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Master data: rooms.
@@ -144,6 +149,57 @@ class RoomController extends ApiController
         $room->load('location');
 
         return (new RoomResource($room))->response()->setStatusCode(201);
+    }
+
+    /**
+     * Multiple entry (Tahap 6.9 R10) — 1..100 rooms in one atomic request.
+     *
+     * Every distinct target location is authorized first, with the same
+     * `RoomPolicy::create` check `store()` uses: one row outside the actor's
+     * scope rejects the whole request (403) and nothing is written. All rows are
+     * then inserted in ONE transaction, each exactly as `store()` would (always
+     * active). `uq_rooms_location_name` stays the final word on duplicates: if a
+     * row collides anyway (a room committed meanwhile, or two rows the column
+     * collation treats as equal), the whole transaction rolls back and that row
+     * gets the same message as the validation rule — never a partial batch.
+     */
+    public function storeEntries(StoreRoomEntriesRequest $request): JsonResponse
+    {
+        foreach ($request->locationCodes() as $locationCode) {
+            if ($request->user()->cannot('create', [Room::class, $locationCode])) {
+                abort(403);
+            }
+        }
+
+        $created = DB::transaction(function () use ($request): Collection {
+            $rooms = new Collection;
+            foreach ($request->items() as $index => $item) {
+                try {
+                    $rooms->push(Room::create([...$item, 'is_active' => true]));
+                } catch (QueryException $e) {
+                    if ((int) ($e->errorInfo[1] ?? 0) !== 1062) {
+                        throw $e;
+                    }
+
+                    throw ValidationException::withMessages([
+                        "items.{$index}.name" => ['Ruangan dengan nama ini sudah ada di lokasi tersebut.'],
+                    ]);
+                }
+            }
+
+            return $rooms;
+        });
+
+        $created->load('location');
+        $count = $created->count();
+
+        return RoomResource::collection($created)
+            ->additional([
+                'message' => "{$count} ruangan berhasil ditambahkan.",
+                'count' => $count,
+            ])
+            ->response()
+            ->setStatusCode(201);
     }
 
     public function update(UpdateRoomRequest $request, Room $room): RoomResource

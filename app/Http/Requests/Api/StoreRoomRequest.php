@@ -45,6 +45,19 @@ class StoreRoomRequest extends FormRequest
      */
     public function rules(): array
     {
+        return self::roomFieldRules($this->input('location_code'));
+    }
+
+    /**
+     * The per-room rules, shared with `POST /api/rooms/entries` (Tahap 6.9 R10,
+     * {@see StoreRoomEntriesRequest}) so a room is validated identically either
+     * way. `$locationCode` is the room's OWN location — the name is unique per
+     * location (`uq_rooms_location_name`, inactive rooms included).
+     *
+     * @return array<string, mixed>
+     */
+    public static function roomFieldRules(mixed $locationCode): array
+    {
         return [
             'id' => ['prohibited'],
             'is_active' => ['prohibited'],
@@ -53,7 +66,7 @@ class StoreRoomRequest extends FormRequest
             'name' => [
                 'required', 'string', 'max:100',
                 Rule::unique('rooms', 'name')
-                    ->where(fn ($query) => $query->where('location_code', $this->input('location_code'))),
+                    ->where(fn ($query) => $query->where('location_code', $locationCode)),
             ],
             'pic' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:255'],

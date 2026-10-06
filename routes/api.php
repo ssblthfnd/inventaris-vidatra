@@ -113,6 +113,9 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     Route::middleware('can:assets.create')->group(function () {
         Route::post('assets', [AssetController::class, 'store'])->name('api.assets.store');
         Route::post('assets/batch', [AssetController::class, 'storeBatch'])->name('api.assets.store-batch');
+        // Tahap 6.9 R10 — multiple independent assets (optional manual number per
+        // row), one atomic request; every row's location authorized in the controller.
+        Route::post('assets/entries', [AssetController::class, 'storeEntries'])->name('api.assets.store-entries');
     });
 
     Route::middleware('can:assets.edit')->group(function () {
@@ -269,6 +272,9 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     Route::middleware('can:rooms.manage')->group(function () {
         Route::get('rooms', [RoomController::class, 'adminIndex'])->name('api.rooms.admin-index');
         Route::post('rooms', [RoomController::class, 'store'])->name('api.rooms.store');
+        // Tahap 6.9 R10 — multiple rooms, one atomic request; every row's
+        // location authorized in RoomController via RoomPolicy, same as `store`.
+        Route::post('rooms/entries', [RoomController::class, 'storeEntries'])->name('api.rooms.store-entries');
         Route::match(['put', 'patch'], 'rooms/{room}', [RoomController::class, 'update'])->name('api.rooms.update');
     });
 
