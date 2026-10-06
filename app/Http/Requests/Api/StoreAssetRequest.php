@@ -26,33 +26,16 @@ class StoreAssetRequest extends FormRequest
      */
     public function rules(): array
     {
+        $maxYear = (int) date('Y') + 1;
+
         return [
             // server-controlled — never accepted from the client
             'sequence_no' => ['prohibited'],
             'asset_code' => ['prohibited'],
 
-            ...self::assetFieldRules($this->input('location_code'), $this->input('category_code')),
-        ];
-    }
-
-    /**
-     * The per-asset field rules, shared with `POST /api/assets/entries` (Tahap 6.9
-     * R10, {@see StoreAssetEntriesRequest}) so one asset is validated the same way
-     * whichever endpoint creates it. `$locationCode` / `$categoryCode` are the
-     * asset's OWN values (the room↔location and subcategory↔category checks
-     * depend on them); `$fieldPrefix` is prepended to the one cross-field
-     * reference (`required_if`) so it points at the same asset inside an array.
-     *
-     * @return array<string, mixed>
-     */
-    public static function assetFieldRules(mixed $locationCode, mixed $categoryCode, string $fieldPrefix = ''): array
-    {
-        $maxYear = (int) date('Y') + 1;
-
-        return [
             'location_code' => ['required', 'string', Rule::exists('locations', 'code')->where('is_active', true)],
             'category_code' => ['required', 'string', Rule::exists('categories', 'code')->where('is_active', true)],
-            'subcategory_code' => ['required', 'string', new SubcategoryInCategory($categoryCode)],
+            'subcategory_code' => ['required', 'string', new SubcategoryInCategory($this->input('category_code'))],
 
             'asset_year' => ['required', 'integer', "between:1980,{$maxYear}"],
 
@@ -60,13 +43,13 @@ class StoreAssetRequest extends FormRequest
                 'nullable', 'integer',
                 Rule::exists('rooms', 'id')
                     ->where('is_active', true)
-                    ->where('location_code', $locationCode),
+                    ->where('location_code', $this->input('location_code')),
             ],
 
             'condition' => ['nullable', Rule::enum(AssetCondition::class)],
 
             'is_written_off' => ['sometimes', 'boolean'],
-            'written_off_on' => ['nullable', 'date', 'before_or_equal:today', "required_if:{$fieldPrefix}is_written_off,true,1"],
+            'written_off_on' => ['nullable', 'date', 'before_or_equal:today', 'required_if:is_written_off,true,1'],
             'written_off_note' => ['nullable', 'string', 'max:255'],
 
             'quantity' => ['sometimes', 'integer', 'in:1'],

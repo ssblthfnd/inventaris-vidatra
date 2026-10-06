@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 
 import LifecycleConfirmDialog from '../LifecycleConfirmDialog';
 import RoomFormModal from './RoomFormModal';
@@ -152,15 +151,13 @@ export default function RoomsPanel() {
           <h2 className="text-base font-semibold text-gray-900">Ruangan</h2>
           <p className="mt-0.5 text-sm text-gray-500">Kelola master ruangan per lokasi.</p>
         </div>
-        {/* Tahap 6.9 R10 — create (one or many rooms) is the /rooms/new page; this
-            panel's RoomFormModal is for edit only */}
-        <Link
-          to="/rooms/new"
-          state={{ from: '/master-data' }}
+        <button
+          type="button"
+          onClick={() => setFormModal({ mode: 'create' })}
           className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
         >
           <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Ruangan
-        </Link>
+        </button>
       </div>
 
       {flash && (

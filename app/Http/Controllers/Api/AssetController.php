@@ -7,7 +7,6 @@ use App\Http\Requests\Api\AssetIndexRequest;
 use App\Http\Requests\Api\BatchDeleteAssetRequest;
 use App\Http\Requests\Api\BatchStoreAssetRequest;
 use App\Http\Requests\Api\BatchUpdateAssetRequest;
-use App\Http\Requests\Api\StoreAssetEntriesRequest;
 use App\Http\Requests\Api\StoreAssetRequest;
 use App\Http\Requests\Api\UpdateAssetRequest;
 use App\Http\Requests\Api\WriteOffAssetRequest;
@@ -169,36 +168,6 @@ class AssetController extends ApiController
         return AssetResource::collection($created)
             ->additional([
                 'message' => "{$count} aset berhasil dibuat.",
-                'count' => $count,
-            ])
-            ->response()
-            ->setStatusCode(Response::HTTP_CREATED);
-    }
-
-    /**
-     * Multiple entry (Tahap 6.9 R10) — 1..100 independent assets, each with its own
-     * fields and optionally a manually entered number, in one atomic transaction
-     * ({@see AssetWriteService::createEntries()}). `data` is in request order.
-     *
-     * Every distinct target location is authorized BEFORE anything is written,
-     * with the same `AssetPolicy::create` check `store()` uses: one row outside the
-     * actor's scope rejects the whole request (403) — no row is created and no
-     * location is rewritten to the actor's own.
-     */
-    public function storeEntries(StoreAssetEntriesRequest $request, AssetWriteService $service): JsonResponse
-    {
-        foreach ($request->locationCodes() as $locationCode) {
-            if ($request->user()->cannot('create', [Asset::class, $locationCode])) {
-                abort(403);
-            }
-        }
-
-        $created = $service->createEntries($request->items(), $request->user());
-        $count = $created->count();
-
-        return AssetResource::collection($created)
-            ->additional([
-                'message' => "{$count} aset berhasil ditambahkan.",
                 'count' => $count,
             ])
             ->response()

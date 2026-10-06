@@ -5,12 +5,10 @@ namespace App\Services\Asset;
 use App\Enums\MutationEventType;
 use App\Http\Requests\Api\BatchDeleteAssetRequest;
 use App\Http\Requests\Api\BatchUpdateAssetRequest;
-use App\Import\Validation\DuplicateChecker;
 use App\Models\Asset;
 use App\Models\Room;
 use App\Models\User;
 use App\Support\LocationScope;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -54,7 +52,6 @@ class AssetWriteService
     public function __construct(
         private readonly AssetNumberGenerator $numbers,
         private readonly AssetMutationRecorder $mutations,
-        private readonly DuplicateChecker $duplicates,
     ) {}
 
     /**
@@ -64,11 +61,24 @@ class AssetWriteService
      */
     public function create(array $data, User $actor): Asset
     {
-        return $this->withDuplicateRetry(function () use ($data, $actor): Asset {
-            return DB::transaction(function () use ($data, $actor): Asset {
+        $writtenOff = (bool) ($data['is_written_off'] ?? false);
+
+        return $this->withDuplicateRetry(function () use ($data, $actor, $writtenOff): Asset {
+            return DB::transaction(function () use ($data, $actor, $writtenOff): Asset {
                 $this->numbers->lockScope($data['category_code'], $data['subcategory_code']);
 
-                $asset = $this->newAsset($data, $this->nextSequence($data), $actor);
+                $asset = new Asset(Arr::only($data, self::WRITABLE));
+                $asset->sequence_no = $this->numbers->next(
+                    $data['location_code'],
+                    $data['category_code'],
+                    $data['subcategory_code'],
+                );
+                $asset->quantity = 1;
+                $asset->is_written_off = $writtenOff;
+                $asset->written_off_on = $writtenOff ? ($data['written_off_on'] ?? null) : null;
+                $asset->written_off_note = $writtenOff ? ($data['written_off_note'] ?? null) : null;
+                $asset->created_by = $actor->id;
+                $asset->updated_by = $actor->id;
                 $asset->save();
                 $asset->refresh();
 
@@ -105,14 +115,20 @@ class AssetWriteService
             return DB::transaction(function () use ($data, $count, $actor): Collection {
                 $this->numbers->lockScope($data['category_code'], $data['subcategory_code']);
 
-                // the template never carries written-off fields (prohibited by
-                // BatchStoreAssetRequest); dropped here too so a batch can never
-                // create a disposed asset
-                $template = Arr::except($data, ['is_written_off', 'written_off_on', 'written_off_note']);
-
                 $ids = [];
                 for ($i = 0; $i < $count; $i++) {
-                    $asset = $this->newAsset($template, $this->nextSequence($template), $actor);
+                    $asset = new Asset(Arr::only($data, self::WRITABLE));
+                    $asset->sequence_no = $this->numbers->next(
+                        $data['location_code'],
+                        $data['category_code'],
+                        $data['subcategory_code'],
+                    );
+                    $asset->quantity = 1;
+                    $asset->is_written_off = false;
+                    $asset->written_off_on = null;
+                    $asset->written_off_note = null;
+                    $asset->created_by = $actor->id;
+                    $asset->updated_by = $actor->id;
                     $asset->save();
 
                     $ids[] = $asset->id;
@@ -142,187 +158,6 @@ class AssetWriteService
                 return $created;
             });
         });
-    }
-
-    /**
-     * Create independent assets — each its own fields, each optionally with a
-     * manually entered number — in ONE transaction (Tahap 6.9 R10,
-     * `POST /api/assets/entries`). The caller has already validated every item
-     * and authorized every location.
-     *
-     *  1. Every numbering scope (category, subcategory) the request touches is
-     *     locked with {@see AssetNumberGenerator::lockScope()}, in sorted order so
-     *     two concurrent requests can never deadlock on each other's locks.
-     *  2. Manual numbers are checked against existing assets (soft-deleted
-     *     included) UNDER those locks. A conflict is a 422 on that row
-     *     (`items.N.sequence_no`), thrown out of the transaction — never treated
-     *     as a retryable race.
-     *  3. Manual-number assets are inserted first, verbatim; only then are the
-     *     automatic numbers allocated with {@see AssetNumberGenerator::next()},
-     *     which therefore already sees every manual number of this request and can
-     *     never hand one of them out again.
-     *  4. One CREATE history event per asset — sharing a `batch_operation_id`
-     *     when the request creates more than one (the same "group only when > 1"
-     *     rule as {@see MutationRevertService}).
-     *
-     * Atomic: any failure rolls back every asset and every history event. A
-     * duplicate-key / deadlock / lock-wait race (e.g. the importer, which does not
-     * take these locks, committing the same identity meanwhile) retries the whole
-     * request against committed state, where step 2 then reports it as a 422.
-     *
-     * @param  list<array<string, mixed>>  $items  validated StoreAssetEntriesRequest items
-     * @return EloquentCollection<int, Asset> the created assets, fresh, in `$items` order
-     *
-     * @throws ValidationException a manual number is already taken
-     */
-    public function createEntries(array $items, User $actor): EloquentCollection
-    {
-        return $this->withDuplicateRetry(function () use ($items, $actor): EloquentCollection {
-            return DB::transaction(function () use ($items, $actor): EloquentCollection {
-                $scopes = [];
-                foreach ($items as $item) {
-                    $scopes[$item['category_code']."\x1f".$item['subcategory_code']] = [$item['category_code'], $item['subcategory_code']];
-                }
-                ksort($scopes, SORT_STRING);
-                foreach ($scopes as [$categoryCode, $subcategoryCode]) {
-                    $this->numbers->lockScope($categoryCode, $subcategoryCode);
-                }
-
-                $manual = [];
-                $automatic = [];
-                foreach ($items as $index => $item) {
-                    if (($item['sequence_no'] ?? null) !== null) {
-                        $manual[$index] = $item;
-                    } else {
-                        $automatic[$index] = $item;
-                    }
-                }
-
-                $taken = [];
-                foreach ($manual as $index => $item) {
-                    if ($this->existingIdentity($item) !== null) {
-                        $taken["items.{$index}.sequence_no"] = ['Nomor inventaris sudah digunakan.'];
-                    }
-                }
-                if ($taken !== []) {
-                    throw ValidationException::withMessages($taken);
-                }
-
-                /** @var array<int, int> $idsByIndex */
-                $idsByIndex = [];
-                foreach ($manual as $index => $item) {
-                    $asset = $this->newAsset($item, (string) $item['sequence_no'], $actor);
-                    $this->saveManual($asset, $item, $index, $idsByIndex);
-                    $idsByIndex[$index] = $asset->id;
-                }
-                foreach ($automatic as $index => $item) {
-                    $asset = $this->newAsset($item, $this->nextSequence($item), $actor);
-                    $asset->save();
-                    $idsByIndex[$index] = $asset->id;
-                }
-                ksort($idsByIndex);
-
-                // one bulk reload so `asset_code` (DB generated column) is populated,
-                // then back into request order — insertion order never leaks out
-                $loaded = Asset::query()
-                    ->with(['location', 'category', 'room'])
-                    ->whereIn('id', $idsByIndex)
-                    ->get()
-                    ->keyBy('id');
-                $created = new EloquentCollection(array_map(fn (int $id): Asset => $loaded[$id], array_values($idsByIndex)));
-
-                Asset::loadSubcategoriesFor($created);
-
-                $batchOperationId = $created->count() > 1 ? (string) Str::uuid() : null;
-                foreach ($created as $asset) {
-                    $this->mutations->record(
-                        $asset,
-                        MutationEventType::Create,
-                        null,
-                        $this->mutations->snapshot($asset),
-                        $actor,
-                        batchOperationId: $batchOperationId,
-                    );
-                }
-
-                return $created;
-            });
-        });
-    }
-
-    /**
-     * Insert a manual-number asset. The identity was checked free under the
-     * numbering lock, so a duplicate key here means either another row of THIS
-     * request names the same identity in a way only the database collation
-     * equates (e.g. accents) — a 422 on this row — or something outside the lock
-     * (the importer) committed it meanwhile — rethrown for the retry, whose
-     * re-check then reports it.
-     *
-     * @param  array<string, mixed>  $item
-     * @param  array<int, int>  $insertedIds  index => id of this request's assets so far
-     */
-    private function saveManual(Asset $asset, array $item, int $index, array $insertedIds): void
-    {
-        try {
-            $asset->save();
-        } catch (QueryException $e) {
-            $existingId = (int) ($e->errorInfo[1] ?? 0) === 1062 ? $this->existingIdentity($item) : null;
-            $otherIndex = $existingId !== null ? array_search($existingId, $insertedIds, true) : false;
-            if ($otherIndex === false) {
-                throw $e;
-            }
-
-            throw ValidationException::withMessages([
-                "items.{$index}.sequence_no" => ['Nomor inventaris yang sama juga diisi pada baris '.($otherIndex + 1).'.'],
-            ]);
-        }
-    }
-
-    /** @param  array<string, mixed>  $item */
-    private function existingIdentity(array $item): ?int
-    {
-        return $this->duplicates->existingAssetIdFor(
-            (string) $item['location_code'],
-            (string) $item['category_code'],
-            (string) $item['subcategory_code'],
-            (string) $item['sequence_no'],
-            (int) $item['asset_year'],
-        );
-    }
-
-    /**
-     * A new, unsaved asset from validated create data — the one place `create()`,
-     * `createBatch()` and `createEntries()` build an asset, so they can never drift
-     * apart. `quantity` is always 1; written-off fields only apply when
-     * `is_written_off` is set.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    private function newAsset(array $data, string $sequenceNo, User $actor): Asset
-    {
-        $writtenOff = (bool) ($data['is_written_off'] ?? false);
-
-        $asset = new Asset(Arr::only($data, self::WRITABLE));
-        $asset->sequence_no = $sequenceNo;
-        $asset->quantity = 1;
-        $asset->is_written_off = $writtenOff;
-        $asset->written_off_on = $writtenOff ? ($data['written_off_on'] ?? null) : null;
-        $asset->written_off_note = $writtenOff ? ($data['written_off_note'] ?? null) : null;
-        $asset->created_by = $actor->id;
-        $asset->updated_by = $actor->id;
-
-        return $asset;
-    }
-
-    /**
-     * The next generated number for the data's numbering family. The caller holds
-     * {@see AssetNumberGenerator::lockScope()} for it, inside the same transaction.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    private function nextSequence(array $data): string
-    {
-        return $this->numbers->next($data['location_code'], $data['category_code'], $data['subcategory_code']);
     }
 
     /**

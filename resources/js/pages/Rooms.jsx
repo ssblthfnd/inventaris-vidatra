@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
@@ -180,15 +179,13 @@ export default function Rooms() {
           </p>
         </div>
         {activeLocationCode && (
-          // Tahap 6.9 R10 — create (one or many rooms) is the /rooms/new page;
-          // this page's RoomFormModal is for edit only
-          <Link
-            to="/rooms/new"
-            state={{ from: '/rooms' }}
+          <button
+            type="button"
+            onClick={() => setFormModal({ mode: 'create' })}
             className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
           >
             <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Ruangan
-          </Link>
+          </button>
         )}
       </header>
 

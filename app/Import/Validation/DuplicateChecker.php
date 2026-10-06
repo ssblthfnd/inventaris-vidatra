@@ -42,36 +42,14 @@ final class DuplicateChecker
             return null;
         }
 
-        return $this->existingAssetIdFor(
-            $row->locationCode,
-            $row->categoryCode,
-            $row->subcategoryCode,
-            $row->sequenceNo,
-            $row->assetYear,
-        );
-    }
-
-    /**
-     * The identity lookup itself, on plain values — {@see existingAssetId()} for a
-     * staged import row, and (Tahap 6.9 R10) the asset multi-entry create for a
-     * manually entered number. The comparison is done by MySQL, so it uses the
-     * same collation as `uq_assets_number`.
-     */
-    public function existingAssetIdFor(
-        string $locationCode,
-        string $categoryCode,
-        string $subcategoryCode,
-        string $sequenceNo,
-        int $assetYear,
-    ): ?int {
         // Plain query builder: sees ALL rows including soft-deleted (deleted_at not null),
         // so a soft-deleted asset still blocks its number from being reused.
         $id = DB::table('assets')
-            ->where('location_code', $locationCode)
-            ->where('category_code', $categoryCode)
-            ->where('subcategory_code', $subcategoryCode)
-            ->where('sequence_no', $sequenceNo)
-            ->where('asset_year', $assetYear)
+            ->where('location_code', $row->locationCode)
+            ->where('category_code', $row->categoryCode)
+            ->where('subcategory_code', $row->subcategoryCode)
+            ->where('sequence_no', $row->sequenceNo)
+            ->where('asset_year', $row->assetYear)
             ->value('id');
 
         return $id !== null ? (int) $id : null;

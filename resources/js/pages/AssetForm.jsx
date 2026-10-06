@@ -25,9 +25,6 @@ import { useMasterData } from '../lib/useMasterData';
  *   create  →  POST /api/assets            →  /inventory/:newId
  *   edit    →  PUT  /api/assets/:assetId   →  /inventory/:assetId
  *
- * Since Tahap 6.9 R10 `/inventory/new` renders `AssetEntry` (one or more rows,
- * `POST /api/assets/entries`); this component is routed for edit only.
- *
  * The frontend NEVER computes `sequence_no` / `asset_code` — the backend
  * (`AssetNumberGenerator`) is authoritative. On edit, `asset_code`, `sequence_no`
  * and `asset_year` are read-only. Master data comes only from the Tahap 5.3
