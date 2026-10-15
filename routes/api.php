@@ -192,6 +192,11 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // RoomMappingResolver::resolve() (it is a per-request flag, not a route).
         Route::get('imports/{batch}/room-mappings', [ImportController::class, 'roomMappings'])->name('api.imports.room-mappings.index');
         Route::post('imports/{batch}/room-mappings/resolve', [ImportController::class, 'resolveRoomMapping'])->name('api.imports.room-mappings.resolve');
+
+        // Tahap 2 — Sumber Aset: correct a staged row's SUMBER value in the preview
+        // (same gate; WHERE = ImportBatchPolicy::batchWithinScope() inside
+        // AssetSourceResolver, same as room mapping).
+        Route::post('imports/{batch}/asset-sources/resolve', [ImportController::class, 'resolveAssetSource'])->name('api.imports.asset-sources.resolve');
     });
 
     // --- labels / export / generic room-alias writes. Stage 6.9 R9.3 moved

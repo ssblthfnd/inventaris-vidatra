@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api;
 
 use App\Enums\AssetCondition;
+use App\Enums\AssetSource;
 use App\Rules\SubcategoryInCategory;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -19,6 +20,18 @@ class StoreAssetRequest extends FormRequest
     public function authorize(): bool
     {
         return true; // route middleware: auth:sanctum + auth.active + can:assets.create
+    }
+
+    /**
+     * Tahap 2 — `asset_source` is normalised (trim, whitespace, case, value or
+     * label) to its stored slug before the enum rule runs; unrecognised input is
+     * left as-is and rejected by that rule.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('asset_source')) {
+            $this->merge(['asset_source' => AssetSource::canonicalOrOriginal($this->input('asset_source'))]);
+        }
     }
 
     /**
@@ -59,6 +72,9 @@ class StoreAssetRequest extends FormRequest
             'material' => ['nullable', 'string', 'max:80'],
             'purchase_date' => ['nullable', 'date'],
             'funding_source' => ['nullable', 'string', 'max:80'],
+            // Tahap 2 — an explicit choice is required on create (no silent
+            // default; "belum_diberi_keterangan" is a valid explicit choice).
+            'asset_source' => ['required', Rule::enum(AssetSource::class)],
             'detail_type' => ['nullable', 'string', 'max:100'],
             'capacity_note' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
@@ -71,6 +87,7 @@ class StoreAssetRequest extends FormRequest
             'quantity.in' => 'Quantity harus selalu 1 (tidak ada grouped asset).',
             'sequence_no.prohibited' => 'sequence_no ditentukan oleh server, bukan client.',
             'asset_code.prohibited' => 'asset_code dihasilkan oleh database, bukan client.',
+            'asset_source.required' => 'Pilih sumber aset.',
         ];
     }
 }

@@ -130,6 +130,14 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {/* Tahap 2 — all six sources (zero rows included); sums to Total Aset */}
+      <CountTable
+        title="Aset per Sumber"
+        rows={data?.by_source ?? []}
+        labelKey="label"
+        headers={['Sumber', 'Jumlah']}
+      />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <CountTable
           title="Aset per Lokasi"

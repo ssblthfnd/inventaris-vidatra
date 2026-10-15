@@ -2,6 +2,7 @@
 
 namespace App\Import\Promotion;
 
+use App\Enums\AssetSource;
 use App\Import\Parsing\ParsedRow;
 use App\Import\Validation\DuplicateChecker;
 use App\Models\User;
@@ -61,6 +62,15 @@ final class AssetPromoter
             throw new RuntimeException(
                 "Batch {$batchId} is [{$batch->status}] — validate it before promotion."
             );
+        }
+
+        // Tahap 2 — Sumber Aset: every unrecognised SUMBER value must be resolved
+        // explicitly (preview correction) BEFORE anything in the batch is promoted.
+        // Enforced here, the single promotion path for HTTP and CLI alike, so no
+        // client can skip it; nothing is promoted while one remains.
+        $unresolved = $this->unresolvedSourceRowNumbers($batchId);
+        if ($unresolved !== []) {
+            throw new RuntimeException(self::unresolvedSourceMessage($unresolved));
         }
 
         $result = ['promoted' => 0, 'skipped_already' => 0, 'failed' => 0, 'errors' => []];
@@ -175,6 +185,92 @@ final class AssetPromoter
         return $count;
     }
 
+    /**
+     * Tahap 2 — how many promotable, not-yet-promoted rows still carry an
+     * unrecognised SUMBER value with no preview correction. While this is > 0,
+     * {@see promoteBatch()} refuses the WHOLE batch (422 over HTTP); the UI uses
+     * the count to block the promotion dialog. Same scope check as
+     * {@see roomlessPendingCount()}. Read-only.
+     *
+     * @throws AuthorizationException
+     */
+    public function unresolvedSourcePendingCount(int $batchId, ?User $actor = null): int
+    {
+        if ($actor !== null) {
+            $this->assertBatchWithinScope($batchId, LocationScope::for($actor));
+        }
+
+        return count($this->unresolvedSourceRowNumbers($batchId));
+    }
+
+    /**
+     * Tahap 2 — row numbers (sheet rows) of the promotable, unpromoted rows whose
+     * SUMBER was unrecognised at staging and has no `asset_source_override` yet.
+     * A correction (even to "belum_diberi_keterangan") sets the override, so a row
+     * leaves this list only through an explicit user choice.
+     *
+     * @return list<int>
+     */
+    private function unresolvedSourceRowNumbers(int $batchId): array
+    {
+        $rows = DB::table('import_rows')
+            ->where('import_batch_id', $batchId)
+            ->whereNull('promoted_asset_id')
+            ->whereIn('validation_status', ['valid', 'warning'])
+            ->whereNull('asset_source_override')
+            ->orderBy('row_number')
+            ->get(['row_number', 'raw_payload']);
+
+        $numbers = [];
+        foreach ($rows as $row) {
+            $parsed = json_decode((string) $row->raw_payload, true)['parsed'] ?? null;
+            if (is_array($parsed) && self::isUnresolvedSource(null, $parsed)) {
+                $numbers[] = (int) $row->row_number;
+            }
+        }
+
+        return $numbers;
+    }
+
+    /** @param list<int> $rowNumbers */
+    private static function unresolvedSourceMessage(array $rowNumbers): string
+    {
+        $shown = implode(', ', array_slice($rowNumbers, 0, 10)).(count($rowNumbers) > 10 ? ', …' : '');
+
+        return 'Promosi ditahan: '.count($rowNumbers).' baris masih memiliki nilai Sumber yang tidak dikenali '
+            ."(baris {$shown}). Pilih salah satu dari enam kategori Sumber — termasuk \"Belum diberi keterangan\" "
+            .'— untuk setiap baris tersebut di pratinjau impor, lalu promosikan kembali.';
+    }
+
+    /**
+     * Tahap 2 — a staged row whose SUMBER was unrecognised and that has no
+     * explicit correction yet. Such a row is never promoted.
+     *
+     * @param  array<string, mixed>  $parsed
+     */
+    public static function isUnresolvedSource(?string $override, array $parsed): bool
+    {
+        return $override === null
+            && ($parsed['asset_source_status'] ?? null) === ParsedRow::SOURCE_UNRECOGNIZED;
+    }
+
+    /**
+     * Tahap 2 — the category a staged row becomes: the explicit preview correction
+     * (`asset_source_override`) wins, then the parsed SUMBER value; a blank cell or
+     * a workbook without the SUMBER column (and rows staged before Tahap 2) parse
+     * as "belum_diberi_keterangan". Never Yayasan by default. An UNRESOLVED
+     * unrecognised value never reaches this: promotion refuses it first
+     * ({@see isUnresolvedSource()}).
+     *
+     * @param  array<string, mixed>  $parsed
+     */
+    public static function effectiveSource(?string $override, array $parsed): string
+    {
+        $candidate = $override ?? ($parsed['asset_source'] ?? null);
+
+        return AssetSource::tryFrom((string) $candidate)?->value ?? AssetSource::DEFAULT->value;
+    }
+
     /** The business identity of a staged row, as the duplicate guard checks it. */
     private function identityOf(object $stagedRow, array $parsed): ParsedRow
     {
@@ -227,6 +323,13 @@ final class AssetPromoter
                 }
             }
 
+            // Tahap 2 — defence in depth behind the batch-level check in promoteBatch():
+            // an unrecognised SUMBER value without an explicit correction is never
+            // silently converted into a category.
+            if (self::isUnresolvedSource($stagedRow->asset_source_override, $parsed)) {
+                throw new RuntimeException('asset source unresolved: choose a source for this row in the import preview');
+            }
+
             $now = now();
             $assetId = DB::table('assets')->insertGetId([
                 'location_code' => $parsed['location_code'],
@@ -246,6 +349,7 @@ final class AssetPromoter
                 'material' => $parsed['material'],
                 'purchase_date' => $parsed['purchase_date'],
                 'funding_source' => $parsed['funding_source'],
+                'asset_source' => self::effectiveSource($stagedRow->asset_source_override, $parsed),
                 'detail_type' => $parsed['detail_type'],
                 'capacity_note' => $parsed['capacity_note'],
                 'quantity' => 1,

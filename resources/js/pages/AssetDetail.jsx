@@ -7,6 +7,7 @@ import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import PrintLabelMenu from '../components/PrintLabelMenu';
 import { api, ApiError } from '../lib/api';
 import { getAssetMutations } from '../lib/assetHistory';
+import { assetSourceLabel } from '../lib/assetSources';
 import { printAssetLabel } from '../lib/labels';
 
 /**
@@ -535,7 +536,8 @@ export default function AssetDetail() {
           <Row label="Nomor Seri">{asset.serial_no}</Row>
           <Row label="Bahan">{asset.material}</Row>
           <Row label="Tanggal Pembelian">{formatDate(asset.purchase_date)}</Row>
-          <Row label="Sumber Dana">{asset.funding_source}</Row>
+          <Row label="Sumber">{assetSourceLabel(asset.asset_source)}</Row>
+          <Row label="Keterangan Sumber">{asset.funding_source}</Row>
           {asset.detail_type && <Row label="Jenis / Tipe">{asset.detail_type}</Row>}
           {asset.capacity_note && <Row label="Kapasitas">{asset.capacity_note}</Row>}
           <Row label="Jumlah">{asset.quantity != null ? `${asset.quantity} unit` : null}</Row>

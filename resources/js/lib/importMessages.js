@@ -78,6 +78,12 @@ const ROW_MESSAGES = {
   condition_raw_unrecognized: (msg) => afterColon(msg) && `Nilai Keadaan Barang tidak dikenali: ${afterColon(msg)}.`,
   condition_missing: () => 'Tanda Keadaan Barang (B/KB/RB) kosong semua.',
   condition_ambiguous: (msg) => afterColon(msg) && `Lebih dari satu tanda Keadaan Barang: ${afterColon(msg)}.`,
+  // Tahap 2 — Sumber Aset (kolom U)
+  asset_source_missing: () =>
+    'Kolom SUMBER (U) kosong; sumber dicatat "Belum diberi keterangan". Anda dapat memilih sumber di kolom Sumber.',
+  asset_source_unrecognized: (msg, [raw]) =>
+    raw !== undefined &&
+    `Nilai SUMBER "${raw}" tidak dikenali. Wajib pilih salah satu dari enam kategori di kolom Sumber (termasuk "Belum diberi keterangan") sebelum batch dapat dipromosikan.`,
 
   // --- AssetPromoter (per-row promotion failure, "promotion failed: <detail>")
   promotion_failed: (msg) => `Gagal dipromosikan: ${promotionErrorText(String(msg).replace(/^promotion failed:\s*/, ''))}`,
@@ -100,6 +106,7 @@ const PROMOTION_ERRORS = [
   ],
   [/^import_row was promoted concurrently$/, () => 'baris ini sedang dipromosikan oleh proses lain. Muat ulang halaman.'],
   [/^raw_payload has no "parsed" section$/, () => 'data staging baris ini tidak lengkap.'],
+  [/^asset source unresolved/, () => 'nilai Sumber belum dipilih. Pilih sumber untuk baris ini di pratinjau impor.'],
   [/SQLSTATE/, () => 'data baris ini melanggar aturan penyimpanan aset.'],
 ];
 

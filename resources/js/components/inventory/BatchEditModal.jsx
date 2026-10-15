@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from 'react';
 import LifecycleConfirmDialog from '../LifecycleConfirmDialog';
 import { api, ApiError } from '../../lib/api';
 import { controlClass, trimOrNull } from '../../lib/assetFields';
+import { ASSET_SOURCES, assetSourceLabel } from '../../lib/assetSources';
 
 /**
  * Batch edit dialog (Tahap 5.8.6) — one atomic `PATCH /api/assets/batch` request for
- * every selected asset. Only three fields are exposed: `room_id`, `condition`,
- * `notes` — everything else (classification, identity, lifecycle) is out of scope by
+ * every selected asset. Only four fields are exposed: `room_id`, `condition`,
+ * `notes`, and (Tahap 2) `asset_source` — everything else (classification, identity, lifecycle) is out of scope by
  * design (see the backend `BatchUpdateAssetRequest`).
  *
  * A field is only sent when its checkbox is on — an unchecked field is NEVER
@@ -56,11 +57,13 @@ export default function BatchEditModal({ open, assets, roomsByLocation, ensureRo
   const [enableRoom, setEnableRoom] = useState(false);
   const [enableCondition, setEnableCondition] = useState(false);
   const [enableNotes, setEnableNotes] = useState(false);
+  const [enableSource, setEnableSource] = useState(false);
 
   const [roomChoice, setRoomChoice] = useState(''); // '' | 'clear' | '<id>'
   const [conditionChoice, setConditionChoice] = useState(''); // '' | 'null' | enum value
   const [notesMode, setNotesMode] = useState('replace'); // 'replace' | 'clear'
   const [notesText, setNotesText] = useState('');
+  const [sourceChoice, setSourceChoice] = useState(''); // '' (not chosen yet) | AssetSource value
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -72,6 +75,8 @@ export default function BatchEditModal({ open, assets, roomsByLocation, ensureRo
     setEnableRoom(false);
     setEnableCondition(false);
     setEnableNotes(false);
+    setEnableSource(false);
+    setSourceChoice('');
     setRoomChoice('');
     setConditionChoice('');
     setNotesMode('replace');
@@ -100,8 +105,10 @@ export default function BatchEditModal({ open, assets, roomsByLocation, ensureRo
 
   const roomReady = !enableRoom || (singleLocation !== null && roomIdValue !== undefined);
   const conditionReady = !enableCondition || conditionValue !== undefined;
-  const anyFieldChecked = enableRoom || enableCondition || enableNotes;
-  const canSubmit = anyFieldChecked && roomReady && conditionReady && !busy;
+  // Tahap 2 — the source is only sent once a real category is picked (no "clear")
+  const sourceReady = !enableSource || sourceChoice !== '';
+  const anyFieldChecked = enableRoom || enableCondition || enableNotes || enableSource;
+  const canSubmit = anyFieldChecked && roomReady && conditionReady && sourceReady && !busy;
 
   /* ---------------------------------------------------------------- preview */
   const alreadyRoomCount =
@@ -113,6 +120,9 @@ export default function BatchEditModal({ open, assets, roomsByLocation, ensureRo
       ? assets.filter((a) => (a.condition ?? null) === conditionValue).length
       : 0;
 
+  const alreadySourceCount =
+    enableSource && sourceChoice !== '' ? assets.filter((a) => a.asset_source === sourceChoice).length : 0;
+
   const previewLines = [];
   if (enableRoom && roomIdValue !== undefined) {
     const label = roomIdValue === null ? 'Tanpa ruangan' : (roomOptions.find((r) => r.id === roomIdValue)?.name ?? '—');
@@ -123,6 +133,9 @@ export default function BatchEditModal({ open, assets, roomsByLocation, ensureRo
       label: 'Kondisi',
       value: conditionValue === null ? 'Belum diisi' : CONDITION_LABELS[conditionValue],
     });
+  }
+  if (enableSource && sourceChoice !== '') {
+    previewLines.push({ label: 'Sumber', value: assetSourceLabel(sourceChoice) });
   }
   if (enableNotes) {
     previewLines.push({
@@ -141,6 +154,7 @@ export default function BatchEditModal({ open, assets, roomsByLocation, ensureRo
     if (enableRoom) changes.room_id = roomIdValue;
     if (enableCondition) changes.condition = conditionValue;
     if (enableNotes) changes.notes = notesValue;
+    if (enableSource && sourceChoice !== '') changes.asset_source = sourceChoice;
 
     try {
       const res = await api.patch('/api/assets/batch', {
@@ -270,6 +284,39 @@ export default function BatchEditModal({ open, assets, roomsByLocation, ensureRo
                 <p className="text-xs text-gray-500">
                   {alreadyConditionCount} aset sudah memiliki kondisi tersebut. Aset itu tidak
                   akan mengalami perubahan pada field ini.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Sumber (Tahap 2) */}
+        <div className="rounded-lg border border-gray-200 p-3">
+          {checkboxRow('batch-source', enableSource, setEnableSource, 'Sumber')}
+          {enableSource && (
+            <div className="mt-2 space-y-1.5">
+              <select
+                value={sourceChoice}
+                onChange={(e) => setSourceChoice(e.target.value)}
+                className={controlClass(fieldError('asset_source'))}
+                aria-label="Pilih sumber"
+              >
+                <option value="">— Pilih sumber —</option>
+                {ASSET_SOURCES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              {fieldError('asset_source') && (
+                <p className="text-xs text-red-600" role="alert">
+                  {fieldError('asset_source')}
+                </p>
+              )}
+              {alreadySourceCount > 0 && (
+                <p className="text-xs text-gray-500">
+                  {alreadySourceCount} aset sudah memiliki sumber tersebut. Aset itu tidak akan
+                  mengalami perubahan pada field ini.
                 </p>
               )}
             </div>

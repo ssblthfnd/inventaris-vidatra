@@ -668,3 +668,94 @@ The following are **conventions only** — no code exists yet:
 | 5.7 | non-relocation mutation types (`perbaikan`, `perubahan_kondisi`, …); room / room-alias management; import/report HTTP layer; filtered/parameterised reporting; full API feature-test matrix |
 
 Do not document any of these as available endpoints until their stage lands.
+
+---
+
+## 17. Sumber Aset — `asset_source` (Tahap 2)
+
+User-facing guide: `docs/panduan_sumber_aset.md`.
+
+### 17.1 Field
+
+- `assets.asset_source` — `ENUM('bosda','bosp','bostk','yayasan','lainnya','belum_diberi_keterangan')`
+  `NOT NULL DEFAULT 'belum_diberi_keterangan'`, index `ix_assets_asset_source`.
+  PHP: `App\Enums\AssetSource` (stored slug = source of truth; `label()` for display).
+- `belum_diberi_keterangan` is a legitimate category ("source not known yet"),
+  never an error and never a synonym of `yayasan`. Nothing defaults to `yayasan`.
+- Separate from the free-text `funding_source` (UI label "Keterangan Sumber"); the
+  two are never merged, copied or swapped.
+- Input normalisation everywhere (`AssetSource::fromInput()` / `canonicalOrOriginal()`):
+  trim, collapse whitespace, case-insensitive, value or label (`_` = space). Anything
+  unrecognised is rejected (`422`) — never coerced.
+
+### 17.2 Write endpoints
+
+| Endpoint | Rule |
+|---|---|
+| `POST /api/assets`, `POST /api/assets/batch` | `asset_source` **required**, enum |
+| `PUT/PATCH /api/assets/{asset}` | `sometimes`, `required` (cannot be cleared), enum; omitted = untouched |
+| `PATCH /api/assets/batch` | `changes.asset_source` allowed (4th batch-editable key); `sometimes`, `required`, enum; applied only when present |
+
+`AssetResource` (and `TrashedAssetResource`) expose `asset_source` (slug).
+`AssetMutationRecorder::snapshot()` includes `asset_source`; older snapshots lack the
+key and `MutationRevertService` skips keys missing from `before`, so old history stays
+revertable unchanged.
+
+### 17.3 Filter / sort / export / report / dashboard
+
+- `GET /api/assets` (and `assets/export`, `assets/trash`, `reports/inventory` via the
+  shared `AssetIndexRequest` + `FiltersAssets`): multi-value `asset_source[]`, same
+  contract as §8.1.1 (OR within, AND between, duplicates `422`, unknown `422`).
+  Location scope is applied exactly as for every other filter.
+- Sort whitelist gains `asset_source` (ENUM definition order on MySQL and MariaDB).
+- Export: column **U = SUMBER** (label), **V = KETERANGAN SUMBER** (`funding_source`);
+  columns A–T unchanged. Known limitation (by decision): the import template has no
+  column V and the importer never reads V, so re-importing an export does not carry
+  `funding_source`; it is maintained via Edit Aset.
+- `GET /api/dashboard` and `GET /api/reports/inventory` gain `by_source`: all six
+  categories in enum order, zero-count included,
+  `[{ value, label, asset_count }]`; sums to `summary.total_assets` (non-deleted,
+  written-off included, same scope/filters).
+
+### 17.4 Import
+
+- Template DATA sheet: column **U = SUMBER** (dropdown); REFERENSI lists the six values.
+- `SheetScanner::$hasSourceColumn` is true when the header row has "SUMBER" in U;
+  historical workbooks (no header there) keep importing unchanged (no message,
+  `parsed.asset_source_status = column_absent`, source = `belum_diberi_keterangan`).
+- With the column: blank → warning `asset_source_missing` (promotable, source =
+  `belum_diberi_keterangan`); recognised → that value; unrecognised → warning
+  `asset_source_unrecognized`, `parsed.asset_source = null`, raw text kept in
+  `parsed.asset_source_raw`.
+- `POST /api/imports/{batch}/asset-sources/resolve` — `{ row_ids: [..1..500], asset_source }`,
+  `can:assets.import`; location scope via `ImportBatchPolicy::batchWithinScope()`
+  (`403`); rows must belong to the batch and be unpromoted, all-or-nothing (`422`).
+  Stores `import_rows.asset_source_override` + `asset_source_resolved_by/_at`, removes
+  the source warning, warning → valid when nothing else flags the row (batch counters
+  adjusted). `raw_payload` is never rewritten.
+- **Promotion is refused while any promotable, unpromoted row still has an
+  unrecognised SUMBER value without a correction** — `AssetPromoter::promoteBatch()`
+  (HTTP and CLI alike) throws before promoting anything; `POST /api/imports/{batch}/promote`
+  answers `422` (`errors.batch`, listing the row numbers). Nothing is converted
+  silently: such a row leaves that state only through an explicit correction (which
+  may be `belum_diberi_keterangan`). `promoteOne()` re-checks per row as defence in depth.
+- Promotion stores `override ?? parsed.asset_source`; a blank cell / workbook without
+  the column parses as `belum_diberi_keterangan`.
+  `unresolved_source_pending_count` (upload, `GET /api/imports/{batch}` and the promote
+  response) is the number of rows holding promotion back; the UI disables the promote
+  confirmation while it is > 0.
+- `GET /api/imports/{batch}/rows?status=source_unresolved` (UI-only filter value, like
+  `duplicate`) lists exactly those rows.
+- `ImportRowResource` adds `asset_source`, `asset_source_label`, `asset_source_raw`,
+  `asset_source_status` (`recognized|missing|unrecognized|column_absent|corrected`),
+  `asset_source_resolution`.
+- Duplicate detection / re-import semantics are unchanged; an existing asset's source is
+  never modified by an import.
+
+### 17.5 Migrations
+
+`2026_10_15_100000_add_asset_source_to_assets_table` (fills every existing row, trashed
+included, with `belum_diberi_keterangan` via the column default) and
+`2026_10_15_100001_add_asset_source_override_to_import_rows_table`. `down()` drops only
+those columns; **rollback discards every source chosen after deployment** — never roll
+back without a backup and explicit approval.

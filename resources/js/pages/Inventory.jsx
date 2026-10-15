@@ -10,6 +10,7 @@ import BatchEditModal from '../components/inventory/BatchEditModal';
 import ExportMenu from '../components/inventory/ExportMenu';
 import InventoryTable from '../components/inventory/InventoryTable';
 import { api, ApiError } from '../lib/api';
+import { ASSET_SOURCES } from '../lib/assetSources';
 import { downloadAssetExport } from '../lib/exports';
 import { printBatchLabels } from '../lib/labels';
 import {
@@ -238,6 +239,8 @@ export default function Inventory() {
           return CONDITION_OPTIONS.find((o) => o.value === value)?.label ?? value;
         case 'is_written_off':
           return STATUS_OPTIONS.find((o) => o.value === value)?.label ?? value;
+        case 'asset_source':
+          return ASSET_SOURCES.find((o) => o.value === value)?.label ?? value;
         default:
           return value;
       }
@@ -253,6 +256,7 @@ export default function Inventory() {
       'room_id',
       'condition',
       'is_written_off',
+      'asset_source',
     ];
     const out = [];
     for (const filter of filters) {
@@ -534,6 +538,13 @@ export default function Inventory() {
             options={STATUS_OPTIONS}
             selected={state.is_written_off}
             onChange={(v) => patchState({ is_written_off: v })}
+            searchable={false}
+          />
+          <MultiSelectFilter
+            label="Sumber"
+            options={ASSET_SOURCES}
+            selected={state.asset_source}
+            onChange={(v) => patchState({ asset_source: v })}
             searchable={false}
           />
         </div>

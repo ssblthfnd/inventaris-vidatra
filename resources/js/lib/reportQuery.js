@@ -19,6 +19,7 @@ export const ARRAY_FILTERS = [
   'condition',
   'is_written_off',
   'asset_year',
+  'asset_source', // Tahap 2
 ];
 
 /** Read a `URLSearchParams` into a normalised state object. */

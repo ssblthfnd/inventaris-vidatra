@@ -7,6 +7,7 @@ import RoomMappingSection from '../components/imports/RoomMappingSection';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import { ApiError } from '../lib/api';
 import { CenteredState } from '../lib/assetFields';
+import { ASSET_SOURCES, assetSourceLabel } from '../lib/assetSources';
 import {
   IMPORT_STATUS_OPTIONS,
   IMPORT_TEMPLATE_CATEGORY_CODES,
@@ -16,6 +17,7 @@ import {
   getRoomMappings,
   listImportBatches,
   promoteImportBatch,
+  resolveImportAssetSource,
   roomMappingGroupKey,
   uploadImportFile,
 } from '../lib/imports';
@@ -148,6 +150,9 @@ export default function Imports() {
   const [promotePreparing, setPromotePreparing] = useState(false);
   const [promoteBusy, setPromoteBusy] = useState(false);
   const [promoteError, setPromoteError] = useState('');
+  // Tahap 2 — the staged row whose source correction is being saved (one at a time)
+  const [sourceBusyRowId, setSourceBusyRowId] = useState(null);
+  const [bulkSource, setBulkSource] = useState('');
   const [promotionResult, setPromotionResult] = useState(null);
 
   const [history, setHistory] = useState([]);
@@ -333,6 +338,53 @@ export default function Imports() {
     loadMappings(batch.id, { background: true });
   };
 
+  // Tahap 2 — save an explicit source choice for one or more staged rows
+  // server-side (stored on those rows, used by the next promotion), apply the
+  // reported warning->valid delta and the resolved-unrecognised count locally,
+  // then reload the visible rows page.
+  const handleResolveSource = async (targetRows, assetSource) => {
+    if (!batch || sourceBusyRowId !== null || targetRows.length === 0) return;
+    const batchId = batch.id;
+    const unrecognizedResolved = targetRows.filter((r) => r.asset_source_status === 'unrecognized').length;
+    setSourceBusyRowId(targetRows.length === 1 ? targetRows[0].id : 'bulk');
+    try {
+      const res = await resolveImportAssetSource(batchId, {
+        rowIds: targetRows.map((r) => r.id),
+        assetSource,
+      });
+      if (activeBatchIdRef.current !== batchId) return;
+      const becameValid = res?.data?.rows_became_valid ?? 0;
+      setBatch((current) =>
+        current && current.id === batchId
+          ? {
+              ...current,
+              valid_rows: current.valid_rows + becameValid,
+              warning_rows: Math.max(0, current.warning_rows - becameValid),
+              ...(current.unresolved_source_pending_count != null && {
+                unresolved_source_pending_count: Math.max(
+                  0,
+                  current.unresolved_source_pending_count - unrecognizedResolved,
+                ),
+              }),
+            }
+          : current,
+      );
+      setFlashTone('success');
+      setFlash(
+        targetRows.length === 1
+          ? `Sumber baris ${targetRows[0].row_number} diatur ke "${assetSourceLabel(assetSource)}".`
+          : `Sumber ${targetRows.length} baris diatur ke "${assetSourceLabel(assetSource)}".`,
+      );
+      await loadRows(batchId, statusFilter, rowsPage);
+    } catch (e) {
+      if (activeBatchIdRef.current !== batchId) return;
+      setFlashTone('error');
+      setFlash(e?.message || 'Gagal menyimpan sumber. Coba lagi.');
+    } finally {
+      setSourceBusyRowId(null);
+    }
+  };
+
   const handleDownloadTemplate = async () => {
     if (!category) return;
     setTemplateBusy(true);
@@ -450,6 +502,15 @@ export default function Imports() {
   const canPromote = batch && promotable > alreadyImported;
   // R9.4-10 — only present on a freshly read batch (show / promote responses)
   const roomlessPending = batch?.roomless_pending_count ?? 0;
+  // Tahap 2 — unrecognised, uncorrected SUMBER values (stored as "Belum diberi keterangan")
+  const sourcePending = batch?.unresolved_source_pending_count ?? 0;
+  const unresolvedOnPage = rows.filter(
+    (r) => r.asset_source_status === 'unrecognized' && r.promoted_asset_id == null && r.validation_status !== 'error',
+  );
+  const showUnresolvedSources = () => {
+    setPromoteOpen(false);
+    handleFilterChange('source_unresolved');
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -615,6 +676,54 @@ export default function Imports() {
             onResolved={handleMappingResolved}
           />
 
+          {sourcePending > 0 && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900"
+            >
+              <span>
+                {sourcePending} baris memiliki nilai Sumber yang tidak dikenali. Pilih sumbernya sebelum promosi.
+              </span>
+              {statusFilter !== 'source_unresolved' && (
+                <button type="button" onClick={showUnresolvedSources} className="text-xs font-medium underline">
+                  Tampilkan baris
+                </button>
+              )}
+            </div>
+          )}
+
+          {statusFilter === 'source_unresolved' && unresolvedOnPage.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm">
+              <label htmlFor="bulk-source" className="text-gray-700">
+                Pilih sumber untuk {unresolvedOnPage.length} baris di halaman ini:
+              </label>
+              <select
+                id="bulk-source"
+                value={bulkSource}
+                onChange={(e) => setBulkSource(e.target.value)}
+                className="rounded-md border border-gray-300 px-2 py-1 text-xs outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+              >
+                <option value="">— Pilih sumber —</option>
+                {ASSET_SOURCES.map((src) => (
+                  <option key={src.value} value={src.value}>
+                    {src.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={bulkSource === '' || sourceBusyRowId !== null}
+                onClick={async () => {
+                  await handleResolveSource(unresolvedOnPage, bulkSource);
+                  setBulkSource('');
+                }}
+                className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Terapkan
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             {IMPORT_STATUS_OPTIONS.map((opt) => (
               <button
@@ -633,7 +742,12 @@ export default function Imports() {
             ))}
           </div>
 
-          <ImportRowsTable rows={rows} loading={rowsLoading} />
+          <ImportRowsTable
+            rows={rows}
+            loading={rowsLoading}
+            onResolveSource={(row, value) => handleResolveSource([row], value)}
+            sourceBusyRowId={sourceBusyRowId}
+          />
 
           {rowsMeta && rowsMeta.total > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-500">
@@ -719,6 +833,7 @@ export default function Imports() {
         open={promoteOpen}
         title="Promosikan batch ini ke Inventaris?"
         confirmLabel={roomlessPending > 0 ? 'Lanjutkan' : 'Promote'}
+        confirmDisabled={sourcePending > 0}
         busy={promoteBusy}
         error={promoteError}
         onConfirm={handlePromote}
@@ -747,6 +862,23 @@ export default function Imports() {
                   dibuat tanpa ruangan. Anda dapat menemukannya kembali menggunakan filter &quot;Tanpa
                   Ruangan&quot; di Inventaris.
                 </p>
+              </div>
+            )}
+            {sourcePending > 0 && (
+              <div role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-800">
+                <p className="font-medium">Promosi belum dapat dilakukan</p>
+                <p className="mt-1 text-xs">
+                  {sourcePending} baris memiliki nilai SUMBER yang tidak dikenali. Pilih salah satu dari enam
+                  kategori Sumber — termasuk &quot;Belum diberi keterangan&quot; bila memang belum diketahui —
+                  untuk setiap baris tersebut, lalu promosikan kembali.
+                </p>
+                <button
+                  type="button"
+                  onClick={showUnresolvedSources}
+                  className="mt-2 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
+                >
+                  Tampilkan baris yang perlu dipilih
+                </button>
               </div>
             )}
           </>

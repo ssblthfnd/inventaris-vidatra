@@ -284,7 +284,8 @@ penempatan ruangan saat ini, kondisi, penghapusan bisnis, dan atribut deskriptif
 | `serial_no` | `VARCHAR(150)` NULL | No. seri pabrik. |
 | `material` | `VARCHAR(80)` NULL | Bahan. |
 | `purchase_date` | `DATE` NULL | Tanggal pembelian. |
-| `funding_source` | `VARCHAR(80)` NULL | Sumber dana (BOSDA, YYS, …). |
+| `funding_source` | `VARCHAR(80)` NULL | Sumber dana (BOSDA, YYS, …). **Sejak Tahap 2 berlabel "Keterangan Sumber"** di UI — teks bebas opsional, bukan kategori. Data lama tidak diubah. |
+| `asset_source` | `ENUM('bosda','bosp','bostk','yayasan','lainnya','belum_diberi_keterangan')` NN default `'belum_diberi_keterangan'` | **(Tahap 2)** Kategori Sumber Aset (`App\Enums\AssetSource`). Semua aset lama (termasuk soft-deleted) bernilai `belum_diberi_keterangan`. Index `ix_assets_asset_source`. Lihat `docs/api_convention.md` §17. |
 | `detail_type` | `VARCHAR(100)` NULL | `jenis_detail` — khusus Elektronik (Monitor/CPU/LCD). |
 | `capacity_note` | `VARCHAR(100)` NULL | `kapasitas_ket` — khusus Alat Kebersihan ("12 liter"). |
 | `quantity` | `INT UNSIGNED` NN default `1` | **Selalu `1` (B6)** — `CHECK (quantity = 1)`. Satu record = satu physical unit; **grouped asset / quantity > 1 tidak didukung** pada desain saat ini. Kolom dipertahankan untuk **kompatibilitas / future extensibility**; bila kebijakan berubah, CHECK dilonggarkan lewat migration tersendiri (§12 D7). |
@@ -494,6 +495,8 @@ dipromosikan ke `assets`. Tempat parkir baris "belum siap" (ruangan tak dikenal,
 | `room_match_method` | `ENUM('exact_name','alias','none')` | NULL | `NULL` | Cara ketemu. `none` = belum terpetakan. |
 | `condition_raw` | `VARCHAR(50)` | NULL | `NULL` | Flag kondisi mentah dari Excel (`v`, `V`, `-`, dll) — **tidak** dinormalisasi di sini. |
 | `condition_parsed` | `ENUM('baik','kurang_baik','rusak_berat')` | NULL | `NULL` | Hasil interpretasi. |
+| `asset_source_override` | ENUM sama dengan `assets.asset_source` | NULL | `NULL` | **(Tahap 2)** Sumber yang dipilih pengguna di pratinjau impor (mis. untuk nilai SUMBER yang tidak dikenali). Dipakai saat promosi; `raw_payload` tidak diubah. |
+| `asset_source_resolved_by` / `asset_source_resolved_at` | `BIGINT UNSIGNED` FK users (SET NULL) / `TIMESTAMP` | NULL | `NULL` | **(Tahap 2)** Siapa dan kapan memilih `asset_source_override`. |
 | `validation_status` | `ENUM('pending','valid','warning','error')` | NN | `'pending'` | Hanya `valid`/`warning` yang boleh dipromosikan. |
 | `validation_messages` | `JSON` | NULL | `NULL` | Daftar `{code, field, message, severity}`. |
 | `duplicate_of_asset_id` | `BIGINT UNSIGNED` | NULL | `NULL` | **FK → `assets.id`** `ON DELETE SET NULL`. **Makna: baris ini duplikat dari aset yang sudah ada** (nomor aset bentrok) → tidak dipromosikan. |

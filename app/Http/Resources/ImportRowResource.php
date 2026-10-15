@@ -2,6 +2,9 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\AssetSource;
+use App\Import\Parsing\ParsedRow;
+use App\Import\Promotion\AssetPromoter;
 use App\Models\ImportRow;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -63,6 +66,14 @@ class ImportRowResource extends JsonResource
             'condition_raw' => $row->condition_raw,
             'condition_parsed' => $row->condition_parsed?->value,
 
+            // Tahap 2 — Sumber Aset. `asset_source` is what promotion would store
+            // (null while an unrecognised value is still unresolved — promotion
+            // of the batch is refused until the user picks one of the six
+            // categories; it is never converted silently);
+            // `asset_source_raw` is the SUMBER cell verbatim; `asset_source_status`
+            // is recognized | missing | unrecognized | column_absent | corrected.
+            ...$this->assetSourceFields($row, $parsed),
+
             'validation_status' => $row->validation_status,
             'validation_messages' => $messages,
             'is_duplicate' => collect($messages)->contains(fn (array $m) => in_array($m['code'], self::DUPLICATE_CODES, true)),
@@ -73,6 +84,31 @@ class ImportRowResource extends JsonResource
             'promoted_by' => $row->relationLoaded('promotedBy') && $row->promotedBy !== null
                 ? ['id' => $row->promotedBy->id, 'name' => $row->promotedBy->name]
                 : null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsed
+     * @return array<string, mixed>
+     */
+    private function assetSourceFields(ImportRow $row, array $parsed): array
+    {
+        $override = $row->asset_source_override?->value;
+        // rows staged before Tahap 2 carry no source keys: read as "no SUMBER column"
+        $parsedStatus = $parsed['asset_source_status'] ?? ParsedRow::SOURCE_COLUMN_ABSENT;
+        $unresolved = AssetPromoter::isUnresolvedSource($override, $parsed);
+        $value = $unresolved ? null : AssetPromoter::effectiveSource($override, $parsed);
+        $resolvedBy = $row->relationLoaded('assetSourceResolvedBy') ? $row->assetSourceResolvedBy : null;
+
+        return [
+            'asset_source' => $value,
+            'asset_source_label' => $value !== null ? AssetSource::from($value)->label() : null,
+            'asset_source_raw' => $parsed['asset_source_raw'] ?? null,
+            'asset_source_status' => $override !== null ? 'corrected' : $parsedStatus,
+            'asset_source_resolution' => $override === null ? null : [
+                'resolved_by' => $resolvedBy !== null ? ['id' => $resolvedBy->id, 'name' => $resolvedBy->name] : null,
+                'resolved_at' => $row->asset_source_resolved_at?->toIso8601String(),
+            ],
         ];
     }
 

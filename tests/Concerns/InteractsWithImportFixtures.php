@@ -18,9 +18,11 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 trait InteractsWithImportFixtures
 {
     /**
-     * @param  list<array<string,string>>  $rows  each row's cells keyed by column letter (B..T)
+     * @param  list<array<string,string>>  $rows  each row's cells keyed by column letter (B..U)
+     * @param  bool  $withSourceColumn  Tahap 2 — write the `SUMBER` header in U (current
+     *                                  template layout); false = historical layout
      */
-    protected function makeImportUpload(string $categoryCode, array $rows, string $filename = 'test-import.xlsx'): UploadedFile
+    protected function makeImportUpload(string $categoryCode, array $rows, string $filename = 'test-import.xlsx', bool $withSourceColumn = false): UploadedFile
     {
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
@@ -34,6 +36,9 @@ trait InteractsWithImportFixtures
         $headerRow = 6;
         $sheet->setCellValue("A{$headerRow}", 'No. Urut');
         $sheet->setCellValue("B{$headerRow}", 'NOMOR ASET');
+        if ($withSourceColumn) {
+            $sheet->setCellValue("U{$headerRow}", 'SUMBER');
+        }
 
         $dataStart = $headerRow + 2;
         foreach ($rows as $i => $cells) {

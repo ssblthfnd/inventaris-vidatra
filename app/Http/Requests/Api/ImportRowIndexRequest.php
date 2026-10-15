@@ -16,10 +16,16 @@ use Illuminate\Validation\Rule;
  * by the presence of a `duplicate_in_batch` / `duplicate_existing_asset` message
  * code rather than a different column. This does not change or add a status value
  * anywhere in the importer — see `ImportController::rows()`.
+ *
+ * Tahap 2 — a second UI-only value, `source_unresolved`: rows whose SUMBER value
+ * was not recognised and still has no preview correction (the
+ * `asset_source_unrecognized` message, which a correction removes). Promotion is
+ * refused while any such promotable row remains, so the preview needs a way to
+ * list exactly those rows.
  */
 class ImportRowIndexRequest extends FormRequest
 {
-    public const STATUSES = ['pending', 'valid', 'warning', 'error', 'duplicate'];
+    public const STATUSES = ['pending', 'valid', 'warning', 'error', 'duplicate', 'source_unresolved'];
 
     public function authorize(): bool
     {

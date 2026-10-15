@@ -65,6 +65,10 @@ class AssetMutationRecorder
             'quantity' => $asset->quantity,
             'purchase_date' => $asset->purchase_date?->toDateString(),
             'funding_source' => $asset->funding_source,
+            // Tahap 2 — snapshots written before this key existed simply lack it;
+            // MutationRevertService skips keys missing from `before`, so old
+            // history stays revertable exactly as before.
+            'asset_source' => $asset->asset_source?->value,
             'condition' => $asset->condition?->value,
             'notes' => $asset->notes,
             'is_written_off' => $asset->is_written_off,

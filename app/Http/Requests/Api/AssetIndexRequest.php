@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api;
 
 use App\Enums\AssetCondition;
+use App\Enums\AssetSource;
 use App\Models\Room;
 use App\Models\Subcategory;
 use Illuminate\Foundation\Http\FormRequest;
@@ -14,11 +15,11 @@ use Illuminate\Validation\Rule;
  *
  * ## Filter contract
  *
- * Seven filters accept **multiple values** using the natural Laravel array syntax
+ * Eight filters accept **multiple values** using the natural Laravel array syntax
  * (`?category_code[]=02&category_code[]=03`):
  *
  *   location_code  category_code  subcategory_code  room_id
- *   condition      is_written_off  asset_year
+ *   condition      is_written_off  asset_year       asset_source
  *
  * A bare scalar (`?category_code=02`) is still accepted for backward compatibility —
  * it is normalised to a one-element array in {@see prepareForValidation()}, so the
@@ -53,6 +54,10 @@ use Illuminate\Validation\Rule;
  *    no location, so the room↔location rule above never applies to it (Tahap 6.9
  *    R9.4-13). An asset whose room exists but is INACTIVE is not "without room" and
  *    is never matched by `none`.
+ *  - `asset_source[]` (Tahap 2) accepts the six {@see AssetSource} values; each
+ *    entry is normalised (trim, whitespace, case, value or label) before the
+ *    rule runs, and anything unrecognised is `422`. `belum_diberi_keterangan` is
+ *    an ordinary value here, not a NULL sentinel (the column is NOT NULL).
  *
  * `per_page` is REJECTED above 100 (never silently clamped). `asset_year` accepts
  * 1980..currentYear+1.
@@ -65,7 +70,7 @@ class AssetIndexRequest extends FormRequest
     /** Filters that accept multiple values. */
     private const MULTI = [
         'location_code', 'category_code', 'subcategory_code', 'room_id',
-        'condition', 'is_written_off', 'asset_year',
+        'condition', 'is_written_off', 'asset_year', 'asset_source',
     ];
 
     public function authorize(): bool
@@ -93,6 +98,10 @@ class AssetIndexRequest extends FormRequest
                 $list,
                 fn ($v): bool => $v !== null && $v !== '' && ! is_array($v),
             ));
+
+            if ($key === 'asset_source') {
+                $list = array_map(fn ($v) => AssetSource::canonicalOrOriginal($v), $list);
+            }
 
             $merge[$key] = $list;
         }
@@ -128,10 +137,15 @@ class AssetIndexRequest extends FormRequest
 
             'asset_year' => ['array', $this->noDuplicates(), $this->allYears($maxYear)],
 
+            'asset_source' => ['array', $this->noDuplicates(), $this->allIn(AssetSource::values(), 'asset_source')],
+
             'q' => ['string', 'max:100'],
 
             'sort' => ['string', Rule::in([
                 'asset_code', 'asset_year', 'sequence_no', 'brand_model', 'serial_no', 'purchase_date', 'created_at',
+                // Tahap 2 — ENUM column: MySQL/MariaDB order it by the ENUM
+                // definition order (BOSDA … Belum diberi keterangan), not alphabetically.
+                'asset_source',
             ])],
             'direction' => ['string', Rule::in(['asc', 'desc'])],
         ];
@@ -360,6 +374,16 @@ class AssetIndexRequest extends FormRequest
             'ids' => array_values(array_unique(array_map('intval', $ids))),
             'includeNull' => in_array(self::ROOMLESS, $raw, true),
         ];
+    }
+
+    /**
+     * Tahap 2 — validated, canonical `asset_source[]` values (empty when absent).
+     *
+     * @return array<int, string>
+     */
+    public function assetSources(): array
+    {
+        return array_values(array_unique($this->filterArray('asset_source')));
     }
 
     /** @return array<int, int> */
