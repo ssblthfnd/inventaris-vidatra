@@ -12,9 +12,11 @@ namespace App\Enums;
  *
  * `BelumDiberiKeterangan` is a legitimate category, not an error and not a
  * synonym of `Yayasan` — an asset may be recorded before its funding source is
- * known. It is the database default and what every pre-existing asset received
- * when the column was added. Nothing in the application ever falls back to
- * `Yayasan`.
+ * known. It is the database default for rows written without an explicit
+ * source. Nothing in the application ever falls back to `Yayasan`; the only
+ * place `yayasan` is set without a user choice is the one-time migration
+ * backfill of assets that existed when the column was added (business decision:
+ * all pre-existing inventory comes from the foundation).
  *
  * The stored value (slug) is the source of truth; {@see label()} is display only.
  */
@@ -27,7 +29,7 @@ enum AssetSource: string
     case Lainnya = 'lainnya';
     case BelumDiberiKeterangan = 'belum_diberi_keterangan';
 
-    /** The value every existing asset received and the DB default. */
+    /** The DB default, and the fallback for a blank SUMBER / workbook without the column. */
     public const DEFAULT = self::BelumDiberiKeterangan;
 
     public function label(): string

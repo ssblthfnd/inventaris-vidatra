@@ -285,7 +285,7 @@ penempatan ruangan saat ini, kondisi, penghapusan bisnis, dan atribut deskriptif
 | `material` | `VARCHAR(80)` NULL | Bahan. |
 | `purchase_date` | `DATE` NULL | Tanggal pembelian. |
 | `funding_source` | `VARCHAR(80)` NULL | Sumber dana (BOSDA, YYS, …). **Sejak Tahap 2 berlabel "Keterangan Sumber"** di UI — teks bebas opsional, bukan kategori. Data lama tidak diubah. |
-| `asset_source` | `ENUM('bosda','bosp','bostk','yayasan','lainnya','belum_diberi_keterangan')` NN default `'belum_diberi_keterangan'` | **(Tahap 2)** Kategori Sumber Aset (`App\Enums\AssetSource`). Semua aset lama (termasuk soft-deleted) bernilai `belum_diberi_keterangan`. Index `ix_assets_asset_source`. Lihat `docs/api_convention.md` §17. |
+| `asset_source` | `ENUM('bosda','bosp','bostk','yayasan','lainnya','belum_diberi_keterangan')` NN default `'belum_diberi_keterangan'` | **(Tahap 2)** Kategori Sumber Aset (`App\Enums\AssetSource`). Semua aset yang sudah ada saat migrasi (termasuk soft-deleted) di-backfill `yayasan` (keputusan bisnis; tidak disimpulkan dari `funding_source`); default kolom untuk baris baru tanpa sumber eksplisit tetap `belum_diberi_keterangan`. Index `ix_assets_asset_source`. Lihat `docs/api_convention.md` §17. |
 | `detail_type` | `VARCHAR(100)` NULL | `jenis_detail` — khusus Elektronik (Monitor/CPU/LCD). |
 | `capacity_note` | `VARCHAR(100)` NULL | `kapasitas_ket` — khusus Alat Kebersihan ("12 liter"). |
 | `quantity` | `INT UNSIGNED` NN default `1` | **Selalu `1` (B6)** — `CHECK (quantity = 1)`. Satu record = satu physical unit; **grouped asset / quantity > 1 tidak didukung** pada desain saat ini. Kolom dipertahankan untuk **kompatibilitas / future extensibility**; bila kebijakan berubah, CHECK dilonggarkan lewat migration tersendiri (§12 D7). |

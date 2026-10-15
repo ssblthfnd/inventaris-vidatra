@@ -681,7 +681,8 @@ User-facing guide: `docs/panduan_sumber_aset.md`.
   `NOT NULL DEFAULT 'belum_diberi_keterangan'`, index `ix_assets_asset_source`.
   PHP: `App\Enums\AssetSource` (stored slug = source of truth; `label()` for display).
 - `belum_diberi_keterangan` is a legitimate category ("source not known yet"),
-  never an error and never a synonym of `yayasan`. Nothing defaults to `yayasan`.
+  never an error and never a synonym of `yayasan`. Nothing new defaults to `yayasan`;
+  only assets existing at migration time are backfilled to `yayasan`, once (§17.5).
 - Separate from the free-text `funding_source` (UI label "Keterangan Sumber"); the
   two are never merged, copied or swapped.
 - Input normalisation everywhere (`AssetSource::fromInput()` / `canonicalOrOriginal()`):
@@ -754,8 +755,10 @@ revertable unchanged.
 
 ### 17.5 Migrations
 
-`2026_10_15_100000_add_asset_source_to_assets_table` (fills every existing row, trashed
-included, with `belum_diberi_keterangan` via the column default) and
+`2026_10_15_100000_add_asset_source_to_assets_table` (adds the column with default
+`belum_diberi_keterangan`, then sets **every asset existing at migration time — trashed
+included — to `yayasan`** with a query-builder UPDATE; not inferred from
+`funding_source`; no `updated_at` bump, no history rows) and
 `2026_10_15_100001_add_asset_source_override_to_import_rows_table`. `down()` drops only
 those columns; **rollback discards every source chosen after deployment** — never roll
 back without a backup and explicit approval.

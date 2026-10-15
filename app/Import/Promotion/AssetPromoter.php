@@ -323,10 +323,32 @@ final class AssetPromoter
                 }
             }
 
+            // Tahap 2 — re-read THIS staged row under an exclusive lock: `$stagedRow`
+            // was read before the loop started, so a source correction committed
+            // since then (AssetSourceResolver locks the same row FOR UPDATE and only
+            // touches unpromoted rows) must win here, and a row promoted meanwhile
+            // must not be promoted again. With both sides locking the row, whichever
+            // locks first wins: resolver first -> this sees the new override;
+            // promotion first -> the resolver sees the row promoted and refuses (422).
+            // Lock order: AFTER the shared room lock above, i.e. rooms -> import_rows,
+            // the same order RoomMappingResolver uses (it locks the room, then rows),
+            // so no new lock-order inversion is introduced. One row per transaction.
+            $fresh = DB::table('import_rows')
+                ->where('id', $stagedRow->id)
+                ->lockForUpdate()
+                ->first(['promoted_asset_id', 'validation_status', 'asset_source_override']);
+            if ($fresh === null || $fresh->promoted_asset_id !== null) {
+                throw new RuntimeException('import_row was promoted concurrently');
+            }
+            if (! in_array($fresh->validation_status, ['valid', 'warning'], true)) {
+                throw new RuntimeException('import_row is no longer promotable');
+            }
+            $override = $fresh->asset_source_override;
+
             // Tahap 2 — defence in depth behind the batch-level check in promoteBatch():
             // an unrecognised SUMBER value without an explicit correction is never
             // silently converted into a category.
-            if (self::isUnresolvedSource($stagedRow->asset_source_override, $parsed)) {
+            if (self::isUnresolvedSource($override, $parsed)) {
                 throw new RuntimeException('asset source unresolved: choose a source for this row in the import preview');
             }
 
@@ -349,7 +371,7 @@ final class AssetPromoter
                 'material' => $parsed['material'],
                 'purchase_date' => $parsed['purchase_date'],
                 'funding_source' => $parsed['funding_source'],
-                'asset_source' => self::effectiveSource($stagedRow->asset_source_override, $parsed),
+                'asset_source' => self::effectiveSource($override, $parsed), // locked, current value
                 'detail_type' => $parsed['detail_type'],
                 'capacity_note' => $parsed['capacity_note'],
                 'quantity' => 1,

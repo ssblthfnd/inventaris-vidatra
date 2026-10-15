@@ -105,6 +105,7 @@ const PROMOTION_ERRORS = [
     () => 'ruangan yang dipetakan sudah tidak aktif — aktifkan kembali ruangan tersebut, lalu promosikan lagi.',
   ],
   [/^import_row was promoted concurrently$/, () => 'baris ini sedang dipromosikan oleh proses lain. Muat ulang halaman.'],
+  [/^import_row is no longer promotable$/, () => 'status baris ini berubah dan tidak lagi dapat dipromosikan. Muat ulang halaman.'],
   [/^raw_payload has no "parsed" section$/, () => 'data staging baris ini tidak lengkap.'],
   [/^asset source unresolved/, () => 'nilai Sumber belum dipilih. Pilih sumber untuk baris ini di pratinjau impor.'],
   [/SQLSTATE/, () => 'data baris ini melanggar aturan penyimpanan aset.'],

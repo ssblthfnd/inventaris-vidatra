@@ -2,8 +2,9 @@
 
 namespace Tests\Feature\Database;
 
+use App\Models\Asset;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabaseState;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -14,11 +15,19 @@ use Tests\TestCase;
  * the isolated test database (`inventaris_vidatra_test`, enforced by
  * {@see TestCase::refreshApplication()}; never the dev or production DB).
  *
- * Deliberately NOT RefreshDatabase: migrations are DDL, which MySQL commits
- * implicitly, so they cannot run inside RefreshDatabase's per-test transaction.
- * Instead this class rebuilds the schema with `migrate:fresh` before and after
- * each test, and leaves RefreshDatabaseState marked as migrated so later
- * RefreshDatabase tests start from the same clean, fully-migrated schema.
+ * Deliberately NOT RefreshDatabase and NO `migrate:fresh`: migrations are DDL
+ * (implicitly committed by MySQL/MariaDB, so they cannot run inside a test
+ * transaction), and the schema is never wiped. Each test only:
+ *   - brings the schema up to date with `migrate` (non-destructive),
+ *   - rolls back exactly the two Tahap 2 migrations (`--step=2`) and re-applies
+ *     them, and
+ *   - inserts its own rows under dedicated master codes (`ZM`), which tearDown
+ *     deletes again and finishes with `migrate` so the schema is always left
+ *     fully migrated, even after a failure.
+ *
+ * Note: re-applying the asset migration backfills EVERY row in the `assets`
+ * table of the test database to `yayasan` — that is exactly the behaviour under
+ * test, and the test DB is the only database this ever runs against.
  */
 class Stage2AssetSourceMigrationTest extends TestCase
 {
@@ -28,16 +37,24 @@ class Stage2AssetSourceMigrationTest extends TestCase
         '2026_10_15_100001_add_asset_source_override_to_import_rows_table',
     ];
 
+    /** Dedicated master codes (letters, so they never collide with real or factory codes). */
+    private const LOC = 'ZM';
+
+    private const CAT = 'ZM';
+
+    private const SUB = '901';
+
     protected function setUp(): void
     {
         parent::setUp();
-        Artisan::call('migrate:fresh');
+        Artisan::call('migrate', ['--force' => true]);
+        $this->deleteOwnRows();
     }
 
     protected function tearDown(): void
     {
-        Artisan::call('migrate:fresh');
-        RefreshDatabaseState::$migrated = true;
+        Artisan::call('migrate', ['--force' => true]); // never leave the schema rolled back
+        $this->deleteOwnRows();
         parent::tearDown();
     }
 
@@ -48,98 +65,134 @@ class Stage2AssetSourceMigrationTest extends TestCase
         $this->assertSame(self::TAHAP2_MIGRATIONS, $latest);
     }
 
-    public function test_up_gives_every_existing_asset_including_trashed_belum_diberi_keterangan_and_keeps_funding_source(): void
+    public function test_up_sets_every_existing_asset_active_and_trashed_to_yayasan_and_changes_nothing_else(): void
     {
-        Artisan::call('migrate:rollback', ['--step' => 2]);
+        Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]);
         $this->assertFalse(Schema::hasColumn('assets', 'asset_source'));
         $this->assertFalse(Schema::hasColumn('import_rows', 'asset_source_override'));
 
         $this->seedLegacyRows();
-        $before = $this->legacySnapshot();
+        $before = $this->ownRowsSnapshot();
 
-        Artisan::call('migrate');
+        Artisan::call('migrate', ['--force' => true]);
 
         $this->assertTrue(Schema::hasColumn('assets', 'asset_source'));
-        $rows = DB::table('assets')->orderBy('id')->get(['id', 'asset_source', 'deleted_at']);
-        $this->assertCount(3, $rows);
+        $rows = $this->ownRows(['sequence_no', 'asset_source', 'deleted_at']);
+        $this->assertCount(4, $rows);
         foreach ($rows as $row) {
-            $this->assertSame('belum_diberi_keterangan', $row->asset_source, "asset {$row->id}");
+            $this->assertSame('yayasan', $row->asset_source, "asset {$row->sequence_no}");
         }
-        $this->assertNotNull($rows[2]->deleted_at, 'the trashed asset was included');
-        $this->assertSame(0, DB::table('assets')->where('asset_source', 'yayasan')->count());
+        $this->assertNotNull($rows->firstWhere('sequence_no', '9803')->deleted_at, 'the soft-deleted asset was included');
+        // not inferred from funding_source: "BOSDA 2019" / "Hibah" / NULL all became yayasan
+        $this->assertSame('yayasan', $rows->firstWhere('sequence_no', '9803')->asset_source);
 
-        // funding_source and the printed inventory code are untouched
-        $this->assertSame($before, $this->legacySnapshot());
+        // every row of the table, not only ours
+        $this->assertSame(0, DB::table('assets')->where('asset_source', '<>', 'yayasan')->count());
 
-        // new import correction columns exist, empty for existing staged rows
+        // funding_source, asset_code, updated_at and the other columns are untouched
+        $this->assertSame($before, $this->ownRowsSnapshot());
+
+        // the import correction columns exist, empty for existing staged rows
         $this->assertTrue(Schema::hasColumns('import_rows', ['asset_source_override', 'asset_source_resolved_by', 'asset_source_resolved_at']));
+        $this->assertSame(0, DB::table('import_rows')->whereNotNull('asset_source_override')->count());
     }
 
-    public function test_the_db_default_is_belum_diberi_keterangan_and_unknown_values_are_rejected(): void
+    public function test_assets_created_after_the_migration_without_a_source_get_belum_diberi_keterangan(): void
     {
         $this->seedMasterData();
-        DB::table('assets')->insert($this->assetRow('901', 'Dana BOS'));
 
-        $this->assertSame('belum_diberi_keterangan', DB::table('assets')->where('sequence_no', '901')->value('asset_source'));
+        // raw insert without asset_source -> column default
+        DB::table('assets')->insert($this->assetRow('9811', 'Dana BOS'));
+        $this->assertSame('belum_diberi_keterangan', DB::table('assets')->where('location_code', self::LOC)->where('sequence_no', '9811')->value('asset_source'));
 
+        // Eloquent create without asset_source -> model default, same value
+        $asset = Asset::query()->create([
+            'location_code' => self::LOC, 'category_code' => self::CAT, 'subcategory_code' => self::SUB,
+            'sequence_no' => '9812', 'asset_year' => 2024,
+        ]);
+        $this->assertSame('belum_diberi_keterangan', $asset->fresh()->asset_source->value);
+
+        // the ENUM still rejects anything outside the six values
         $this->expectException(QueryException::class);
-        DB::table('assets')->where('sequence_no', '901')->update(['asset_source' => 'apbd']);
+        DB::table('assets')->where('location_code', self::LOC)->where('sequence_no', '9811')->update(['asset_source' => 'apbd']);
     }
 
     public function test_down_drops_only_the_new_columns_and_keeps_funding_source_data(): void
     {
-        $this->seedLegacyRows();
-        DB::table('assets')->where('sequence_no', '801')->update(['asset_source' => 'bosda']);
-        $before = $this->legacySnapshot();
+        $this->seedLegacyRows(); // schema is migrated here, so these get the column default
+        DB::table('assets')->where('location_code', self::LOC)->where('sequence_no', '9801')->update(['asset_source' => 'bosda']);
+        $before = $this->ownRowsSnapshot();
 
-        Artisan::call('migrate:rollback', ['--step' => 2]);
+        Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]);
 
         $this->assertFalse(Schema::hasColumn('assets', 'asset_source'));
         $this->assertFalse(Schema::hasColumn('import_rows', 'asset_source_override'));
         $this->assertFalse(Schema::hasColumn('import_rows', 'asset_source_resolved_by'));
         $this->assertTrue(Schema::hasColumn('assets', 'funding_source'));
-        $this->assertSame($before, $this->legacySnapshot(), 'rollback never touches funding_source or asset_code');
+        $this->assertSame($before, $this->ownRowsSnapshot(), 'rollback never touches funding_source or asset_code');
 
-        // and up again restores the column (the chosen BOSDA is gone — documented rollback consequence)
-        Artisan::call('migrate');
-        $this->assertSame('belum_diberi_keterangan', DB::table('assets')->where('sequence_no', '801')->value('asset_source'));
+        // up again re-applies the backfill: the chosen BOSDA is gone (documented
+        // rollback consequence) and every then-existing asset is yayasan again
+        Artisan::call('migrate', ['--force' => true]);
+        $this->assertSame(['yayasan'], $this->ownRows(['asset_source'])->pluck('asset_source')->unique()->values()->all());
     }
 
     /* ------------------------------------------------------------------ fixtures */
 
     private function seedMasterData(): void
     {
-        DB::table('locations')->insertOrIgnore(['code' => '01', 'name' => 'YAYASAN', 'is_active' => 1]);
-        DB::table('categories')->insertOrIgnore(['code' => '02', 'name' => 'MEUBELAIR', 'is_active' => 1]);
-        DB::table('subcategories')->insertOrIgnore(['category_code' => '02', 'code' => '001', 'name' => 'MEJA', 'is_active' => 1]);
+        DB::table('locations')->insertOrIgnore(['code' => self::LOC, 'name' => 'Lokasi Uji Migrasi', 'is_active' => 1]);
+        DB::table('categories')->insertOrIgnore(['code' => self::CAT, 'name' => 'Kategori Uji Migrasi', 'is_active' => 1]);
+        DB::table('subcategories')->insertOrIgnore(['category_code' => self::CAT, 'code' => self::SUB, 'name' => 'Subkategori Uji Migrasi', 'is_active' => 1]);
     }
 
     /** @return array<string, mixed> */
     private function assetRow(string $seq, ?string $funding, bool $trashed = false): array
     {
         return [
-            'location_code' => '01', 'category_code' => '02', 'subcategory_code' => '001',
+            'location_code' => self::LOC, 'category_code' => self::CAT, 'subcategory_code' => self::SUB,
             'sequence_no' => $seq, 'asset_year' => 2020, 'quantity' => 1, 'is_written_off' => 0,
-            'funding_source' => $funding, 'created_at' => now(), 'updated_at' => now(),
-            'deleted_at' => $trashed ? now() : null,
+            'brand_model' => "Merek {$seq}", 'funding_source' => $funding,
+            'created_at' => '2025-01-02 03:04:05', 'updated_at' => '2025-01-02 03:04:05',
+            'deleted_at' => $trashed ? '2025-02-03 04:05:06' : null,
         ];
     }
 
-    /** Pre-Tahap-2 rows (no `asset_source` key at all), incl. a soft-deleted one. */
+    /** Pre-Tahap-2 style rows (no `asset_source` key), incl. a soft-deleted one. */
     private function seedLegacyRows(): void
     {
         $this->seedMasterData();
         DB::table('assets')->insert([
-            $this->assetRow('801', 'Yayasan'),
-            $this->assetRow('802', null),
-            $this->assetRow('803', '  BOSDA 2019  ', trashed: true),
+            $this->assetRow('9801', 'Yayasan'),
+            $this->assetRow('9802', null),
+            $this->assetRow('9803', '  BOSDA 2019  ', trashed: true),
+            $this->assetRow('9804', 'Hibah alumni'),
         ]);
     }
 
-    /** @return list<array<string, mixed>> */
-    private function legacySnapshot(): array
+    private function ownRows(array $columns): Collection
     {
-        return DB::table('assets')->orderBy('id')->get(['id', 'asset_code', 'funding_source', 'deleted_at'])
-            ->map(fn ($r) => (array) $r)->all();
+        return DB::table('assets')->where('location_code', self::LOC)->orderBy('sequence_no')->get($columns);
+    }
+
+    /**
+     * Everything about our rows except `asset_source` itself.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function ownRowsSnapshot(): array
+    {
+        return $this->ownRows([
+            'id', 'asset_code', 'sequence_no', 'brand_model', 'funding_source',
+            'is_written_off', 'created_at', 'updated_at', 'deleted_at',
+        ])->map(fn ($r) => (array) $r)->all();
+    }
+
+    private function deleteOwnRows(): void
+    {
+        DB::table('assets')->where('location_code', self::LOC)->delete();
+        DB::table('subcategories')->where('category_code', self::CAT)->delete();
+        DB::table('categories')->where('code', self::CAT)->delete();
+        DB::table('locations')->where('code', self::LOC)->delete();
     }
 }

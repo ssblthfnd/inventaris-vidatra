@@ -26,10 +26,16 @@ Aset boleh dicatat sebelum sumber pendanaannya diketahui. Pilih **Belum diberi
 keterangan** untuk kondisi tersebut, lalu ubah kemudian melalui **Edit Aset** atau
 **Edit Massal** setelah sumbernya diketahui.
 
-- Pilihan ini **tidak sama dengan Yayasan**. Sistem tidak pernah mengisi Yayasan secara otomatis.
-- Semua aset yang sudah tercatat sebelum fitur ini diterapkan (termasuk aset di
-  Sampah Aset) bersumber **Belum diberi keterangan**, bukan Yayasan. Lengkapi
-  sumbernya secara bertahap.
+- Pilihan ini **tidak sama dengan Yayasan**. Untuk aset baru, sistem tidak pernah
+  mengisi Yayasan secara otomatis.
+
+### Aset yang sudah tercatat sebelum fitur ini
+
+Semua aset yang sudah tercatat sebelum fitur ini diterapkan (termasuk aset di
+Sampah Aset) bersumber **Yayasan**, karena seluruh inventaris lama telah dikonfirmasi
+berasal dari Yayasan. Nilai ini ditetapkan sekali saat pembaruan sistem dan tidak
+diambil dari isi Keterangan Sumber. Jika ada aset lama yang ternyata bersumber lain,
+ubah melalui **Edit Aset** atau **Edit Massal**.
 
 ## 2. Sumber vs Keterangan Sumber
 

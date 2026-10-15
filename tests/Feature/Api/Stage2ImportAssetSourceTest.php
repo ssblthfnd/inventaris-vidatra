@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Api;
 
+use App\Enums\AssetSource;
 use App\Enums\UserRole;
 use App\Import\Excel\SheetScanner;
 use App\Import\ImportManager;
+use App\Import\SourceResolution\AssetSourceResolver;
 use App\Models\Asset;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
@@ -13,7 +15,9 @@ use App\Models\Room;
 use App\Models\User;
 use App\Services\Asset\AssetExportService;
 use App\Services\Import\ImportTemplateService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use RuntimeException;
@@ -390,5 +394,79 @@ class Stage2ImportAssetSourceTest extends TestCase
         $this->assertSame('bostk', $parsed['asset_source']);
         $this->assertSame('recognized', $parsed['asset_source_status']);
         $this->assertSame('bostk', $asset->fresh()->asset_source->value);
+    }
+
+    /* ================================================================== correction vs. promotion race */
+
+    /**
+     * Runs `$sideEffect` exactly once, right after AssetPromoter::promoteBatch()
+     * has read the batch's staged rows and before it promotes any of them — the
+     * window in which a concurrent source correction used to be ignored.
+     */
+    private function afterPromotionReadsRows(int $batchId, \Closure $sideEffect): void
+    {
+        $fired = false;
+        DB::listen(function (QueryExecuted $query) use (&$fired, $sideEffect): void {
+            if ($fired
+                || ! str_starts_with($query->sql, 'select * from `import_rows` where `import_batch_id` = ?')
+                || ! str_contains($query->sql, 'order by `row_number`')) {
+                return;
+            }
+            $fired = true;
+            $sideEffect();
+        });
+    }
+
+    public function test_promotion_uses_a_source_corrected_after_the_rows_were_read(): void
+    {
+        $batchId = $this->stage([
+            $this->validImportRowCells(['E' => '801', 'U' => 'BOSDA']),
+            $this->validImportRowCells(['E' => '802']), // blank -> belum unless corrected
+        ]);
+        $first = $this->rowOf($batchId);
+        $second = $this->rowOf($batchId, 1);
+        $actor = $this->operator();
+
+        $this->afterPromotionReadsRows($batchId, function () use ($batchId, $first, $second, $actor): void {
+            $resolver = app(AssetSourceResolver::class);
+            $batch = ImportBatch::findOrFail($batchId);
+            $resolver->resolve($batch, [$first->id], AssetSource::Bosp, $actor);
+            $resolver->resolve($batch, [$second->id], AssetSource::Bostk, $actor);
+        });
+
+        $result = app(ImportManager::class)->promoteBatch($batchId, $actor);
+
+        $this->assertSame(2, $result['promoted']);
+        $this->assertSame('bosp', $this->sourceOfAsset('801'), 'the later correction wins, not the stale BOSDA');
+        $this->assertSame('bostk', $this->sourceOfAsset('802'));
+
+        // staged row and created asset agree, row by row
+        foreach ([$first, $second] as $row) {
+            $fresh = $row->fresh();
+            $this->assertSame(
+                $fresh->asset_source_override->value,
+                Asset::findOrFail($fresh->promoted_asset_id)->asset_source->value,
+            );
+        }
+    }
+
+    public function test_a_row_promoted_after_the_rows_were_read_is_not_promoted_again(): void
+    {
+        $batchId = $this->stage([$this->validImportRowCells(['E' => '811', 'U' => 'Yayasan'])]);
+        $row = $this->rowOf($batchId);
+        $other = $this->existingAsset('899', 2020, [], '01', '02', '001');
+
+        // simulates a concurrent promotion that claimed the row in between
+        $this->afterPromotionReadsRows($batchId, function () use ($row, $other): void {
+            DB::table('import_rows')->where('id', $row->id)->update(['promoted_asset_id' => $other->id, 'promoted_at' => now()]);
+        });
+
+        $result = app(ImportManager::class)->promoteBatch($batchId);
+
+        $this->assertSame(0, $result['promoted']);
+        $this->assertSame(1, $result['failed']);
+        $this->assertSame('import_row was promoted concurrently', $result['errors'][0]['message']);
+        $this->assertSame(0, Asset::query()->where('sequence_no', '811')->count(), 'no second asset');
+        $this->assertSame($other->id, $row->fresh()->promoted_asset_id);
     }
 }
