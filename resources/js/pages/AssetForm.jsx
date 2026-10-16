@@ -422,6 +422,18 @@ export default function AssetForm({ mode }) {
             Nomor urut {original.sequence_no} · Tahun {original.asset_year} · Kode aset mengikuti
             klasifikasi dan tidak diubah manual.
           </p>
+          {/* Foto Aset is managed on the detail page only — no upload on this form. */}
+          <p className="mt-2 text-xs text-gray-500">
+            Foto aset dikelola di{' '}
+            <Link
+              to={detailTo}
+              state={{ from: fromQuery }}
+              className="font-medium text-gray-700 underline underline-offset-2 hover:text-gray-900"
+            >
+              halaman detail aset
+            </Link>
+            . Simpan perubahan di form ini terlebih dahulu.
+          </p>
         </div>
       )}
 

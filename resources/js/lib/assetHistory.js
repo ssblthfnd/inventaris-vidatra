@@ -26,7 +26,17 @@ export const EVENT_LABELS = {
   BATCH_DELETE: 'Penghapusan massal',
   REVERT: 'Revert',
   BATCH_REVERT: 'Revert massal',
+  // Foto Aset — not an asset-field change; never revertable (deleted photos are gone).
+  PHOTO_ADDED: 'Foto ditambahkan',
+  PHOTO_DELETED: 'Foto dihapus permanen',
 };
+
+/** Photo events carry identical before/after snapshots; their detail is the
+ * server-written summary in `mutation_note` (slot, dimensions, size — never a
+ * file path or image data). */
+export function isPhotoEvent(eventType) {
+  return eventType === 'PHOTO_ADDED' || eventType === 'PHOTO_DELETED';
+}
 
 /** Legacy `mutation_type` fallback, for the rare row with no `event_type` at all. */
 const LEGACY_TYPE_LABELS = {

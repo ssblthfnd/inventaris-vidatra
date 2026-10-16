@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AssetExportController;
 use App\Http\Controllers\Api\AssetLabelController;
 use App\Http\Controllers\Api\AssetMutationController;
+use App\Http\Controllers\Api\AssetPhotoController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\DashboardController;
@@ -67,6 +68,21 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
             ->withTrashed()
             ->whereNumber('asset');
 
+        // Foto Aset — read side. ->withTrashed() so AssetPolicy::viewDetail (the
+        // detail page's own rule: trashed needs assets.restore + location) decides,
+        // answered with 404 like GET assets/{asset}. scopeBindings(): {photo} must
+        // belong to {asset}. The image is served only through this endpoint —
+        // never a public URL or symlink.
+        Route::get('assets/{asset}/photos', [AssetPhotoController::class, 'index'])
+            ->name('api.assets.photos.index')
+            ->withTrashed()
+            ->whereNumber('asset');
+        Route::get('assets/{asset}/photos/{photo}', [AssetPhotoController::class, 'show'])
+            ->name('api.assets.photos.show')
+            ->withTrashed()
+            ->scopeBindings()
+            ->whereNumber(['asset', 'photo']);
+
         Route::get('locations', [LocationController::class, 'index'])->name('api.locations.index');
         Route::get('locations/{location}', [LocationController::class, 'show'])->name('api.locations.show');
 
@@ -125,6 +141,19 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
         // genuinely-missing numeric id exactly as before — this only rejects
         // non-numeric input earlier and more consistently.
         Route::match(['put', 'patch'], 'assets/{asset}', [AssetController::class, 'update'])->name('api.assets.update')->whereNumber('asset');
+
+        // Foto Aset — write side, same ability as editing the asset; WHERE is
+        // AssetPolicy::update in the controller (403 outside the actor's location).
+        // No ->withTrashed(): a soft-deleted asset is a 404 here. Upload is
+        // throttled per user (AppServiceProvider::configureAssetPhotoRateLimiter()).
+        Route::post('assets/{asset}/photos', [AssetPhotoController::class, 'store'])
+            ->name('api.assets.photos.store')
+            ->middleware('throttle:asset-photo-uploads')
+            ->whereNumber('asset');
+        Route::delete('assets/{asset}/photos/{photo}', [AssetPhotoController::class, 'destroy'])
+            ->name('api.assets.photos.destroy')
+            ->scopeBindings()
+            ->whereNumber(['asset', 'photo']);
     });
 
     Route::middleware('can:assets.batchEdit')->group(function () {

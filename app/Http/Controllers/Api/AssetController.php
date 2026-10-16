@@ -104,20 +104,18 @@ class AssetController extends ApiController
         // restore endpoint itself admits both); WHERE is `AssetPolicy::restore`
         // (LocationScope), so a unit_admin never sees another unit's trashed
         // asset — 404 there too, never 403, for the same don't-confirm-existence
-        // reason as the active-asset check below.
-        if ($asset->trashed()) {
-            $user = $request->user();
-            if ($user === null || $user->cannot('assets.restore') || $user->cannot('restore', $asset)) {
-                abort(404);
-            }
-        }
-
+        // reason as the active-asset check.
+        //
         // Stage 6.9 R4 — a unit_admin requesting an asset outside their scope
-        // gets the same plain 404 as the trashed-asset case above (AssetPolicy::view,
+        // gets the same plain 404 as the trashed-asset case (AssetPolicy::view,
         // via LocationScope), never a 403 — this endpoint already has a
         // precedent of using 404 to hide something a caller isn't allowed to
         // see, and a 403 would confirm the asset exists in another unit.
-        if ($request->user()?->cannot('view', $asset)) {
+        //
+        // Foto Aset — both rules now live in AssetPolicy::viewDetail (unchanged),
+        // shared with the photo endpoints (AssetPhotoController).
+        $user = $request->user();
+        if ($user === null || $user->cannot('viewDetail', $asset)) {
             abort(404);
         }
 

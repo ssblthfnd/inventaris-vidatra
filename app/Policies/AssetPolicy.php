@@ -37,6 +37,29 @@ class AssetPolicy
     }
 
     /**
+     * Who may open ONE asset's detail — moved here unchanged from
+     * `AssetController::show()` so the detail page and the photo endpoints
+     * share exactly one rule:
+     *
+     *  - an active asset: {@see self::view()} (LocationScope);
+     *  - a soft-deleted asset: additionally the `assets.restore` ability AND
+     *    {@see self::restore()} for its location (Tahap 5.8.5 / Stage 6.9 R9.3)
+     *    — a viewer, or a unit_admin of another unit, may not see it.
+     *
+     * Callers answer a denial with 404, never 403 (don't confirm the asset
+     * exists). This answers WHERE plus the trashed-asset WHAT only; the route
+     * gate (`can:viewer`) still runs first.
+     */
+    public function viewDetail(User $user, Asset $asset): bool
+    {
+        if ($asset->trashed() && ($user->cannot('assets.restore') || ! $this->restore($user, $asset))) {
+            return false;
+        }
+
+        return $this->view($user, $asset);
+    }
+
+    /**
      * Stage 6.9 R5 — no existing `Asset` instance to check yet (nothing has
      * been created), so this takes the raw `location_code` the request wants
      * to create in. Called as `$user->can('create', [Asset::class, $locationCode])`

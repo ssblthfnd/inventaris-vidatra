@@ -37,6 +37,16 @@ enum MutationEventType: string
     case Revert = 'REVERT';
     case BatchRevert = 'BATCH_REVERT';
 
+    /**
+     * Foto Aset — a photo was added to / permanently deleted from the asset.
+     * Not an asset-field change: both snapshots are the same asset state and
+     * `notes` carries a safe metadata summary (slot, dimensions, size — never
+     * image bytes or the private file path). Never revertable: a deleted photo
+     * file is gone, and an added one is removed through its own delete action.
+     */
+    case PhotoAdded = 'PHOTO_ADDED';
+    case PhotoDeleted = 'PHOTO_DELETED';
+
     public function label(): string
     {
         return match ($this) {
@@ -51,6 +61,8 @@ enum MutationEventType: string
             self::BatchDelete => 'Hapus Massal',
             self::Revert => 'Revert',
             self::BatchRevert => 'Revert Massal',
+            self::PhotoAdded => 'Foto Ditambahkan',
+            self::PhotoDeleted => 'Foto Dihapus',
         };
     }
 
@@ -63,13 +75,16 @@ enum MutationEventType: string
      * are excluded so a revert can never itself be reverted (no redo chain).
      * Every other event type has full before/after snapshots (Tahap 5.8.8) and
      * a well-defined inverse operation, so all of them are revertable.
+     * Photo events are excluded too: they change no asset field, and a deleted
+     * photo file cannot be brought back.
      */
     public function isRevertable(): bool
     {
         return match ($this) {
             self::Edit, self::MoveRoom, self::WriteOff, self::UnwriteOff,
             self::SoftDelete, self::Restore, self::BatchEdit, self::BatchDelete => true,
-            self::Create, self::Revert, self::BatchRevert => false,
+            self::Create, self::Revert, self::BatchRevert,
+            self::PhotoAdded, self::PhotoDeleted => false,
         };
     }
 }

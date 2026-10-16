@@ -19,7 +19,8 @@ use Tests\TestCase;
  * (implicitly committed by MySQL/MariaDB, so they cannot run inside a test
  * transaction), and the schema is never wiped. Each test only:
  *   - brings the schema up to date with `migrate` (non-destructive),
- *   - rolls back exactly the two Tahap 2 migrations (`--step=2`) and re-applies
+ *   - rolls back the two Tahap 2 migrations (plus any migration applied after
+ *     them, e.g. Foto Aset's — see {@see self::rollbackTahap2()}) and re-applies
  *     them, and
  *   - inserts its own rows under dedicated master codes (`ZM`), which tearDown
  *     deletes again and finishes with `migrate` so the schema is always left
@@ -31,7 +32,7 @@ use Tests\TestCase;
  */
 class Stage2AssetSourceMigrationTest extends TestCase
 {
-    /** The two Tahap 2 migrations are the newest files, so `--step=2` targets exactly them. */
+    /** The two Tahap 2 migrations, applied consecutively (newer migrations may follow them). */
     private const TAHAP2_MIGRATIONS = [
         '2026_10_15_100000_add_asset_source_to_assets_table',
         '2026_10_15_100001_add_asset_source_override_to_import_rows_table',
@@ -58,16 +59,30 @@ class Stage2AssetSourceMigrationTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_the_tahap2_migrations_are_the_latest_ones(): void
+    public function test_the_tahap2_migrations_are_applied_consecutively(): void
     {
-        $latest = DB::table('migrations')->orderByDesc('id')->limit(2)->pluck('migration')->sort()->values()->all();
+        $rows = DB::table('migrations')->whereIn('migration', self::TAHAP2_MIGRATIONS)->orderBy('id')->get(['id', 'migration']);
 
-        $this->assertSame(self::TAHAP2_MIGRATIONS, $latest);
+        $this->assertSame(self::TAHAP2_MIGRATIONS, $rows->pluck('migration')->all());
+        $this->assertSame(0, DB::table('migrations')->whereBetween('id', [$rows[0]->id + 1, $rows[1]->id - 1])->count());
+    }
+
+    /**
+     * Rolls back the Tahap 2 migrations together with every migration applied
+     * after them (a rollback is newest-first, so those must go first); the
+     * following `migrate` re-applies all of them.
+     */
+    private function rollbackTahap2(): void
+    {
+        $firstId = DB::table('migrations')->where('migration', self::TAHAP2_MIGRATIONS[0])->value('id');
+        $steps = DB::table('migrations')->where('id', '>=', $firstId)->count();
+
+        Artisan::call('migrate:rollback', ['--step' => $steps, '--force' => true]);
     }
 
     public function test_up_sets_every_existing_asset_active_and_trashed_to_yayasan_and_changes_nothing_else(): void
     {
-        Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]);
+        $this->rollbackTahap2();
         $this->assertFalse(Schema::hasColumn('assets', 'asset_source'));
         $this->assertFalse(Schema::hasColumn('import_rows', 'asset_source_override'));
 
@@ -123,7 +138,7 @@ class Stage2AssetSourceMigrationTest extends TestCase
         DB::table('assets')->where('location_code', self::LOC)->where('sequence_no', '9801')->update(['asset_source' => 'bosda']);
         $before = $this->ownRowsSnapshot();
 
-        Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]);
+        $this->rollbackTahap2();
 
         $this->assertFalse(Schema::hasColumn('assets', 'asset_source'));
         $this->assertFalse(Schema::hasColumn('import_rows', 'asset_source_override'));

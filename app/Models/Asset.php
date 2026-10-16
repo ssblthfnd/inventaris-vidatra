@@ -133,6 +133,18 @@ class Asset extends Model
     }
 
     /**
+     * Foto Aset — 0..3 photos, ordered by slot. Kept when the asset is
+     * soft-deleted or written off (they only become visible again together
+     * with the asset, through AssetPolicy::viewDetail).
+     *
+     * @return HasMany<AssetPhoto, $this>
+     */
+    public function photos(): HasMany
+    {
+        return $this->hasMany(AssetPhoto::class, 'asset_id')->orderBy('slot');
+    }
+
+    /**
      * The subcategory this asset belongs to.
      *
      * NOT a `belongsTo` relation: the DB FK is composite

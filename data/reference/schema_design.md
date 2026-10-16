@@ -339,7 +339,7 @@ walau ruangan dinonaktifkan / user dihapus (P8).
 | `id` | `BIGINT UNSIGNED` | NN | auto_increment | **PK**. |
 | `asset_id` | `BIGINT UNSIGNED` | NN | — | **FK → `assets.id`** `ON DELETE RESTRICT`. Histori tidak boleh yatim. |
 | `type` | `ENUM('pindah_ruangan','perbaikan','penghapusan','perubahan_kondisi','lainnya')` | **NULL** (sejak 5.8.8; sebelumnya NN) | `NULL` | Penanda LEGACY pindah-ruangan saja — hanya pernah diisi `'pindah_ruangan'`. Tidak pernah diperluas ke event baru (lihat `event_type`). |
-| `event_type` | `ENUM('CREATE','EDIT','MOVE_ROOM','WRITE_OFF','UNWRITE_OFF','SOFT_DELETE','RESTORE','BATCH_EDIT','BATCH_DELETE')` | NULL | `NULL` | **(Tahap 5.8.8)** Klasifikasi generik — diisi untuk SETIAP baris yang ditulis aplikasi, termasuk pindah ruangan (`MOVE_ROOM`). NULL hanya pada baris legacy/fixture yang ditulis manual di luar recorder. |
+| `event_type` | `ENUM('CREATE','EDIT','MOVE_ROOM','WRITE_OFF','UNWRITE_OFF','SOFT_DELETE','RESTORE','BATCH_EDIT','BATCH_DELETE','REVERT','BATCH_REVERT','PHOTO_ADDED','PHOTO_DELETED')` | NULL | `NULL` | **(Tahap 5.8.8)** Klasifikasi generik — diisi untuk SETIAP baris yang ditulis aplikasi, termasuk pindah ruangan (`MOVE_ROOM`). NULL hanya pada baris legacy/fixture yang ditulis manual di luar recorder. `REVERT`/`BATCH_REVERT` sejak Tahap 6.5; **`PHOTO_ADDED`/`PHOTO_DELETED` sejak Foto Aset** (§2.11). |
 | `mutation_date` | `DATE` | NN | — | Tanggal kejadian fisik. |
 | `from_location_code` | `CHAR(2)` | NULL | `NULL` | **FK → `locations.code`** `ON DELETE RESTRICT`. |
 | `to_location_code` | `CHAR(2)` | NULL | `NULL` | **FK → `locations.code`** `ON DELETE RESTRICT`. |
@@ -401,6 +401,10 @@ walau ruangan dinonaktifkan / user dihapus (P8).
     tidak membuat baris — dicegah lewat perbandingan snapshot, bukan dirty-tracking
     Eloquent mentah (`updated_by` selalu berubah saat `save()`).
   - **Import awal tidak** membuat mutation_logs (keadaan awal, bukan mutasi).
+  - **(Foto Aset)** Tambah / hapus foto → `event_type='PHOTO_ADDED'` / `'PHOTO_DELETED'`,
+    `type=NULL`, `before_snapshot` = `after_snapshot` (keadaan aset yang sama — foto bukan
+    field aset), `notes` = ringkasan aman (mis. *Foto slot 2 ditambahkan (1600×1200, 312 KB)*)
+    — **tidak pernah** berisi isi gambar, base64, atau path file privat. Tidak dapat di-revert.
 
 ---
 
@@ -513,6 +517,33 @@ dipromosikan ke `assets`. Tempat parkir baris "belum siap" (ruangan tak dikenal,
 - **IX:** `ix_import_rows_status (validation_status)`, `ix_import_rows_matched_room (matched_room_id)`, `ix_import_rows_promoted (promoted_asset_id)`
 - **Relasi:** `import_batches 1─N import_rows`; `import_rows 0/1 assets` (promosi)
 
+### 2.11 `asset_photos`  *(Foto Aset)*
+
+**Tujuan:** metadata 0–3 foto per aset. File JPEG-nya disimpan di disk privat
+`storage/app/private/asset-photos/{asset_id}/{uuid}.jpg` — **isi gambar tidak pernah disimpan di
+database**. Panduan: `docs/panduan_foto_aset.md`; API: `docs/api_convention.md` §18.
+
+| kolom | tipe MySQL | NN/NULL | default | keterangan |
+|---|---|---|---|---|
+| `id` | `BIGINT UNSIGNED` | NN | auto_increment | **PK**. |
+| `asset_id` | `BIGINT UNSIGNED` | NN | — | **FK → `assets.id`** `ON DELETE RESTRICT` (tanpa cascade: aset hanya di-soft-delete; file harus dibersihkan secara sengaja). |
+| `slot` | `TINYINT UNSIGNED` | NN | — | Posisi 1–3. `CHECK (slot BETWEEN 1 AND 3)`. |
+| `path` | `VARCHAR(255)` | NN | — | Path RELATIF di disk privat. **UNIQUE**. Tidak pernah diekspos API. |
+| `mime` | `VARCHAR(32)` | NN | `'image/jpeg'` | Selalu `image/jpeg` (setiap unggahan di-encode ulang). |
+| `size_bytes` | `INT UNSIGNED` | NN | — | Ukuran file tersimpan. |
+| `width` / `height` | `SMALLINT UNSIGNED` | NN | — | Dimensi tersimpan (≤ 1600). |
+| `uploaded_by` | `BIGINT UNSIGNED` | NULL | `NULL` | **FK → `users.id`** `ON DELETE SET NULL`. |
+| `created_at` / `updated_at` | `TIMESTAMP` | NULL | `NULL` | Baris tidak pernah diubah; ganti foto = hapus + unggah baru. |
+
+- **UNIQUE:** `uq_asset_photos_asset_slot (asset_id, slot)`, `uq_asset_photos_path (path)`.
+- **IX:** `ix_asset_photos_uploaded_by (uploaded_by)`.
+- Charset/collation eksplisit `utf8mb4` / `utf8mb4_unicode_ci` (identik di MySQL 8.4 dan MariaDB 10.11).
+- Batas 3 foto ditegakkan aplikasi di bawah lock baris aset (`SELECT … FOR UPDATE`), dengan
+  UNIQUE + CHECK di atas sebagai pengaman di tingkat database.
+- Foto tetap ada saat aset di-soft-delete atau di-write-off. Hapus foto = permanen (baris dan file).
+- Rollback migration menolak berjalan selama tabel masih berisi baris.
+- **Relasi:** `assets 1─N(0..3) asset_photos`; `users 1─N asset_photos` (pengunggah).
+
 ---
 
 ## 3. Relationship & Foreign Key Rules
@@ -541,6 +572,8 @@ dipromosikan ke `assets`. Tempat parkir baris "belum siap" (ruangan tak dikenal,
 | `import_batches` | `uploaded_by` | `users.id` | RESTRICT | SET NULL | — |
 | `import_rows` | `import_batch_id` | `import_batches.id` | RESTRICT | CASCADE | Baris ikut terhapus bila batch dibuang **sebelum** promosi. Setelah promosi, `assets.import_row_id` jadi NULL (SET NULL), aset tetap ada. |
 | `import_rows` | `matched_room_id` / `duplicate_of_asset_id` / `promoted_asset_id` | resp. | RESTRICT | SET NULL | Referensi lunak. |
+| `asset_photos` | `asset_id` | `assets.id` | RESTRICT | RESTRICT | **(Foto Aset)** Tanpa cascade — file foto di disk privat tidak boleh yatim diam-diam. |
+| `asset_photos` | `uploaded_by` | `users.id` | RESTRICT | SET NULL | **(Foto Aset)** Foto tetap ada walau pengunggah dihapus. |
 
 **Aturan umum:** tidak ada `ON UPDATE CASCADE` / `ON DELETE CASCADE` untuk kode master
 (`locations.code`, `categories.code`, `subcategories.code`) — kode **immutable** (P1, P5, §13);
@@ -1115,6 +1148,7 @@ mutation_logs (to_location_code, to_room_id)      ──FK──▶ rooms (locat
 | 8 | `users` | `id` (+U `email`) | Akun + `role` ENUM (`admin`/`operator`/`viewer`) + `is_active`. |
 | 9 | `import_batches` | `id` | 1 baris = 1 proses import 1 file/sheet = 1 kategori aset. Status + ringkasan validasi/promosi. |
 | 10 | `import_rows` | `id` (+U `batch_id,row_number`) | Baris Excel mentah (`raw_payload JSON`) + hasil parse + status validasi. Staging sebelum promosi ke `assets`. `duplicate_of_asset_id` (gagal) vs `promoted_asset_id` (sukses) terpisah. |
+| 11 | `asset_photos` | `id` (+U `asset_id,slot`; +U `path`) | **(Foto Aset)** Metadata 0–3 foto per aset; file JPEG di disk privat (`storage/app/private/asset-photos`), tidak di database. FK aset RESTRICT, pengunggah SET NULL. |
 
 **Non-domain (bawaan Laravel/starter, di luar scope desain ini):** `password_reset_tokens`,
 `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs`, `personal_access_tokens`.

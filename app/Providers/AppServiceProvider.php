@@ -33,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->configureLoginRateLimiter();
         $this->configureQrRedirectRateLimiter();
+        $this->configureAssetPhotoRateLimiter();
     }
 
     /**
@@ -82,6 +83,21 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('qr-redirect', function (Request $request) {
             return Limit::perMinute(60)->by('qr-redirect:ip:'.(string) $request->ip());
+        });
+    }
+
+    /**
+     * Foto Aset — `POST /api/assets/{asset}/photos` is limited per USER
+     * (`inventory.photos.upload_per_minute`, 30): each upload is decoded and
+     * re-encoded server-side, so this bounds the CPU/memory one account can
+     * spend. The route is always authenticated; the IP key is only a fallback.
+     */
+    private function configureAssetPhotoRateLimiter(): void
+    {
+        RateLimiter::for('asset-photo-uploads', function (Request $request) {
+            $key = $request->user() !== null ? 'user:'.$request->user()->getAuthIdentifier() : 'ip:'.(string) $request->ip();
+
+            return Limit::perMinute((int) config('inventory.photos.upload_per_minute', 30))->by('asset-photo-upload:'.$key);
         });
     }
 }

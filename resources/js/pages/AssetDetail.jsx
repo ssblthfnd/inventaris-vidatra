@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import AssetHistorySection from '../components/asset-detail/AssetHistorySection';
+import AssetPhotosSection from '../components/asset-detail/AssetPhotosSection';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import PrintLabelMenu from '../components/PrintLabelMenu';
 import { api, ApiError } from '../lib/api';
@@ -168,7 +169,7 @@ export default function AssetDetail() {
   const [attempt, setAttempt] = useState(0);
   const [flash, setFlash] = useState(
     location.state?.created
-      ? 'Aset berhasil ditambahkan.'
+      ? 'Aset berhasil ditambahkan. Anda dapat menambahkan foto aset di bagian Foto Aset di bawah.'
       : location.state?.updated
         ? 'Perubahan aset berhasil disimpan.'
         : '',
@@ -564,6 +565,14 @@ export default function AssetDetail() {
           </div>
         )}
       </div>
+
+      {/* Foto Aset — add/view/delete lives here only (never on the create/edit form). */}
+      <AssetPhotosSection
+        assetId={asset.id}
+        canManage={can('assets.edit')}
+        isTrashed={isTrashed}
+        onChanged={() => setHistoryRefreshKey((n) => n + 1)}
+      />
 
       <AssetHistorySection
         assetId={asset.id}
