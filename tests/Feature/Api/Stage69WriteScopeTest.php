@@ -99,6 +99,7 @@ class Stage69WriteScopeTest extends TestCase
             'subcategory_code' => $subcategoryCode,
             'asset_year' => 2025,
             'condition' => 'baik',
+            'asset_source' => 'yayasan', // Tahap 2 — required on create
         ], $overrides);
     }
 

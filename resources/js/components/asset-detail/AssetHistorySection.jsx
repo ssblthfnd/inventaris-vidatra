@@ -9,6 +9,7 @@ import {
   formatDateTime,
   getAssetMutations,
   getEventSnapshots,
+  isPhotoEvent,
   statusTransition,
 } from '../../lib/assetHistory';
 
@@ -80,12 +81,14 @@ function historyErrorMessage(e) {
 function HistoryEventCard({ event, canRevert, onRevertClick }) {
   const label = eventLabel(event);
   const isCreate = event.event_type === 'CREATE';
+  const isPhoto = isPhotoEvent(event.event_type);
   const { before, after } = getEventSnapshots(event);
-  const changes = isCreate ? [] : diffSnapshots(before, after);
+  const changes = isCreate || isPhoto ? [] : diffSnapshots(before, after);
   const summary = isCreate ? createSummary(after) : [];
   const status = statusTransition(event.event_type);
   const isBatch = Boolean(event.batch_operation_id);
-  const nothingToShow = !status && changes.length === 0 && summary.length === 0;
+  const photoNote = isPhoto ? event.mutation_note : null;
+  const nothingToShow = !status && !photoNote && changes.length === 0 && summary.length === 0;
 
   return (
     <li className="relative rounded-xl border border-gray-200 bg-white p-4 pl-6">
@@ -129,6 +132,7 @@ function HistoryEventCard({ event, canRevert, onRevertClick }) {
             {status.before} → {status.after}
           </ChangeRow>
         )}
+        {photoNote && <ChangeRow label="Foto">{photoNote}</ChangeRow>}
         {summary.map((row) => (
           <ChangeRow key={row.field} label={row.label}>
             {row.value}

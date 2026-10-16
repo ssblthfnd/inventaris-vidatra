@@ -24,9 +24,19 @@ class ImportBatchResource extends JsonResource
 {
     private ?int $roomlessPendingCount = null;
 
+    private ?int $unresolvedSourcePendingCount = null;
+
     public function withRoomlessPendingCount(int $count): static
     {
         $this->roomlessPendingCount = $count;
+
+        return $this;
+    }
+
+    /** Tahap 2 — {@see AssetPromoter::unresolvedSourcePendingCount()}; same "single batch only" rule as above. */
+    public function withUnresolvedSourcePendingCount(int $count): static
+    {
+        $this->unresolvedSourcePendingCount = $count;
 
         return $this;
     }
@@ -62,6 +72,7 @@ class ImportBatchResource extends JsonResource
                 : null,
             'created_at' => $batch->created_at?->toIso8601String(),
             'roomless_pending_count' => $this->when($this->roomlessPendingCount !== null, fn () => $this->roomlessPendingCount),
+            'unresolved_source_pending_count' => $this->when($this->unresolvedSourcePendingCount !== null, fn () => $this->unresolvedSourcePendingCount),
         ];
     }
 }

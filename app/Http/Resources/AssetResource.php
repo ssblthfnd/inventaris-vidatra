@@ -64,6 +64,7 @@ class AssetResource extends JsonResource
             'material' => $asset->material,
             'purchase_date' => $asset->purchase_date?->toDateString(),
             'funding_source' => $asset->funding_source,
+            'asset_source' => $asset->asset_source?->value,
             'detail_type' => $asset->detail_type,
             'capacity_note' => $asset->capacity_note,
             'quantity' => $asset->quantity,

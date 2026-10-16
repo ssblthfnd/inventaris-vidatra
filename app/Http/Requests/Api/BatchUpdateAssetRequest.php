@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api;
 
 use App\Enums\AssetCondition;
+use App\Enums\AssetSource;
 use App\Services\Asset\AssetWriteService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -11,8 +12,10 @@ use Illuminate\Validation\Rule;
  * `PATCH /api/assets/batch` (Tahap 5.8.6) — batch-edit the safe descriptive fields
  * of many assets in one atomic request.
  *
- * Only three fields may ever be batch-edited: `room_id`, `condition`, `notes`.
- * Everything else (classification, identity, lifecycle, audit columns) is
+ * Only four fields may ever be batch-edited: `room_id`, `condition`, `notes`,
+ * and (Tahap 2) `asset_source`. `asset_source` is applied ONLY when the request
+ * carries it — omitting it leaves every selected asset's source untouched — and,
+ * unlike the other three, it can never be set to NULL. Everything else (classification, identity, lifecycle, audit columns) is
  * deliberately out of scope — see {@see AssetWriteService::batchUpdate()}.
  *
  * Null semantics mirror {@see UpdateAssetRequest}: a `sometimes` + `nullable` pair
@@ -29,11 +32,21 @@ class BatchUpdateAssetRequest extends FormRequest
 {
     public const MAX_ASSETS = 1000;
 
-    private const ALLOWED_CHANGE_KEYS = ['room_id', 'condition', 'notes'];
+    private const ALLOWED_CHANGE_KEYS = ['room_id', 'condition', 'notes', 'asset_source'];
 
     public function authorize(): bool
     {
         return true; // route middleware: auth:sanctum + auth.active + can:assets.batchEdit
+    }
+
+    /** Tahap 2 — normalise `changes.asset_source` like StoreAssetRequest does. */
+    protected function prepareForValidation(): void
+    {
+        $changes = $this->input('changes');
+        if (is_array($changes) && array_key_exists('asset_source', $changes)) {
+            $changes['asset_source'] = AssetSource::canonicalOrOriginal($changes['asset_source']);
+            $this->merge(['changes' => $changes]);
+        }
     }
 
     /**
@@ -55,6 +68,7 @@ class BatchUpdateAssetRequest extends FormRequest
             ],
             'changes.condition' => ['sometimes', 'nullable', Rule::enum(AssetCondition::class)],
             'changes.notes' => ['sometimes', 'nullable', 'string'],
+            'changes.asset_source' => ['sometimes', 'required', Rule::enum(AssetSource::class)],
         ];
     }
 
@@ -75,11 +89,12 @@ class BatchUpdateAssetRequest extends FormRequest
             'changes.array' => 'Format changes tidak valid.',
             'changes.min' => 'Pilih minimal satu field yang ingin diubah.',
             'changes.room_id.exists' => 'Ruangan tidak valid atau tidak aktif.',
+            'changes.asset_source.required' => 'Sumber aset tidak boleh dikosongkan.',
         ];
     }
 
     /**
-     * `changes` accepts ONLY `room_id` / `condition` / `notes` — everything else
+     * `changes` accepts ONLY `room_id` / `condition` / `notes` / `asset_source` — everything else
      * (including every field that has its own dedicated endpoint, like
      * `is_written_off`) is rejected outright rather than silently ignored.
      */
@@ -110,7 +125,7 @@ class BatchUpdateAssetRequest extends FormRequest
      * the service, or "don't touch this field" would be indistinguishable from
      * "set it to whatever validated() defaults to".
      *
-     * @return array{room_id?: ?int, condition?: ?string, notes?: ?string}
+     * @return array{room_id?: ?int, condition?: ?string, notes?: ?string, asset_source?: string}
      */
     public function changes(): array
     {

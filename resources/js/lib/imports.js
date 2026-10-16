@@ -15,6 +15,8 @@ export const IMPORT_STATUS_OPTIONS = [
   { value: 'warning', label: 'Warning' },
   { value: 'error', label: 'Error' },
   { value: 'duplicate', label: 'Duplikat' },
+  // Tahap 2 — unrecognised SUMBER still to be chosen (blocks promotion)
+  { value: 'source_unresolved', label: 'Sumber belum dipilih' },
 ];
 
 /**
@@ -153,5 +155,17 @@ export function resolveRoomMapping(batchId, { locationCode, rawValue, roomId, sa
     raw_value: rawValue,
     room_id: roomId,
     save_as_alias: saveAsAlias,
+  });
+}
+
+/**
+ * Tahap 2 — Sumber Aset: sets the asset source of staged, not-yet-promoted rows
+ * from the import preview (e.g. a SUMBER value the importer did not recognise).
+ * Stored on the rows server-side and used by the next promotion.
+ */
+export function resolveImportAssetSource(batchId, { rowIds, assetSource }) {
+  return api.post(`/api/imports/${batchId}/asset-sources/resolve`, {
+    row_ids: rowIds,
+    asset_source: assetSource,
   });
 }

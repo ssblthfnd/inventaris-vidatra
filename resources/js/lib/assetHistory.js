@@ -1,4 +1,5 @@
 import { api } from './api';
+import { assetSourceLabel } from './assetSources';
 
 /**
  * Mutation/audit history helpers for the Asset Detail page (Tahap 5.8.9;
@@ -25,7 +26,17 @@ export const EVENT_LABELS = {
   BATCH_DELETE: 'Penghapusan massal',
   REVERT: 'Revert',
   BATCH_REVERT: 'Revert massal',
+  // Foto Aset — not an asset-field change; never revertable (deleted photos are gone).
+  PHOTO_ADDED: 'Foto ditambahkan',
+  PHOTO_DELETED: 'Foto dihapus permanen',
 };
+
+/** Photo events carry identical before/after snapshots; their detail is the
+ * server-written summary in `mutation_note` (slot, dimensions, size — never a
+ * file path or image data). */
+export function isPhotoEvent(eventType) {
+  return eventType === 'PHOTO_ADDED' || eventType === 'PHOTO_DELETED';
+}
 
 /** Legacy `mutation_type` fallback, for the rare row with no `event_type` at all. */
 const LEGACY_TYPE_LABELS = {
@@ -50,7 +61,10 @@ export const FIELD_LABELS = {
   capacity_note: 'Kapasitas',
   quantity: 'Jumlah',
   purchase_date: 'Tanggal Pembelian',
-  funding_source: 'Sumber Dana',
+  // Tahap 2 — the free-text column is labelled "Keterangan Sumber"; `asset_source`
+  // is the fixed category. Older snapshots simply lack `asset_source`.
+  funding_source: 'Keterangan Sumber',
+  asset_source: 'Sumber',
   condition: 'Kondisi',
   notes: 'Catatan',
   is_written_off: 'Status Write-off',
@@ -99,6 +113,7 @@ export function formatDateTime(iso) {
 function formatFieldValue(field, value) {
   if (value === null || value === undefined || value === '') return MISSING;
   if (field === 'condition') return CONDITION_LABELS[value] ?? value;
+  if (field === 'asset_source') return assetSourceLabel(value);
   if (field === 'is_written_off') return value ? 'Write-off' : 'Belum';
   if (field === 'quantity') return `${value} unit`;
   if (field === 'purchase_date' || field === 'written_off_on') return formatDateOnly(value) ?? MISSING;

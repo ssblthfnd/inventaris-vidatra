@@ -26,6 +26,7 @@ class DashboardResource extends JsonResource
             'by_location' => $this->resource['by_location'],
             'by_category' => $this->resource['by_category'],
             'by_room' => $this->resource['by_room'],
+            'by_source' => $this->resource['by_source'],
             'recent_mutations' => MutationLogResource::collection($this->resource['recent_mutations']),
         ];
     }

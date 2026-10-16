@@ -2,6 +2,7 @@
 
 namespace App\Services\Import;
 
+use App\Enums\AssetSource;
 use App\Import\Excel\SheetScanner;
 use App\Import\ImportManager;
 use App\Import\Parsing\CategoryColumnMap;
@@ -136,8 +137,13 @@ final class ImportTemplateService
                 $sheet->setCellValue("{$col}{$subHeaderRow}", $meta['sub']);
             }
         }
+        // Tahap 2 — SUMBER in column U for every category. The header TEXT here is
+        // what tells SheetScanner this workbook carries a source column.
+        $sourceCol = AssetSheetColumns::SOURCE_COL;
+        $sheet->setCellValue("{$sourceCol}{$headerRow}", AssetSheetColumns::SOURCE_HEADER);
+        $sheet->setCellValue("{$sourceCol}{$subHeaderRow}", AssetSheetColumns::SOURCE_SUBHEADER);
 
-        $lastCol = array_key_last($specific) ?? 'P';
+        $lastCol = $sourceCol;
         $sheet->getStyle("A{$headerRow}:{$lastCol}{$subHeaderRow}")->getFont()->setBold(true);
         $sheet->getStyle("A{$headerRow}:{$lastCol}{$subHeaderRow}")->getFill()
             ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E5E7EB');
@@ -151,6 +157,7 @@ final class ImportTemplateService
         }
         $sheet->getColumnDimension('P')->setWidth(24);
         $sheet->getColumnDimension('O')->setWidth(20);
+        $sheet->getColumnDimension($sourceCol)->setWidth(26);
 
         // Freeze everything above and including the header so it stays visible while
         // scrolling through data rows — first data row is deterministically headerRow+2.
@@ -177,6 +184,24 @@ final class ImportTemplateService
         $markValidation('L');
         $markValidation('M');
         $markValidation('N');
+
+        // Tahap 2 — SUMBER dropdown with the six labels. Advisory only (information
+        // style, so Excel still lets the user type something else): the importer
+        // normalises the value and turns anything unrecognised into a warning the
+        // user corrects in the import preview.
+        $sourceList = '"'.implode(',', array_map(fn (AssetSource $s): string => $s->label(), AssetSource::cases())).'"';
+        for ($row = $subHeaderRow + 1; $row <= $subHeaderRow + 500; $row++) {
+            $validation = $sheet->getCell("{$sourceCol}{$row}")->getDataValidation();
+            $validation->setType(DataValidation::TYPE_LIST);
+            $validation->setErrorStyle(DataValidation::STYLE_INFORMATION);
+            $validation->setAllowBlank(true);
+            $validation->setShowInputMessage(true);
+            $validation->setShowErrorMessage(true);
+            $validation->setShowDropDown(true);
+            $validation->setPromptTitle('Sumber aset');
+            $validation->setPrompt('Pilih salah satu. Jika belum diketahui, pilih "Belum diberi keterangan".');
+            $validation->setFormula1($sourceList);
+        }
     }
 
     private function buildPanduanSheet(Worksheet $sheet, Category $category): void
@@ -257,6 +282,25 @@ final class ImportTemplateService
             };
             $line("{$col} — {$meta['label']}", $desc);
         }
+        $line(
+            AssetSheetColumns::SOURCE_COL.' — '.AssetSheetColumns::SOURCE_HEADER,
+            'Kategori sumber aset: BOSDA, BOSP, BOSTK, Yayasan, Lainnya, atau "Belum diberi keterangan" '
+            .'(lihat sheet REFERENSI). Huruf besar/kecil dan spasi berlebih tidak berpengaruh. '
+            .'Jika dikosongkan, baris tetap bisa diimpor sebagai Warning dan sumber dicatat "Belum diberi keterangan". '
+            .'Jika isinya tidak dikenali, baris menjadi Warning dan WAJIB dipilihkan sumbernya di halaman pratinjau impor '
+            .'(tanpa mengubah file) sebelum batch dapat dipromosikan. Nilai yang tidak dikenali TIDAK PERNAH otomatis '
+            .'dianggap Yayasan maupun "Belum diberi keterangan".'
+        );
+        $line(
+            'Keterangan Sumber',
+            'Keterangan bebas tentang sumber (mis. nama program atau donatur) tidak diisi lewat template ini; '
+            .'lengkapi melalui menu Edit Aset bila diperlukan. Kolom V (KETERANGAN SUMBER) pada file hasil export '
+            .'tidak dibaca saat file itu diimpor kembali.'
+        );
+        $line(
+            'File lama tanpa kolom SUMBER',
+            'Tetap dapat diimpor. Sumber setiap baris dicatat "Belum diberi keterangan" dan dapat diubah di pratinjau atau melalui Edit Aset.'
+        );
         $blank();
 
         $h2('Format tanggal (kolom TANGGAL, jika ada)');
@@ -336,9 +380,34 @@ final class ImportTemplateService
             $sheet->setCellValue("A{$row}", $text);
             $row++;
         }
+        $row++;
+
+        // Tahap 2 — the six accepted SUMBER values (column U of the DATA sheet).
+        $sheet->setCellValue("A{$row}", 'SUMBER (isi kolom '.AssetSheetColumns::SOURCE_COL.' di sheet DATA dengan salah satu nilai berikut)');
+        $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+        $row++;
+        $sheet->fromArray(['Nilai', 'Keterangan'], null, "A{$row}");
+        $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true);
+        $row++;
+        foreach (AssetSource::cases() as $source) {
+            $sheet->fromArray([$source->label(), self::sourceDescription($source)], null, "A{$row}");
+            $row++;
+        }
 
         $sheet->getColumnDimension('A')->setWidth(28);
         $sheet->getColumnDimension('B')->setWidth(40);
         $sheet->getColumnDimension('C')->setWidth(16);
+    }
+
+    private static function sourceDescription(AssetSource $source): string
+    {
+        return match ($source) {
+            AssetSource::Bosda => 'Bantuan Operasional Sekolah Daerah.',
+            AssetSource::Bosp => 'Bantuan Operasional Satuan Pendidikan.',
+            AssetSource::Bostk => 'Dana BOSTK, sesuai istilah yang digunakan unit.',
+            AssetSource::Yayasan => 'Dibiayai oleh yayasan.',
+            AssetSource::Lainnya => 'Sumber lain di luar kategori di atas (jelaskan di Keterangan Sumber).',
+            AssetSource::BelumDiberiKeterangan => 'Sumber belum diketahui saat pencatatan; dapat dilengkapi kemudian.',
+        };
     }
 }

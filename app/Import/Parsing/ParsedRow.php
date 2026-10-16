@@ -11,6 +11,15 @@ namespace App\Import\Parsing;
  */
 final class ParsedRow
 {
+    /** Tahap 2 — how the SUMBER (asset source) cell was read; see RowParser::parseSource(). */
+    public const SOURCE_RECOGNIZED = 'recognized';
+
+    public const SOURCE_MISSING = 'missing';
+
+    public const SOURCE_UNRECOGNIZED = 'unrecognized';
+
+    public const SOURCE_COLUMN_ABSENT = 'column_absent';
+
     /** @param list<array{code:string,severity:string,field:?string,message:string}> $notes */
     public function __construct(
         public readonly int $rowNumber,
@@ -36,6 +45,12 @@ final class ParsedRow
         public readonly ?string $notes,
         public readonly ?string $blockSubcategoryCode,
         public readonly array $parseNotes = [],
+        // Tahap 2 — canonical AssetSource value, or null when the SUMBER cell
+        // held something unrecognised (then $assetSourceRaw keeps it verbatim).
+        public readonly ?string $assetSource = 'belum_diberi_keterangan',
+        public readonly ?string $assetSourceRaw = null,
+        // recognized | missing | unrecognized | column_absent
+        public readonly string $assetSourceStatus = 'column_absent',
     ) {
     }
 
@@ -90,6 +105,9 @@ final class ParsedRow
             'notes' => $this->notes,
             'block_subcategory_code' => $this->blockSubcategoryCode,
             'parse_notes' => $this->parseNotes,
+            'asset_source' => $this->assetSource,
+            'asset_source_raw' => $this->assetSourceRaw,
+            'asset_source_status' => $this->assetSourceStatus,
         ];
     }
 }

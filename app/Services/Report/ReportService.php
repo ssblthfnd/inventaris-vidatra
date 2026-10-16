@@ -53,6 +53,7 @@ class ReportService
             'by_room' => $this->byRoom($assets),
             'by_condition' => $this->byCondition($assets),
             'by_year' => $this->byYear($assets),
+            'by_source' => $this->bySource($assets),
         ];
     }
 
@@ -65,7 +66,7 @@ class ReportService
     private function filteredSubquery(Builder $assets): QueryBuilder
     {
         return (clone $assets)->toBase()->select([
-            'id', 'location_code', 'category_code', 'room_id', 'condition', 'is_written_off', 'asset_year',
+            'id', 'location_code', 'category_code', 'room_id', 'condition', 'is_written_off', 'asset_year', 'asset_source',
         ]);
     }
 
@@ -215,6 +216,26 @@ class ReportService
             'rusak_berat' => (int) $row->rusak_berat,
             'unknown' => (int) $row->unknown,
         ];
+    }
+
+    /**
+     * Tahap 2 — distribution by `asset_source` over the SAME filtered scope (so an
+     * `asset_source[]` filter narrows it like any other): all six categories in
+     * enum order, zero-count ones included — the same fixed-bucket shape as the
+     * dashboard ({@see DashboardService::sourceBuckets()}). The column is NOT
+     * NULL, so the rows sum to `summary.total_assets`.
+     *
+     * @return list<array{value: string, label: string, asset_count: int}>
+     */
+    private function bySource(Builder $assets): array
+    {
+        $counts = $this->filteredSubquery($assets)
+            ->select('asset_source')
+            ->selectRaw('COUNT(*) as asset_count')
+            ->groupBy('asset_source')
+            ->pluck('asset_count', 'asset_source');
+
+        return DashboardService::sourceBuckets($counts->all());
     }
 
     /**

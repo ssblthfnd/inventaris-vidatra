@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AssetCondition;
+use App\Enums\AssetSource;
 use Database\Factories\ImportRowFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -33,6 +34,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'room_mapping_resolution_id',
     'condition_raw',
     'condition_parsed',
+    'asset_source_override',
+    'asset_source_resolved_by',
+    'asset_source_resolved_at',
     'validation_status',
     'validation_messages',
     'duplicate_of_asset_id',
@@ -53,6 +57,8 @@ class ImportRow extends Model
             'row_number' => 'integer',
             'asset_year' => 'integer',
             'condition_parsed' => AssetCondition::class,
+            'asset_source_override' => AssetSource::class,
+            'asset_source_resolved_at' => 'datetime',
             'promoted_at' => 'datetime',
         ];
     }
@@ -73,6 +79,12 @@ class ImportRow extends Model
     public function roomMappingResolution(): BelongsTo
     {
         return $this->belongsTo(ImportRoomMappingResolution::class, 'room_mapping_resolution_id');
+    }
+
+    /** Tahap 2 — who chose `asset_source_override` in the import preview. @return BelongsTo<User, $this> */
+    public function assetSourceResolvedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'asset_source_resolved_by');
     }
 
     /** Tahap 6.9 R9.4-11 — who promoted this row (NULL: CLI or before R9.4-11). @return BelongsTo<User, $this> */

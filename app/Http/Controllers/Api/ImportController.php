@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Requests\Api\ImportRowIndexRequest;
+use App\Http\Requests\Api\ResolveImportAssetSourceRequest;
 use App\Http\Requests\Api\ResolveRoomMappingRequest;
 use App\Http\Requests\Api\StoreImportRequest;
 use App\Http\Resources\ImportBatchCollection;
@@ -12,6 +13,7 @@ use App\Import\ImportManager;
 use App\Import\Promotion\AssetPromoter;
 use App\Import\Reporting\ImportReporter;
 use App\Import\RoomMapping\RoomMappingResolver;
+use App\Import\SourceResolution\AssetSourceResolver;
 use App\Models\ImportBatch;
 use App\Policies\ImportBatchPolicy;
 use App\Support\LocationScope;
@@ -83,7 +85,7 @@ class ImportController extends ApiController
      * private `local` disk for audit on success; removed immediately on failure
      * (nothing worth auditing if staging never produced a batch).
      */
-    public function store(StoreImportRequest $request, ImportManager $manager): JsonResponse
+    public function store(StoreImportRequest $request, ImportManager $manager, AssetPromoter $promoter): JsonResponse
     {
         $file = $request->uploadedFile();
         $originalName = $file->getClientOriginalName();
@@ -124,7 +126,12 @@ class ImportController extends ApiController
 
         $batch = ImportBatch::with(['category', 'uploadedBy'])->findOrFail($summary['batch_id']);
 
+        // Tahap 2 — so the preview can flag unrecognised SUMBER values (which block
+        // promotion) right after upload, without a second request. No actor passed:
+        // staging above already applied this uploader's scope, and re-asserting it
+        // here would turn an accepted upload (e.g. rows without a location) into a 403.
         return (new ImportBatchResource($batch))
+            ->withUnresolvedSourcePendingCount($promoter->unresolvedSourcePendingCount($batch->id))
             ->additional(['message' => self::STATUS_MESSAGES[$summary['status']] ?? self::STATUS_MESSAGES['validated']])
             ->response()
             ->setStatusCode(201);
@@ -149,7 +156,8 @@ class ImportController extends ApiController
         // batch right before asking, so it carries how many assets the next
         // promotion would create without a room (same rule as the promotion).
         return (new ImportBatchResource($batch))
-            ->withRoomlessPendingCount($promoter->roomlessPendingCount($batch->id, $request->user()));
+            ->withRoomlessPendingCount($promoter->roomlessPendingCount($batch->id, $request->user()))
+            ->withUnresolvedSourcePendingCount($promoter->unresolvedSourcePendingCount($batch->id, $request->user()));
     }
 
     /**
@@ -162,7 +170,7 @@ class ImportController extends ApiController
         $this->ensureVisible($request, $batch);
 
         $query = $batch->importRows()
-            ->with(['matchedRoom', 'roomMappingResolution.resolvedBy', 'promotedBy'])
+            ->with(['matchedRoom', 'roomMappingResolution.resolvedBy', 'promotedBy', 'assetSourceResolvedBy'])
             ->orderBy('row_number');
 
         $status = $request->status();
@@ -171,6 +179,13 @@ class ImportController extends ApiController
                 $q->whereRaw("JSON_SEARCH(validation_messages, 'one', 'duplicate_in_batch') IS NOT NULL")
                     ->orWhereRaw("JSON_SEARCH(validation_messages, 'one', 'duplicate_existing_asset') IS NOT NULL");
             });
+        } elseif ($status === 'source_unresolved') {
+            // Tahap 2 — unrecognised SUMBER without a correction (the resolver removes
+            // this message when the user picks a category), not yet promoted and
+            // promotable — exactly the rows that hold promotion back
+            $query->whereNull('promoted_asset_id')
+                ->whereIn('validation_status', ['valid', 'warning'])
+                ->whereRaw("JSON_SEARCH(validation_messages, 'one', 'asset_source_unrecognized') IS NOT NULL");
         } elseif ($status !== null) {
             $query->where('validation_status', $status);
         }
@@ -210,7 +225,8 @@ class ImportController extends ApiController
             // R9.4-10 (D3) — what a further promotion would still create without a
             // room after this run (normally 0).
             'data' => (new ImportBatchResource($batch))
-                ->withRoomlessPendingCount($promoter->roomlessPendingCount($batch->id, $request->user())),
+                ->withRoomlessPendingCount($promoter->roomlessPendingCount($batch->id, $request->user()))
+                ->withUnresolvedSourcePendingCount($promoter->unresolvedSourcePendingCount($batch->id, $request->user())),
             'promotion' => $result,
         ]);
     }
@@ -289,6 +305,25 @@ class ImportController extends ApiController
             );
         } catch (RuntimeException $e) {
             throw ValidationException::withMessages(['room_id' => [$e->getMessage()]]);
+        }
+
+        return response()->json(['data' => $result]);
+    }
+
+    /**
+     * Tahap 2 — Sumber Aset: sets the asset source of one or more staged,
+     * not-yet-promoted rows of this batch from the import preview (e.g. a SUMBER
+     * value the importer did not recognise). Persisted on the rows and used by
+     * the next promotion; see {@see AssetSourceResolver::resolve()} for the
+     * authorization (location scope -> 403) and integrity (rows of this batch,
+     * unpromoted, all-or-nothing -> 422) contract.
+     */
+    public function resolveAssetSource(ResolveImportAssetSourceRequest $request, ImportBatch $batch, AssetSourceResolver $resolver): JsonResponse
+    {
+        try {
+            $result = $resolver->resolve($batch, $request->rowIds(), $request->assetSource(), $request->user());
+        } catch (RuntimeException $e) {
+            throw ValidationException::withMessages(['row_ids' => [$e->getMessage()]]);
         }
 
         return response()->json(['data' => $result]);

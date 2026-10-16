@@ -97,7 +97,7 @@ final class ImportManager
         $batchCategory = $scanner->categoryCode;
 
         foreach ($dataRows as $scanned) {
-            $parsed = $this->parser->parse($scanned, (string) $batchCategory);
+            $parsed = $this->parser->parse($scanned, (string) $batchCategory, $scanner->hasSourceColumn);
             $room = $this->roomMatcher->match($parsed->locationCode, $parsed->roomRawValue);
             $validation = $validator->validate($parsed, $room, $batchCategory);
 
@@ -317,6 +317,8 @@ final class ImportManager
         if ($skippedRows > 0) {
             $bits[] = "{$skippedRows} non-data row(s) skipped";
         }
+        // Tahap 2 — whether column U carried the SUMBER header (legacy workbooks don't)
+        $bits[] = $scanner->hasSourceColumn ? 'SUMBER column present' : 'no SUMBER column';
 
         return implode('; ', $bits);
     }

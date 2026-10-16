@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api;
 
 use App\Enums\AssetCondition;
+use App\Enums\AssetSource;
 use App\Models\Asset;
 use App\Rules\SubcategoryInCategory;
 use Illuminate\Foundation\Http\FormRequest;
@@ -41,6 +42,11 @@ class UpdateAssetRequest extends FormRequest
         }
         if (! $this->has('room_id')) {
             $backfill['room_id'] = $asset->room_id;
+        }
+        // Tahap 2 — normalised like StoreAssetRequest; never backfilled, so an
+        // omitted `asset_source` leaves the stored value untouched.
+        if ($this->has('asset_source')) {
+            $backfill['asset_source'] = AssetSource::canonicalOrOriginal($this->input('asset_source'));
         }
 
         $this->merge($backfill);
@@ -82,6 +88,8 @@ class UpdateAssetRequest extends FormRequest
             'material' => ['sometimes', 'nullable', 'string', 'max:80'],
             'purchase_date' => ['sometimes', 'nullable', 'date'],
             'funding_source' => ['sometimes', 'nullable', 'string', 'max:80'],
+            // Tahap 2 — optional on update, but never clearable to NULL.
+            'asset_source' => ['sometimes', 'required', Rule::enum(AssetSource::class)],
             'detail_type' => ['sometimes', 'nullable', 'string', 'max:100'],
             'capacity_note' => ['sometimes', 'nullable', 'string', 'max:100'],
             'notes' => ['sometimes', 'nullable', 'string'],
@@ -98,6 +106,7 @@ class UpdateAssetRequest extends FormRequest
             'is_written_off.prohibited' => 'Gunakan endpoint write-off / unwrite-off untuk mengubah status penghapusan.',
             'written_off_on.prohibited' => 'Gunakan endpoint write-off / unwrite-off untuk mengubah status penghapusan.',
             'written_off_note.prohibited' => 'Gunakan endpoint write-off / unwrite-off untuk mengubah status penghapusan.',
+            'asset_source.required' => 'Sumber aset tidak boleh dikosongkan.',
         ];
     }
 }

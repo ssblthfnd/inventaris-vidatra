@@ -27,6 +27,7 @@ class ReportResource extends JsonResource
             'by_room' => $this->resource['by_room'],
             'by_condition' => $this->resource['by_condition'],
             'by_year' => $this->resource['by_year'],
+            'by_source' => $this->resource['by_source'],
         ];
     }
 }

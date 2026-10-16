@@ -92,6 +92,8 @@ trait InteractsWithAssetFixtures
             'subcategory_code' => '001',
             'asset_year' => 2025,
             'condition' => 'baik',
+            // Tahap 2 — required on create (explicit choice, never defaulted)
+            'asset_source' => 'yayasan',
         ], $overrides);
     }
 }

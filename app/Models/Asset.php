@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AssetCondition;
+use App\Enums\AssetSource;
 use Database\Factories\AssetFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -27,6 +28,10 @@ use Illuminate\Support\Collection;
  *    `subcategory` accessor below.
  *  - `deleted_at` (SoftDeletes) = an erroneous record. Business disposal uses
  *    `is_written_off` — the row stays queryable.
+ *  - `asset_source` (Tahap 2) is a fixed category ({@see AssetSource}); the
+ *    free-text `funding_source` ("Keterangan Sumber") is a separate column and
+ *    the two are never merged. The default mirrors the DB default
+ *    (`belum_diberi_keterangan`) — never `yayasan`.
  */
 #[Fillable([
     'location_code',
@@ -45,6 +50,7 @@ use Illuminate\Support\Collection;
     'material',
     'purchase_date',
     'funding_source',
+    'asset_source',
     'detail_type',
     'capacity_note',
     'quantity',
@@ -64,6 +70,7 @@ class Asset extends Model
     protected $attributes = [
         'quantity' => 1,
         'is_written_off' => false,
+        'asset_source' => 'belum_diberi_keterangan',
     ];
 
     protected function casts(): array
@@ -75,6 +82,7 @@ class Asset extends Model
             'quantity' => 'integer',
             'is_written_off' => 'boolean',
             'condition' => AssetCondition::class,
+            'asset_source' => AssetSource::class,
             'purchase_date' => 'date',
             'written_off_on' => 'date',
         ];
@@ -122,6 +130,18 @@ class Asset extends Model
     public function mutationLogs(): HasMany
     {
         return $this->hasMany(MutationLog::class, 'asset_id');
+    }
+
+    /**
+     * Foto Aset — 0..3 photos, ordered by slot. Kept when the asset is
+     * soft-deleted or written off (they only become visible again together
+     * with the asset, through AssetPolicy::viewDetail).
+     *
+     * @return HasMany<AssetPhoto, $this>
+     */
+    public function photos(): HasMany
+    {
+        return $this->hasMany(AssetPhoto::class, 'asset_id')->orderBy('slot');
     }
 
     /**

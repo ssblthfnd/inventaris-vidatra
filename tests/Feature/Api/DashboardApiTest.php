@@ -109,7 +109,8 @@ class DashboardApiTest extends TestCase
 
         $this->assertSame(['data'], array_keys($body));
         $this->assertSame(
-            ['summary', 'by_location', 'by_category', 'by_room', 'recent_mutations'],
+            // Tahap 2 — `by_source` added (deliberate, additive contract change)
+            ['summary', 'by_location', 'by_category', 'by_room', 'by_source', 'recent_mutations'],
             array_keys($body['data']),
         );
         foreach (['success', 'message', 'status', 'errors'] as $forbidden) {

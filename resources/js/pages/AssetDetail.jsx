@@ -3,10 +3,12 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import AssetHistorySection from '../components/asset-detail/AssetHistorySection';
+import AssetPhotosSection from '../components/asset-detail/AssetPhotosSection';
 import LifecycleConfirmDialog from '../components/LifecycleConfirmDialog';
 import PrintLabelMenu from '../components/PrintLabelMenu';
 import { api, ApiError } from '../lib/api';
 import { getAssetMutations } from '../lib/assetHistory';
+import { assetSourceLabel } from '../lib/assetSources';
 import { printAssetLabel } from '../lib/labels';
 
 /**
@@ -167,7 +169,7 @@ export default function AssetDetail() {
   const [attempt, setAttempt] = useState(0);
   const [flash, setFlash] = useState(
     location.state?.created
-      ? 'Aset berhasil ditambahkan.'
+      ? 'Aset berhasil ditambahkan. Anda dapat menambahkan foto aset di bagian Foto Aset di bawah.'
       : location.state?.updated
         ? 'Perubahan aset berhasil disimpan.'
         : '',
@@ -535,7 +537,8 @@ export default function AssetDetail() {
           <Row label="Nomor Seri">{asset.serial_no}</Row>
           <Row label="Bahan">{asset.material}</Row>
           <Row label="Tanggal Pembelian">{formatDate(asset.purchase_date)}</Row>
-          <Row label="Sumber Dana">{asset.funding_source}</Row>
+          <Row label="Sumber">{assetSourceLabel(asset.asset_source)}</Row>
+          <Row label="Keterangan Sumber">{asset.funding_source}</Row>
           {asset.detail_type && <Row label="Jenis / Tipe">{asset.detail_type}</Row>}
           {asset.capacity_note && <Row label="Kapasitas">{asset.capacity_note}</Row>}
           <Row label="Jumlah">{asset.quantity != null ? `${asset.quantity} unit` : null}</Row>
@@ -562,6 +565,14 @@ export default function AssetDetail() {
           </div>
         )}
       </div>
+
+      {/* Foto Aset — add/view/delete lives here only (never on the create/edit form). */}
+      <AssetPhotosSection
+        assetId={asset.id}
+        canManage={can('assets.edit')}
+        isTrashed={isTrashed}
+        onChanged={() => setHistoryRefreshKey((n) => n + 1)}
+      />
 
       <AssetHistorySection
         assetId={asset.id}
