@@ -229,6 +229,29 @@ export function eventLabel(event) {
 }
 
 /**
+ * Dashboard "Mutasi Terbaru" — what one row says, from the row's own historical
+ * fields only. A row with a room on either side reads exactly as before
+ * (`from → to`); every other event (photo, edit, write-off, …) reads as its
+ * activity label plus the asset code from its own snapshot — never a bare
+ * "— → —". Pre-5.8.8 rows without a snapshot simply have no asset code.
+ *
+ * @returns {{kind: 'move', from: ?string, to: ?string} | {kind: 'event', label: string, assetCode: ?string}}
+ */
+export function recentMutationSummary(event) {
+  const from = event.from?.room_label ?? null;
+  const to = event.to?.room_label ?? null;
+  if (from || to) {
+    return { kind: 'move', from, to };
+  }
+
+  return {
+    kind: 'event',
+    label: eventLabel(event),
+    assetCode: event.after_snapshot?.asset_code ?? event.before_snapshot?.asset_code ?? null,
+  };
+}
+
+/**
  * `GET /api/assets/{asset}/mutations` — newest first (`created_at desc`, the
  * technical timestamp; every event this app writes happens in real time, so this
  * is a truer "newest first" than the business `mutation_date`, which is date-only).

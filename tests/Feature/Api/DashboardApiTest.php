@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Enums\AssetCondition;
+use App\Enums\MutationEventType;
 use App\Enums\UserRole;
 use App\Models\Asset;
 use App\Models\Category;
@@ -11,6 +12,7 @@ use App\Models\MutationLog;
 use App\Models\Room;
 use App\Models\Subcategory;
 use App\Models\User;
+use App\Services\Asset\AssetMutationRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -324,6 +326,38 @@ class DashboardApiTest extends TestCase
         foreach (['email', 'role', 'is_active', 'password'] as $forbidden) {
             $this->assertArrayNotHasKey($forbidden, $row['performed_by']);
         }
+    }
+
+    /**
+     * O2 — the dashboard renders a non-move row (a photo event, an edit, …) as its
+     * activity label + asset code instead of "— → —". That relies on exactly this
+     * part of the shared resource: no room label on either side, the `event_type`,
+     * and the asset code inside the event's own snapshot (photo events record the
+     * asset's snapshot only — never a file path).
+     */
+    public function test_recent_mutations_carry_the_event_type_and_asset_code_of_non_move_events(): void
+    {
+        Sanctum::actingAs($this->viewer());
+        $asset = $this->existingAsset('001')->refresh();
+        $snapshot = app(AssetMutationRecorder::class)->snapshot($asset);
+        MutationLog::factory()->create([
+            'asset_id' => $asset->id,
+            'type' => null,
+            'event_type' => MutationEventType::PhotoAdded,
+            'mutation_date' => '2026-05-02',
+            'before_snapshot' => $snapshot,
+            'after_snapshot' => $snapshot,
+            'notes' => 'Foto slot 1 ditambahkan (1600×1200, 312 KB)',
+        ]);
+
+        $row = $this->getJson(self::URL)->assertOk()->json('data.recent_mutations.0');
+
+        $this->assertSame('PHOTO_ADDED', $row['event_type']);
+        $this->assertNull($row['from']['room_label']);
+        $this->assertNull($row['to']['room_label']);
+        $this->assertNotEmpty($asset->asset_code);
+        $this->assertSame($asset->asset_code, $row['after_snapshot']['asset_code']);
+        $this->assertStringNotContainsString('asset-photos/', json_encode($row));
     }
 
     public function test_recent_mutations_room_labels_are_historical_snapshots(): void
