@@ -110,6 +110,20 @@ trait BuildsTestImages
     }
 
     /**
+     * A minimal ISO-BMFF `ftyp` box with EXACTLY the given brands (nothing is
+     * added, unlike {@see self::heicBytes()}). Only the brand classification can
+     * be tested with it — it is not a decodable image.
+     *
+     * @param  list<string>  $compatibleBrands
+     */
+    protected function isoBmffBytes(string $majorBrand, array $compatibleBrands): string
+    {
+        $ftyp = 'ftyp'.$majorBrand."\x00\x00\x00\x00".implode('', $compatibleBrands);
+
+        return pack('N', strlen($ftyp) + 4).$ftyp.str_repeat("\x00", 200);
+    }
+
+    /**
      * Inserts an EXIF APP1 segment (IFD0: Make="SECRETCAM", Orientation=$orientation,
      * GPS IFD with GPSLatitudeRef="S") right after the SOI marker of `$jpeg`.
      */

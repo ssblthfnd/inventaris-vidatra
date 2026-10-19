@@ -800,7 +800,8 @@ never part of any response, log line visible to users, or history row. Photos ar
 ### 18.3 Validation & processing (`App\Services\Image\ImageSanitizer`, GD only)
 
 The client's file name, extension and MIME type are ignored. In order: size ≤ 15 MB →
-HEIC/HEIF (ISO-BMFF `ftyp` brand) refused with its own message → `finfo` must be JPEG/PNG
+HEIC/HEIF (ISO-BMFF `ftyp` brand) refused with its own message (AVIF/AVIS brands are checked
+first and refused as an unsupported format, not as HEIC) → `finfo` must be JPEG/PNG
 (WebP only when GD supports it) → `getimagesize()` must agree and report the size → **before
 decode**: longest side ≤ 12 000 px, ≤ 50 MP, and `w×h×factor + 1600²×4` bytes must fit in
 `memory_limit − memory in use − 16 MB` (with `memory_limit = -1` only the dimension caps apply).

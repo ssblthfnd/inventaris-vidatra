@@ -16,7 +16,9 @@ use Throwable;
  *
  *  1. size on disk ≤ `max_upload_kb` (defence in depth; the FormRequest also checks);
  *  2. HEIC/HEIF (ISO-BMFF `ftyp` box) is recognised by signature and refused with
- *     its own message — the browser could not convert it and GD cannot read it;
+ *     its own message — the browser could not convert it and GD cannot read it.
+ *     AVIF uses the same container (and the same generic `mif1`/`msf1` brands),
+ *     so its brands are checked first and it is refused as an unsupported format;
  *  3. `finfo` (libmagic, content-based) must say JPEG, PNG or — only when this
  *     GD build really supports it — WebP;
  *  4. `getimagesize()` must parse the header as the SAME type and report the
@@ -208,16 +210,17 @@ class ImageSanitizer
             $brands[] = strtolower(substr($head, $offset, 4));
         }
 
+        // AVIF first: AVIF files also list `mif1`/`msf1`, which are in HEIF_BRANDS.
+        if (array_intersect($brands, self::AVIF_BRANDS) !== []) {
+            throw new ImageRejectedException(ImageRejectedException::UNSUPPORTED_FORMAT, $this->unsupportedMessage());
+        }
+
         if (array_intersect($brands, self::HEIF_BRANDS) !== []) {
             throw new ImageRejectedException(
                 ImageRejectedException::HEIC,
                 'Format HEIC/HEIF belum didukung. Gunakan foto JPEG, atau atur kamera iPhone ke '.
                 '"Most Compatible" (Pengaturan → Kamera → Format), lalu coba lagi.',
             );
-        }
-
-        if (array_intersect($brands, self::AVIF_BRANDS) !== []) {
-            throw new ImageRejectedException(ImageRejectedException::UNSUPPORTED_FORMAT, $this->unsupportedMessage());
         }
     }
 

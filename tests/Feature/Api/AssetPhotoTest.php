@@ -312,6 +312,8 @@ class AssetPhotoTest extends TestCase
             ->assertJsonPath('errors.photo.0', fn ($m) => str_contains($m, 'bukan gambar yang valid'));
         $this->upload($asset, $this->uploadedImage($this->heicBytes(), 'IMG_0001.HEIC', 'image/heic'))->assertUnprocessable()
             ->assertJsonPath('errors.photo.0', fn ($m) => str_contains($m, 'HEIC/HEIF belum didukung'));
+        $this->upload($asset, $this->uploadedImage($this->isoBmffBytes('avif', ['mif1', 'miaf', 'MA1B']), 'foto.avif', 'image/avif'))->assertUnprocessable()
+            ->assertJsonPath('errors.photo.0', fn ($m) => str_contains($m, 'tidak didukung') && ! str_contains($m, 'HEIC'));
         $this->upload($asset, $this->uploadedImage($this->corruptPngBytes(), 'rusak.png', 'image/png'))->assertUnprocessable()
             ->assertJsonPath('errors.photo.0', fn ($m) => str_contains($m, 'tidak dapat dibaca'));
         $this->upload($asset, $this->uploadedImage($this->pngHeaderOnly(12001, 100), 'besar.png', 'image/png'))->assertUnprocessable()

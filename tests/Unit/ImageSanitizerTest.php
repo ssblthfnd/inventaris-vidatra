@@ -214,6 +214,49 @@ class ImageSanitizerTest extends TestCase
         return ['heic' => ['heic'], 'heix' => ['heix'], 'mif1' => ['mif1'], 'hevc' => ['hevc']];
     }
 
+    /**
+     * AVIF shares the ISO-BMFF container and the generic `mif1`/`msf1` brands
+     * with HEIF; it must get the "unsupported format" answer, never the HEIC
+     * advice. Every fixture lists its brands explicitly (no `heic` added).
+     *
+     * @param  list<string>  $compatible
+     */
+    #[DataProvider('avifBrandSets')]
+    public function test_avif_is_rejected_as_unsupported_not_as_heic(string $major, array $compatible): void
+    {
+        $path = $this->tempImagePath($this->isoBmffBytes($major, $compatible), '.jpg');
+
+        $e = $this->assertRejected(ImageRejectedException::UNSUPPORTED_FORMAT, fn () => (new ImageSanitizer)->sanitize($path), 'tidak didukung');
+        $this->assertStringNotContainsString('HEIC', $e->getMessage());
+    }
+
+    public static function avifBrandSets(): array
+    {
+        return [
+            'avif + mif1 miaf MA1B' => ['avif', ['mif1', 'miaf', 'MA1B']],
+            'avis + msf1 miaf' => ['avis', ['msf1', 'miaf']],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $compatible
+     */
+    #[DataProvider('heifBrandSets')]
+    public function test_heic_heif_with_explicit_brands_keeps_its_own_message(string $major, array $compatible): void
+    {
+        $path = $this->tempImagePath($this->isoBmffBytes($major, $compatible), '.jpg');
+
+        $this->assertRejected(ImageRejectedException::HEIC, fn () => (new ImageSanitizer)->sanitize($path), 'HEIC/HEIF belum didukung');
+    }
+
+    public static function heifBrandSets(): array
+    {
+        return [
+            'iPhone heic + mif1' => ['heic', ['mif1']],
+            'heif mif1 + heic' => ['mif1', ['heic']],
+        ];
+    }
+
     public function test_corrupt_image_that_cannot_be_decoded_is_rejected(): void
     {
         $path = $this->tempImagePath($this->corruptPngBytes(), '.png');
