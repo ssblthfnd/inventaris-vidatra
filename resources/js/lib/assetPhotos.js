@@ -17,6 +17,9 @@ import { api, ApiError, ensureCsrfCookie, presentErrorMessage, readCookie } from
 
 export const MAX_PHOTOS = 3;
 
+export const UNCONFIRMED_UPLOAD_MESSAGE =
+  'Server tidak mengonfirmasi unggahan. Daftar foto dimuat ulang — periksa apakah foto sudah tersimpan sebelum mencoba lagi.';
+
 export function listAssetPhotos(assetId) {
   return api.get(`/api/assets/${encodeURIComponent(assetId)}/photos`);
 }
@@ -81,11 +84,22 @@ export async function uploadAssetPhoto(assetId, blob, { filename = 'foto.jpg', o
     ({ status, payload } = await attempt(true)); // stale CSRF cookie — refresh once
   }
 
-  if (status >= 200 && status < 300) return payload;
+  if (status >= 200 && status < 300) {
+    // A real success carries the created photo. A 2xx with an empty or non-JSON body
+    // (e.g. a proxy / firewall page) is never shown as "uploaded" — its outcome is unknown.
+    if (payload?.data) return payload;
+    throw new ApiError(UNCONFIRMED_UPLOAD_MESSAGE, { status });
+  }
 
   let message = presentErrorMessage(status, payload);
   if (status === 413) {
+    // Laravel (body above PHP's post_max_size) or the web server / proxy itself
     message = 'Ukuran foto melebihi batas yang diterima server. Coba foto dengan resolusi lebih kecil.';
+  } else if (status === 0) {
+    // no response at all: a dropped connection — or a server that closed it while
+    // refusing a body that is too large, which a browser cannot tell apart
+    message =
+      'Unggahan terputus sebelum server menjawab. Periksa koneksi Anda; bila terus terjadi, ukuran foto mungkin melebihi batas server — coba foto yang lebih kecil.';
   }
   throw new ApiError(message, { status, errors: payload?.errors ?? null });
 }

@@ -247,6 +247,9 @@ export default function AssetPhotosSection({ assetId, canManage = false, isTrash
       if (e instanceof ApiError && e.status === 422 && /sudah memiliki/.test(e.errors?.photo?.[0] ?? '')) {
         setReloadKey((k) => k + 1); // someone else filled the last slot — show the real list
       }
+      if (e instanceof ApiError && e.status >= 200 && e.status < 300) {
+        setReloadKey((k) => k + 1); // unconfirmed 2xx — show what the server really holds
+      }
     } finally {
       setUploading(false);
     }

@@ -119,8 +119,14 @@ Pengaruh `php.ini` (bisa lebih rendah di hosting daripada batas aplikasi):
 - `upload_max_filesize` — file lebih besar ditolak PHP; pengguna melihat "Foto gagal diunggah.
   Ukuran file mungkin melebihi batas server". Disarankan ≥ 16M. Foto yang sudah dikompresi browser
   biasanya < 1 MB, jadi batas ini terutama berlaku bila browser tidak dapat mengompres.
-- `post_max_size` — harus ≥ `upload_max_filesize`; bila terlampaui seluruh isi permintaan hilang
-  (HTTP 413 / "Pilih foto yang akan diunggah").
+- `post_max_size` — harus ≥ `upload_max_filesize`; bila terlampaui PHP membuang seluruh isi
+  permintaan dan Laravel menjawab HTTP 413. Pengguna melihat "Ukuran foto melebihi batas yang
+  diterima server. Coba foto dengan resolusi lebih kecil."
+- Batas web server / proxy (mis. `LimitRequestBody` Apache, `client_max_body_size` nginx,
+  `FcgidMaxRequestLen` mod_fcgid, batas body ModSecurity) menolak permintaan **sebelum** sampai ke
+  PHP: biasanya HTTP 413 (pesan yang sama seperti di atas), pada mod_fcgid HTTP 500 ("Terjadi
+  kesalahan pada server"), atau koneksi diputus — pengguna lalu melihat "Unggahan terputus sebelum
+  server menjawab … ukuran foto mungkin melebihi batas server". Pastikan batas-batas ini ≥ 16M.
 - `memory_limit` — sebelum decode, server memperkirakan kebutuhan memori
   (lebar × tinggi × faktor format + kanvas 1600×1600×4 byte, sisakan 16 MB) dan menolak foto yang
   tidak muat dengan pesan "Gambar terlalu besar untuk diproses server". Faktor per format

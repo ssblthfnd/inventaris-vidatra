@@ -26,6 +26,7 @@ use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\Concerns\BuildsTestImages;
 use Tests\Concerns\InteractsWithImportFixtures;
@@ -337,6 +338,99 @@ class AssetPhotoTest extends TestCase
             ->assertJsonPath('errors.photo.0', 'Ukuran file foto maksimal 15 MB.');
 
         $this->assertSame(0, AssetPhoto::query()->count());
+    }
+
+    /* ================================================================== R6: upload size layers */
+
+    /**
+     * The application limit (`inventory.photos.max_upload_kb` = 15 360 KiB) is inclusive:
+     * a real JPEG padded to exactly that size is stored, one byte more is refused by the
+     * request rule — with no row, file or history left behind.
+     */
+    public function test_a_photo_of_exactly_the_application_limit_is_accepted_and_one_byte_more_is_not(): void
+    {
+        $asset = $this->asset();
+        Sanctum::actingAs($this->operator());
+        $limit = (int) config('inventory.photos.max_upload_kb') * 1024;
+        $jpeg = $this->jpegBytes(400, 300);
+        $padded = fn (int $size): string => $jpeg.str_repeat("\0", $size - strlen($jpeg)); // trailing bytes after EOI are ignored by decoders
+
+        $this->upload($asset, $this->uploadedImage($padded($limit + 1)))->assertUnprocessable()
+            ->assertJsonPath('errors.photo.0', 'Ukuran file foto maksimal 15 MB.');
+        $this->assertSame(0, AssetPhoto::query()->count());
+        $this->assertSame([], $this->storedFiles());
+        $this->assertSame(0, MutationLog::query()->where('event_type', 'PHOTO_ADDED')->count());
+
+        $this->upload($asset, $this->uploadedImage($padded($limit)))->assertCreated();
+        $this->assertSame(1, AssetPhoto::query()->count());
+        $this->assertCount(1, $this->storedFiles());
+    }
+
+    /**
+     * A file PHP itself refused (above `upload_max_filesize`, or a partial upload)
+     * reaches Laravel as an UploadedFile with an error code: the request answers 422
+     * with the "failed upload" message, never "required" or a 500, and nothing is
+     * stored — the existing photo is untouched.
+     */
+    #[DataProvider('phpUploadErrors')]
+    public function test_an_upload_php_refused_is_a_clear_422_and_stores_nothing(int $error): void
+    {
+        $asset = $this->asset();
+        Sanctum::actingAs($this->operator());
+        $this->upload($asset)->assertCreated();
+        $existing = AssetPhoto::query()->sole();
+
+        $refused = new UploadedFile($this->tempImagePath($this->jpegBytes(), '.jpg'), 'foto.jpg', 'image/jpeg', $error, true);
+        $this->upload($asset, $refused)->assertUnprocessable()
+            ->assertJsonPath('errors.photo.0', 'Foto gagal diunggah. Ukuran file mungkin melebihi batas server — coba foto yang lebih kecil.');
+
+        $this->assertSame([$existing->id], AssetPhoto::query()->pluck('id')->all());
+        $this->assertSame([$existing->path], $this->storedFiles());
+        $this->assertSame(1, MutationLog::query()->where('event_type', 'PHOTO_ADDED')->count());
+    }
+
+    public static function phpUploadErrors(): array
+    {
+        return ['upload_max_filesize' => [UPLOAD_ERR_INI_SIZE], 'partial upload' => [UPLOAD_ERR_PARTIAL]];
+    }
+
+    /**
+     * Above `post_max_size` PHP discards the whole body; Laravel's own ValidatePostSize
+     * middleware (global, before routing/auth) answers that with a JSON 413. This tests
+     * that real Laravel layer with the request PHP would hand over (Content-Length larger
+     * than post_max_size, no body) — NOT a web-server/proxy 413, which never reaches PHP.
+     */
+    public function test_a_body_over_post_max_size_is_a_json_413_and_stores_nothing(): void
+    {
+        $postMax = $this->iniBytes((string) ini_get('post_max_size'));
+        if ($postMax <= 0) {
+            $this->markTestSkipped('post_max_size is unlimited in this PHP — Laravel never answers 413 here.');
+        }
+        $asset = $this->asset();
+        Sanctum::actingAs($this->operator());
+
+        $this->call('POST', "/api/assets/{$asset->id}/photos", [], [], [], [
+            'CONTENT_LENGTH' => (string) ($postMax + 1),
+            'CONTENT_TYPE' => 'multipart/form-data; boundary=----r6',
+            'HTTP_ACCEPT' => 'application/json',
+        ])->assertStatus(413)->assertJsonPath('message', 'The POST data is too large.');
+
+        $this->assertSame(0, AssetPhoto::query()->count());
+        $this->assertSame([], $this->storedFiles());
+        $this->assertSame(0, MutationLog::query()->where('event_type', 'PHOTO_ADDED')->count());
+    }
+
+    /** `post_max_size`-style value to bytes, the same way Laravel's ValidatePostSize reads it. */
+    private function iniBytes(string $value): int
+    {
+        $number = (int) $value;
+
+        return match (strtoupper(substr(trim($value), -1))) {
+            'K' => $number * 1024,
+            'M' => $number * 1024 ** 2,
+            'G' => $number * 1024 ** 3,
+            default => $number,
+        };
     }
 
     public function test_uploads_are_rate_limited_to_30_per_minute_per_user(): void
