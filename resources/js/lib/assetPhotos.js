@@ -1,4 +1,4 @@
-import { api, ApiError, ensureCsrfCookie, presentErrorMessage, readCookie } from './api';
+import { api, ApiError, ensureCsrfCookie, notifyUnauthorized, presentErrorMessage, readCookie } from './api';
 
 /**
  * Foto Aset API helpers.
@@ -90,6 +90,9 @@ export async function uploadAssetPhoto(assetId, blob, { filename = 'foto.jpg', o
     if (payload?.data) return payload;
     throw new ApiError(UNCONFIRMED_UPLOAD_MESSAGE, { status });
   }
+
+  // expired session: once per upload, the same global signal every other request sends
+  if (status === 401) notifyUnauthorized();
 
   let message = presentErrorMessage(status, payload);
   if (status === 413) {
