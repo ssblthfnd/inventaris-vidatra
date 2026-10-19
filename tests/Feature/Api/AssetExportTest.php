@@ -14,6 +14,7 @@ use Laravel\Sanctum\Sanctum;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Tests\Concerns\InteractsWithAssetFixtures;
+use Tests\Concerns\MatchesTempnamFiles;
 use Tests\TestCase;
 use Tests\Unit\Asset\AssetExportServiceTest;
 
@@ -28,6 +29,7 @@ use Tests\Unit\Asset\AssetExportServiceTest;
 class AssetExportTest extends TestCase
 {
     use InteractsWithAssetFixtures;
+    use MatchesTempnamFiles;
     use RefreshDatabase;
 
     private function saveResponseAsWorkbook(string $content): Spreadsheet
@@ -238,10 +240,13 @@ class AssetExportTest extends TestCase
         $this->existingAsset('001', 2020, [], '01', '02', '001');
         Sanctum::actingAs($this->operator());
 
-        $before = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'asset-export-*') ?: [];
+        // the pattern the controller's tempnam(…, 'asset-export-') really produces here
+        $pattern = $this->tempnamGlob('asset-export-');
+        $before = glob($pattern) ?: [];
         $this->get('/api/assets/export')->assertOk();
-        $after = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'asset-export-*') ?: [];
+        $after = glob($pattern) ?: [];
 
-        $this->assertSame($before, $after, 'A temp export file was left behind after a successful request.');
+        // only files that APPEARED count (older leftovers of the same pattern may exist)
+        $this->assertSame([], array_values(array_diff($after, $before)), 'A temp export file was left behind after a successful request.');
     }
 }

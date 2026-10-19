@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\Concerns\InteractsWithAssetFixtures;
+use Tests\Concerns\MatchesTempnamFiles;
 use Tests\TestCase;
 use Tests\Unit\Import\ImportTemplateServiceTest;
 
@@ -27,6 +28,7 @@ use Tests\Unit\Import\ImportTemplateServiceTest;
 class ImportTemplateTest extends TestCase
 {
     use InteractsWithAssetFixtures;
+    use MatchesTempnamFiles;
     use RefreshDatabase;
 
     public function test_unauthenticated_gets_401(): void
@@ -134,11 +136,14 @@ class ImportTemplateTest extends TestCase
         $this->scope('01', '02', '001');
         Sanctum::actingAs($this->operator());
 
-        $before = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'import-template-*') ?: [];
+        // the pattern the controller's tempnam(…, 'import-template-') really produces here
+        $pattern = $this->tempnamGlob('import-template-');
+        $before = glob($pattern) ?: [];
         $this->get('/api/imports/template?category=02')->assertOk();
-        $after = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'import-template-*') ?: [];
+        $after = glob($pattern) ?: [];
 
-        $this->assertSame($before, $after, 'A temp template file was left behind after a successful request.');
+        // only files that APPEARED count (older leftovers of the same pattern may exist)
+        $this->assertSame([], array_values(array_diff($after, $before)), 'A temp template file was left behind after a successful request.');
     }
 
     /* ------------------------------------------------------------------ REFERENSI room scope (R6 I6-01) */
