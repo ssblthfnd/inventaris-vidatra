@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import MultiSelectFilter from '../components/MultiSelectFilter';
 import { CenteredState } from '../lib/assetFields';
 import { api, ApiError } from '../lib/api';
+import { ASSET_SOURCES } from '../lib/assetSources';
 import {
   ARRAY_FILTERS,
   buildReportQuery,
@@ -228,6 +229,8 @@ export default function Reports() {
           return STATUS_OPTIONS.find((o) => o.value === value)?.label ?? value;
         case 'asset_year':
           return value;
+        case 'asset_source':
+          return ASSET_SOURCES.find((o) => o.value === value)?.label ?? value;
         default:
           return value;
       }
@@ -333,6 +336,13 @@ export default function Reports() {
             searchable
             emptyText="Belum ada data tahun"
           />
+          <MultiSelectFilter
+            label="Sumber"
+            options={ASSET_SOURCES}
+            selected={state.asset_source}
+            onChange={(v) => patchState({ asset_source: v })}
+            searchable={false}
+          />
         </div>
 
         {chips.length > 0 && (
@@ -419,6 +429,14 @@ export default function Reports() {
               </table>
             </div>
           </section>
+
+          {/* Tahap 2 — all six sources over the same filtered scope; sums to Total Aset */}
+          <CountTable
+            title="Distribusi Aset per Sumber"
+            rows={data?.by_source ?? []}
+            labelKey="label"
+            headers={['Sumber', 'Jumlah']}
+          />
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <CountTable

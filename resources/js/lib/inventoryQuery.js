@@ -15,6 +15,8 @@ export const ARRAY_FILTERS = [
   'room_id',
   'condition',
   'is_written_off',
+  // Tahap 2 — Sumber Aset (the six AssetSource values; same param on export)
+  'asset_source',
 ];
 
 /**
@@ -30,6 +32,8 @@ export const SORTS = [
   { value: 'asset_year:desc', label: 'Tahun terbaru', sort: 'asset_year', direction: 'desc' },
   { value: 'asset_year:asc', label: 'Tahun terlama', sort: 'asset_year', direction: 'asc' },
   { value: 'created_at:desc', label: 'Terakhir ditambahkan', sort: 'created_at', direction: 'desc' },
+  // Tahap 2 — ENUM order on the server: BOSDA … Lainnya, Belum diberi keterangan
+  { value: 'asset_source:asc', label: 'Sumber', sort: 'asset_source', direction: 'asc' },
 ];
 
 export const PER_PAGE_OPTIONS = [20, 50, 100];

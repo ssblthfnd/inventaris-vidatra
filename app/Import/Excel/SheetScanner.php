@@ -25,7 +25,10 @@ use RuntimeException;
  */
 final class SheetScanner
 {
-    private const LAST_COL = 'V'; // read A..V; data never extends past column T
+    private const LAST_COL = 'V'; // read A..V; historical data never extends past column T
+
+    /** Tahap 2 — column of the optional `SUMBER` (asset source) header/data cell. */
+    public const SOURCE_COL = 'U';
 
     // Real source workbooks run ~250-400 data rows (see docs/schema_design.md /
     // project history) — this is a wide safety margin, not a realistic ceiling,
@@ -51,6 +54,13 @@ final class SheetScanner
     public int $headerRow = 0;
     public int $firstDataRow = 0;
     public int $highestRow = 0;
+
+    /**
+     * Tahap 2 — whether the header row carries a `SUMBER` label in column U
+     * (the current template / export). Historical workbooks have nothing there,
+     * so a blank column U in those is "no source column", not "source left blank".
+     */
+    public bool $hasSourceColumn = false;
 
     public function __construct(private readonly string $path)
     {
@@ -118,6 +128,11 @@ final class SheetScanner
                 . '(no "No. Urut" / "NOMOR ASET" header row found).'
             );
         }
+
+        $this->hasSourceColumn = str_contains(
+            mb_strtoupper($this->calc($sheet, self::SOURCE_COL, $this->headerRow)),
+            'SUMBER'
+        );
 
         // Header spans 2 rows (row N = labels, row N+1 = Baik/Kurang Baik/Rusak Berat).
         $this->firstDataRow = $this->headerRow + 2;

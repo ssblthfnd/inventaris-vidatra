@@ -60,6 +60,9 @@ final class AssetExportService
 
     private const FIRST_DATA_ROW = 8;
 
+    /** Tahap 2 — every sheet now ends at V (U = SUMBER, V = KETERANGAN SUMBER). */
+    private const LAST_COL = AssetSheetColumns::SOURCE_NOTE_COL;
+
     /**
      * @param  Collection<int, Asset>  $assets  already filtered/authorized/ordered by the caller
      */
@@ -208,9 +211,12 @@ final class AssetExportService
                 $sheet->setCellValue("{$col}".self::SUBHEADER_ROW, $meta['sub']);
             }
         }
+        // Tahap 2 — appended after every historical column; nothing before U moves.
+        $sheet->setCellValue(AssetSheetColumns::SOURCE_COL.self::HEADER_ROW, AssetSheetColumns::SOURCE_HEADER);
+        $sheet->setCellValue(AssetSheetColumns::SOURCE_COL.self::SUBHEADER_ROW, AssetSheetColumns::SOURCE_SUBHEADER);
+        $sheet->setCellValue(AssetSheetColumns::SOURCE_NOTE_COL.self::HEADER_ROW, AssetSheetColumns::SOURCE_NOTE_HEADER);
 
-        $lastCol = array_key_last($specific) ?? 'P';
-        $range = 'A'.self::HEADER_ROW.":{$lastCol}".self::SUBHEADER_ROW;
+        $range = 'A'.self::HEADER_ROW.':'.self::LAST_COL.self::SUBHEADER_ROW;
         $sheet->getStyle($range)->getFont()->setBold(true);
         $sheet->getStyle($range)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(self::HEADER_FILL_RGB);
         $sheet->getStyle($range)->getAlignment()->setWrapText(true)
@@ -255,17 +261,21 @@ final class AssetExportService
 
             $this->writeCategorySpecificColumns($sheet, $row, $categoryCode, $map, $asset);
 
-            $sheet->getStyle("A{$row}:".(array_key_last($specific) ?? 'P')."{$row}")
+            // Tahap 2 — SUMBER as its UI label (re-importable: the importer accepts
+            // labels), KETERANGAN SUMBER verbatim. Both literal strings.
+            $sheet->setCellValueExplicit(AssetSheetColumns::SOURCE_COL.$row, (string) $asset->asset_source?->label(), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit(AssetSheetColumns::SOURCE_NOTE_COL.$row, (string) ($asset->funding_source ?? ''), DataType::TYPE_STRING);
+
+            $sheet->getStyle("A{$row}:".self::LAST_COL."{$row}")
                 ->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
-            $sheet->getStyle("A{$row}:".(array_key_last($specific) ?? 'P')."{$row}")
+            $sheet->getStyle("A{$row}:".self::LAST_COL."{$row}")
                 ->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
             $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle("F{$row}:F{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle("K{$row}:N{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
             if ($index % 2 === 0) {
-                $lastCol = array_key_last($specific) ?? 'P';
-                $sheet->getStyle("A{$row}:{$lastCol}{$row}")->getFill()
+                $sheet->getStyle("A{$row}:".self::LAST_COL."{$row}")->getFill()
                     ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F2F2F2');
             }
 
@@ -322,5 +332,7 @@ final class AssetExportService
         $sheet->getColumnDimension('E')->setWidth(12);
         $sheet->getColumnDimension('O')->setWidth(22);
         $sheet->getColumnDimension('P')->setWidth(20);
+        $sheet->getColumnDimension(AssetSheetColumns::SOURCE_COL)->setWidth(22);
+        $sheet->getColumnDimension(AssetSheetColumns::SOURCE_NOTE_COL)->setWidth(28);
     }
 }

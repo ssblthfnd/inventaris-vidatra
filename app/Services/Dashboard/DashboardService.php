@@ -2,6 +2,7 @@
 
 namespace App\Services\Dashboard;
 
+use App\Enums\AssetSource;
 use App\Models\Asset;
 use App\Models\MutationLog;
 use App\Models\User;
@@ -22,8 +23,8 @@ use Illuminate\Support\Facades\DB;
  * query (`deleted_at IS NULL`). A written-off asset is still an asset and is
  * counted (R9.4-15 D15-2: "Total Aset" keeps this meaning); a soft-deleted
  * asset is not (it is in the Trash). No `withTrashed()`. Every breakdown —
- * condition, location, category, room incl. the "Tanpa Ruangan" bucket — sums
- * to `summary.total_assets`.
+ * condition, location, category, room incl. the "Tanpa Ruangan" bucket, and
+ * source (Tahap 2) — sums to `summary.total_assets`.
  *
  * Stage 6.9 R4 — a global role (admin/super_admin/operator/viewer) gets
  * exactly the same numbers as before (no location constraint added at all).
@@ -55,6 +56,7 @@ class DashboardService
             'by_location' => $this->byLocation($locationCodes),
             'by_category' => $this->byCategory($locationCodes),
             'by_room' => $this->byRoom($locationCodes),
+            'by_source' => $this->bySource($locationCodes),
             'recent_mutations' => $this->recentMutations($locationCodes),
         ];
     }
@@ -223,6 +225,45 @@ class DashboardService
         }
 
         return $rooms;
+    }
+
+    /**
+     * Tahap 2 — active assets per {@see AssetSource}: ALL six categories, in
+     * enum order, zero-count ones included (same fixed-bucket convention as
+     * `summary.by_condition`). `asset_source` is NOT NULL, so the rows always sum
+     * to `summary.total_assets` (non-deleted, written-off included, same location
+     * scope). One GROUP BY query.
+     *
+     * @param  ?list<string>  $locationCodes
+     * @return list<array{value: string, label: string, asset_count: int}>
+     */
+    private function bySource(?array $locationCodes): array
+    {
+        $counts = Asset::query()
+            ->when($locationCodes !== null, fn ($q) => $q->whereIn('location_code', $locationCodes))
+            ->selectRaw('asset_source, COUNT(*) as asset_count')
+            ->groupBy('asset_source')
+            ->toBase()
+            ->pluck('asset_count', 'asset_source');
+
+        return self::sourceBuckets($counts->all());
+    }
+
+    /**
+     * Tahap 2 — shared by this service and ReportService: every {@see AssetSource}
+     * in enum order with its count from `$counts` (keyed by stored value), 0 when
+     * absent.
+     *
+     * @param  array<string, int|string>  $counts
+     * @return list<array{value: string, label: string, asset_count: int}>
+     */
+    public static function sourceBuckets(array $counts): array
+    {
+        return array_map(fn (AssetSource $source): array => [
+            'value' => $source->value,
+            'label' => $source->label(),
+            'asset_count' => (int) ($counts[$source->value] ?? 0),
+        ], AssetSource::cases());
     }
 
     /**

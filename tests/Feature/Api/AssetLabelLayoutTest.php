@@ -47,6 +47,19 @@ class AssetLabelLayoutTest extends TestCase
         ];
     }
 
+    /**
+     * The same three data sets as {@see self::sizes()} (same keys, same order),
+     * carrying only the size name — for tests whose method takes just `$size`.
+     * PHPUnit 12 reports a data set with more arguments than the method accepts
+     * as a PHPUnit warning (which fails the run), so those tests use this one.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function sizeNames(): array
+    {
+        return array_map(fn (array $row): array => [$row[0]], self::sizes());
+    }
+
     /* ------------------------------------------------------------------ single: physical size */
 
     #[DataProvider('sizes')]
@@ -183,7 +196,7 @@ class AssetLabelLayoutTest extends TestCase
      * Verified for every size, since a wider/taller label recomputes the whole
      * layout, not just the code row.
      */
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_all_cells_fit_in_the_single_available_row_width(string $size): void
     {
         $asset = $this->existingAsset('0004', 2019, [], 'ZL', 'ZC', '001');
@@ -208,7 +221,7 @@ class AssetLabelLayoutTest extends TestCase
      *  past its natural width to fill the row (Tahap 6.0 R8 revision — long codes
      *  still shrink-to-fit exactly as before, but a code short enough to fit at its
      *  natural width is centered in the row instead of being force-stretched). */
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_varying_code_lengths_fit_for_every_size(string $size): void
     {
         $eighteen = $this->existingAsset('001', 2020, [], 'ZL', 'ZC', '001');
@@ -239,7 +252,7 @@ class AssetLabelLayoutTest extends TestCase
 
     /* ------------------------------------------------------------------ batch: A4 grid */
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_batch_pdf_page_size_is_a4_portrait_for_every_size(string $size): void
     {
         $asset = $this->existingAsset('001');
@@ -251,7 +264,7 @@ class AssetLabelLayoutTest extends TestCase
         $this->assertEqualsWithDelta(297.0, $rect['h'] / self::MM_TO_PT, 0.05);
     }
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_batch_grid_uses_exactly_two_columns(string $size): void
     {
         $service = app(AssetLabelPdfService::class);
@@ -280,7 +293,7 @@ class AssetLabelLayoutTest extends TestCase
         $this->assertSame($expectedHeight, $layout['boxHeightMm']);
     }
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_batch_has_cutting_spacing_between_and_around_labels(string $size): void
     {
         $service = app(AssetLabelPdfService::class);
@@ -304,7 +317,7 @@ class AssetLabelLayoutTest extends TestCase
      * outer margin) for every size — the acceptance criterion that no label may be
      * clipped, cross a page boundary, or fall outside the printable region.
      */
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_every_label_position_stays_within_the_a4_usable_area(string $size): void
     {
         $service = app(AssetLabelPdfService::class);
@@ -329,7 +342,7 @@ class AssetLabelLayoutTest extends TestCase
     }
 
     /** No two labels on the same page ever overlap, for every size. */
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_no_two_labels_on_a_page_overlap(string $size): void
     {
         $service = app(AssetLabelPdfService::class);
@@ -357,7 +370,7 @@ class AssetLabelLayoutTest extends TestCase
 
     /* ------------------------------------------------------------------ pagination: capacity */
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_labels_per_page_is_deterministic_and_derived_from_layout_constants(string $size): void
     {
         $service = app(AssetLabelPdfService::class);
@@ -379,7 +392,7 @@ class AssetLabelLayoutTest extends TestCase
         }
     }
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_a_single_label_produces_exactly_one_page(string $size): void
     {
         $assets = $this->makeAssets(1);
@@ -389,7 +402,7 @@ class AssetLabelLayoutTest extends TestCase
         $this->assertSame(1, $this->pageCount($pdf));
     }
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_a_few_labels_below_capacity_produce_exactly_one_page(string $size): void
     {
         $assets = $this->makeAssets(3);
@@ -399,7 +412,7 @@ class AssetLabelLayoutTest extends TestCase
         $this->assertSame(1, $this->pageCount($pdf));
     }
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_exactly_one_page_capacity_produces_a_single_page(string $size): void
     {
         $capacity = app(AssetLabelPdfService::class)->labelsPerPage($size);
@@ -417,7 +430,7 @@ class AssetLabelLayoutTest extends TestCase
      * (fallible, per Tahap 6.0's findings) page-breaking is never asked to decide
      * where a page ends, so a label can never end up split across two pages.
      */
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_capacity_plus_one_produces_exactly_two_pages(string $size): void
     {
         $capacity = app(AssetLabelPdfService::class)->labelsPerPage($size);
@@ -428,7 +441,7 @@ class AssetLabelLayoutTest extends TestCase
         $this->assertSame(2, $this->pageCount($pdf));
     }
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_multiple_full_pages_plus_a_remainder_produces_the_right_page_count(string $size): void
     {
         $capacity = app(AssetLabelPdfService::class)->labelsPerPage($size);
@@ -439,7 +452,7 @@ class AssetLabelLayoutTest extends TestCase
         $this->assertSame(3, $this->pageCount($pdf));
     }
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_last_page_may_contain_fewer_labels_without_being_invalid(string $size): void
     {
         $capacity = app(AssetLabelPdfService::class)->labelsPerPage($size);
@@ -455,7 +468,7 @@ class AssetLabelLayoutTest extends TestCase
 
     /* ------------------------------------------------------------------ visual/manual smoke via HTTP */
 
-    #[DataProvider('sizes')]
+    #[DataProvider('sizeNames')]
     public function test_batch_endpoint_still_returns_a4_multi_page_pdf_end_to_end(string $size): void
     {
         Sanctum::actingAs($this->operator());

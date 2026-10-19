@@ -2,7 +2,9 @@
 
 namespace App\Import\Parsing;
 
+use App\Enums\AssetSource;
 use App\Import\Excel\ScannedRow;
+use App\Import\Excel\SheetScanner;
 
 /**
  * Turns one scanned DATA row into a {@see ParsedRow}. Deterministic; performs NO
@@ -13,7 +15,12 @@ final class RowParser
 {
     private const WRITE_OFF_PATTERN = '/\b(di\s*junk|junk|di\s*hapus|dihapus|hapus|dispose)\b/i';
 
-    public function parse(ScannedRow $row, string $batchCategoryCode): ParsedRow
+    /**
+     * @param  bool  $hasSourceColumn  whether the workbook's header row carries the
+     *                                 Tahap 2 `SUMBER` column ({@see SheetScanner::$hasSourceColumn});
+     *                                 false for historical workbooks
+     */
+    public function parse(ScannedRow $row, string $batchCategoryCode, bool $hasSourceColumn = false): ParsedRow
     {
         $map = CategoryColumnMap::forCategory($batchCategoryCode);
         $notes = [];
@@ -104,6 +111,11 @@ final class RowParser
 
         $notesText = $this->composeNotes($row, $map['notes_cols']);
 
+        [$assetSource, $assetSourceRaw, $assetSourceStatus, $sourceNote] = $this->parseSource($row, $hasSourceColumn);
+        if ($sourceNote !== null) {
+            $notes[] = $sourceNote;
+        }
+
         return new ParsedRow(
             rowNumber: $row->rowNumber,
             locationCode: $locationCode,
@@ -128,7 +140,50 @@ final class RowParser
             notes: $notesText,
             blockSubcategoryCode: $row->blockSubcategoryCode,
             parseNotes: $notes,
+            assetSource: $assetSource,
+            assetSourceRaw: $assetSourceRaw,
+            assetSourceStatus: $assetSourceStatus,
         );
+    }
+
+    /**
+     * Tahap 2 — the SUMBER cell (column U). Never fails the row and never guesses:
+     *
+     *  - workbook without the column (historical layout) -> "belum diberi
+     *    keterangan" with NO message: the row's messages and status stay exactly
+     *    as before Tahap 2, so a legacy workbook's real warnings are not drowned
+     *    out. The state is still recorded (`asset_source_status = column_absent`,
+     *    shown in the preview) and the batch note says "no SUMBER column";
+     *  - blank cell -> "belum diberi keterangan" + `warning`, still promotable;
+     *  - recognised value (value or label, any case/spacing) -> that category;
+     *  - anything else -> NO category (null) + `warning` quoting the original
+     *    text; the user MUST pick one of the six categories in the import
+     *    preview (AssetPromoter refuses the batch until every such row is
+     *    resolved) — never converted silently, never Yayasan.
+     *
+     * @return array{0: ?string, 1: ?string, 2: string, 3: ?array}
+     */
+    private function parseSource(ScannedRow $row, bool $hasSourceColumn): array
+    {
+        $fallback = AssetSource::DEFAULT->value;
+
+        if (! $hasSourceColumn) {
+            return [$fallback, null, ParsedRow::SOURCE_COLUMN_ABSENT, null];
+        }
+
+        $raw = ValueNormalizer::cleanText($row->cell(SheetScanner::SOURCE_COL));
+        if ($raw === null) {
+            return [$fallback, null, ParsedRow::SOURCE_MISSING, $this->note('asset_source_missing', 'warning', 'asset_source',
+                'SUMBER (column U) is empty; source recorded as "Belum diberi keterangan"')];
+        }
+
+        $source = AssetSource::fromInput($raw);
+        if ($source === null) {
+            return [null, $raw, ParsedRow::SOURCE_UNRECOGNIZED, $this->note('asset_source_unrecognized', 'warning', 'asset_source',
+                "SUMBER value [{$raw}] is not a recognised source; choose one in the import preview")];
+        }
+
+        return [$source->value, $raw, ParsedRow::SOURCE_RECOGNIZED, null];
     }
 
     private function code(string $raw, int $width): ?string

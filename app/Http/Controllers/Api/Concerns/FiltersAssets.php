@@ -75,6 +75,7 @@ trait FiltersAssets
                 }
             }))
             ->when($request->assetYears(), fn (Builder $q, array $years) => $q->whereIn('asset_year', $years))
+            ->when($request->assetSources(), fn (Builder $q, array $sources) => $q->whereIn('asset_source', $sources))
             ->when($request->writtenOffValue() !== null, fn (Builder $q) => $q->where('is_written_off', $request->writtenOffValue()))
             ->when($request->validated('q'), fn (Builder $q, string $term) => $this->applyAssetSearch($q, $term));
     }

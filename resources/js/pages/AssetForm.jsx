@@ -17,6 +17,7 @@ import {
   controlClass,
   trimOrNull,
 } from '../lib/assetFields';
+import { ASSET_SOURCES, FUNDING_NOTE_HINT } from '../lib/assetSources';
 import { useMasterData } from '../lib/useMasterData';
 
 /**
@@ -47,6 +48,8 @@ const EMPTY_FORM = {
   capacity_note: '',
   purchase_date: '',
   funding_source: '',
+  // Tahap 2 — never pre-selected on create: the user must choose explicitly
+  asset_source: '',
   notes: '',
   mutation_note: '',
 };
@@ -123,6 +126,7 @@ export default function AssetForm({ mode }) {
           capacity_note: a.capacity_note ?? '',
           purchase_date: a.purchase_date ?? '',
           funding_source: a.funding_source ?? '',
+          asset_source: a.asset_source ?? '',
           notes: a.notes ?? '',
         });
         dirtyRef.current = false;
@@ -246,6 +250,7 @@ export default function AssetForm({ mode }) {
     if (!form.location_code) e.location_code = 'Lokasi wajib dipilih.';
     if (!form.category_code) e.category_code = 'Kategori wajib dipilih.';
     if (!form.subcategory_code) e.subcategory_code = 'Subkategori wajib dipilih.';
+    if (!form.asset_source) e.asset_source = 'Sumber aset wajib dipilih.';
     if (!isEdit) {
       if (!form.asset_year) e.asset_year = 'Tahun aset wajib diisi.';
       else {
@@ -279,6 +284,9 @@ export default function AssetForm({ mode }) {
       notes: trimOrNull(form.notes),
     };
     if (!isEdit) p.asset_year = Number(form.asset_year);
+    // Tahap 2 — create always sends the explicit choice; edit sends it only when
+    // the user actually changed it, so an untouched source is never rewritten.
+    if (!isEdit || form.asset_source !== (original?.asset_source ?? '')) p.asset_source = form.asset_source;
     if (isEdit && placementChanged && trimOrNull(form.mutation_note))
       p.mutation_note = form.mutation_note.trim();
     return p;
@@ -413,6 +421,18 @@ export default function AssetForm({ mode }) {
           <p className="mt-1 text-xs text-gray-500">
             Nomor urut {original.sequence_no} · Tahun {original.asset_year} · Kode aset mengikuti
             klasifikasi dan tidak diubah manual.
+          </p>
+          {/* Foto Aset is managed on the detail page only — no upload on this form. */}
+          <p className="mt-2 text-xs text-gray-500">
+            Foto aset dikelola di{' '}
+            <Link
+              to={detailTo}
+              state={{ from: fromQuery }}
+              className="font-medium text-gray-700 underline underline-offset-2 hover:text-gray-900"
+            >
+              halaman detail aset
+            </Link>
+            . Simpan perubahan di form ini terlebih dahulu.
           </p>
         </div>
       )}
@@ -619,14 +639,42 @@ export default function AssetForm({ mode }) {
               max="2999-12-31"
             />
           </Field>
-          <Field label="Sumber Dana" htmlFor="funding_source" error={fieldErrors.funding_source}>
+          <Field
+            label="Sumber"
+            htmlFor="asset_source"
+            required
+            error={fieldErrors.asset_source}
+            hint="Pilih “Belum diberi keterangan” jika sumbernya belum diketahui."
+          >
+            <SelectInput
+              id="asset_source"
+              value={form.asset_source}
+              onChange={set('asset_source')}
+              error={fieldErrors.asset_source}
+            >
+              <option value="" disabled>
+                Pilih sumber…
+              </option>
+              {ASSET_SOURCES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field
+            label="Keterangan Sumber"
+            htmlFor="funding_source"
+            error={fieldErrors.funding_source}
+            hint={FUNDING_NOTE_HINT}
+          >
             <TextInput
               id="funding_source"
               value={form.funding_source}
               onChange={set('funding_source')}
               error={fieldErrors.funding_source}
               maxLength={MAX_LEN.funding_source}
-              placeholder="mis. APBD, Hibah, Yayasan"
+              placeholder="mis. Hibah alumni 2024"
             />
           </Field>
         </Section>

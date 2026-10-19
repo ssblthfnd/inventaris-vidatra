@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { api, ApiError } from '../lib/api';
+import { recentMutationSummary } from '../lib/assetHistory';
 import { useAuth } from '../auth/AuthContext';
 
 const CONDITION_LABELS = {
@@ -130,6 +131,14 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {/* Tahap 2 — all six sources (zero rows included); sums to Total Aset */}
+      <CountTable
+        title="Aset per Sumber"
+        rows={data?.by_source ?? []}
+        labelKey="label"
+        headers={['Sumber', 'Jumlah']}
+      />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <CountTable
           title="Aset per Lokasi"
@@ -162,17 +171,30 @@ export default function Dashboard() {
           <p className="px-4 py-6 text-sm text-gray-400">Belum ada mutasi.</p>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {data.recent_mutations.map((m) => (
-              <li key={m.id} className="px-4 py-3 text-sm">
-                <span className="text-gray-500">{m.mutation_date}</span>{' '}
-                <span className="font-medium">{m.from?.room_label ?? '—'}</span>
-                <span className="text-gray-400"> → </span>
-                <span className="font-medium">{m.to?.room_label ?? '—'}</span>
-                {m.performed_by?.name && (
-                  <span className="text-gray-400"> · {m.performed_by.name}</span>
-                )}
-              </li>
-            ))}
+            {data.recent_mutations.map((m) => {
+              const summary = recentMutationSummary(m);
+
+              return (
+                <li key={m.id} className="px-4 py-3 text-sm">
+                  <span className="text-gray-500">{m.mutation_date}</span>{' '}
+                  {summary.kind === 'move' ? (
+                    <>
+                      <span className="font-medium">{summary.from ?? '—'}</span>
+                      <span className="text-gray-400"> → </span>
+                      <span className="font-medium">{summary.to ?? '—'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium">{summary.label}</span>
+                      {summary.assetCode && <span className="text-gray-600"> · {summary.assetCode}</span>}
+                    </>
+                  )}
+                  {m.performed_by?.name && (
+                    <span className="text-gray-400"> · {m.performed_by.name}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

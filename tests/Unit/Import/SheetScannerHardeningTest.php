@@ -33,11 +33,12 @@ class SheetScannerHardeningTest extends TestCase
         $sheet->setCellValue('B6', 'NOMOR ASET');
         $sheet->setCellValue('A6000', 'far past the row cap');
 
-        $path = tempnam(sys_get_temp_dir(), 'sheetscanner-toolarge-').'.xlsx';
-        (new Xlsx($spreadsheet))->save($path);
-        $spreadsheet->disconnectWorksheets();
+        $path = $this->tempXlsxPath('sheetscanner-toolarge-');
 
         try {
+            (new Xlsx($spreadsheet))->save($path);
+            $spreadsheet->disconnectWorksheets();
+
             $scanner = new SheetScanner($path);
 
             $this->expectException(RuntimeException::class);
@@ -45,7 +46,7 @@ class SheetScannerHardeningTest extends TestCase
                 // draining the generator is what actually triggers the guard
             }
         } finally {
-            unlink($path);
+            @unlink($path);
         }
     }
 
@@ -67,18 +68,19 @@ class SheetScannerHardeningTest extends TestCase
         $sheet->setCellValue('C8', '02');
         $sheet->setCellValue('E8', '001');
 
-        $path = tempnam(sys_get_temp_dir(), 'sheetscanner-normal-').'.xlsx';
-        (new Xlsx($spreadsheet))->save($path);
-        $spreadsheet->disconnectWorksheets();
+        $path = $this->tempXlsxPath('sheetscanner-normal-');
 
         try {
+            (new Xlsx($spreadsheet))->save($path);
+            $spreadsheet->disconnectWorksheets();
+
             $scanner = new SheetScanner($path);
             $rows = iterator_to_array($scanner->rows());
 
             $this->assertNotEmpty($rows);
             $this->assertSame('02', $scanner->categoryCode);
         } finally {
-            unlink($path);
+            @unlink($path);
         }
     }
 
@@ -92,15 +94,15 @@ class SheetScannerHardeningTest extends TestCase
      */
     public function test_a_workbook_with_an_extreme_compression_ratio_is_rejected_before_parsing(): void
     {
-        $path = tempnam(sys_get_temp_dir(), 'sheetscanner-zipbomb-').'.xlsx';
-
-        $zip = new \ZipArchive;
-        $opened = $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
-        $this->assertTrue($opened === true, 'Failed to open the test zip fixture.');
-        $zip->addFromString('bomb.bin', str_repeat('A', 20 * 1024 * 1024));
-        $zip->close();
+        $path = $this->tempXlsxPath('sheetscanner-zipbomb-');
 
         try {
+            $zip = new \ZipArchive;
+            $opened = $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+            $this->assertTrue($opened === true, 'Failed to open the test zip fixture.');
+            $zip->addFromString('bomb.bin', str_repeat('A', 20 * 1024 * 1024));
+            $zip->close();
+
             $scanner = new SheetScanner($path);
 
             $this->expectException(RuntimeException::class);
@@ -109,7 +111,7 @@ class SheetScannerHardeningTest extends TestCase
                 // draining the generator triggers assertReadableXlsx()
             }
         } finally {
-            unlink($path);
+            @unlink($path);
         }
     }
 
@@ -124,10 +126,11 @@ class SheetScannerHardeningTest extends TestCase
      */
     public function test_a_non_zip_file_is_still_rejected_cleanly_not_by_the_new_guard(): void
     {
-        $path = tempnam(sys_get_temp_dir(), 'sheetscanner-notzip-').'.xlsx';
-        file_put_contents($path, 'this is not a zip file at all');
+        $path = $this->tempXlsxPath('sheetscanner-notzip-');
 
         try {
+            file_put_contents($path, 'this is not a zip file at all');
+
             $scanner = new SheetScanner($path);
 
             $this->expectException(RuntimeException::class);
@@ -135,7 +138,16 @@ class SheetScannerHardeningTest extends TestCase
                 //
             }
         } finally {
-            unlink($path);
+            @unlink($path);
         }
+    }
+
+    /** A fresh `….xlsx` path in the system temp dir (tempnam()'s own placeholder is removed at once). */
+    private function tempXlsxPath(string $prefix): string
+    {
+        $path = tempnam(sys_get_temp_dir(), $prefix);
+        @unlink($path);
+
+        return $path.'.xlsx';
     }
 }

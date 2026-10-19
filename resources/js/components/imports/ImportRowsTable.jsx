@@ -1,3 +1,4 @@
+import { ASSET_SOURCES } from '../../lib/assetSources';
 import { importRowMessageText } from '../../lib/importMessages';
 
 /**
@@ -7,6 +8,11 @@ import { importRowMessageText } from '../../lib/importMessages';
  *
  * R9.4-17: row messages are shown in Indonesian via importRowMessageText()
  * (keyed by the stored `code`); the stored English message is untouched.
+ *
+ * Tahap 2 — the Sumber column shows what promotion would store for each row and,
+ * for rows not yet promoted (and not Error), a select to correct it in place.
+ * The choice is saved server-side via `onResolveSource(row, value)`; an
+ * unrecognised value is shown verbatim and is never treated as Yayasan.
  */
 
 const STATUS_BADGE = {
@@ -56,10 +62,65 @@ function ManualMappingNote({ row }) {
   );
 }
 
+const SOURCE_STATUS_NOTE = {
+  missing: 'Kolom SUMBER kosong',
+  column_absent: 'File tanpa kolom SUMBER',
+};
+
+function SourceCell({ row, onResolveSource, busy }) {
+  const unrecognized = row.asset_source_status === 'unrecognized';
+  const canCorrect = onResolveSource && row.promoted_asset_id == null && row.validation_status !== 'error';
+  const resolution = row.asset_source_resolution;
+
+  return (
+    <div className="space-y-1">
+      {unrecognized ? (
+        <span className="block text-amber-800">
+          “{row.asset_source_raw}” <span className="text-xs">(tidak dikenali)</span>
+        </span>
+      ) : (
+        <span className="block text-gray-700">{row.asset_source_label ?? '—'}</span>
+      )}
+      {row.asset_source_status === 'corrected' ? (
+        <span className="block text-[11px] text-gray-500">
+          Dipilih di pratinjau
+          {resolution?.resolved_by && ` · oleh ${resolution.resolved_by.name}`}
+          {row.asset_source_raw && ` · nilai file: “${row.asset_source_raw}”`}
+        </span>
+      ) : (
+        SOURCE_STATUS_NOTE[row.asset_source_status] && (
+          <span className="block text-[11px] text-gray-500">{SOURCE_STATUS_NOTE[row.asset_source_status]}</span>
+        )
+      )}
+      {canCorrect && (
+        <select
+          value=""
+          disabled={busy}
+          onChange={(e) => e.target.value && onResolveSource(row, e.target.value)}
+          aria-label={`Pilih sumber untuk baris ${row.row_number}`}
+          className={[
+            'w-full max-w-[12rem] rounded-md border px-2 py-1 text-xs outline-none focus:ring-1',
+            unrecognized
+              ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500'
+              : 'border-gray-300 focus:border-gray-900 focus:ring-gray-900',
+          ].join(' ')}
+        >
+          <option value="">{unrecognized ? 'Pilih sumber yang sah…' : 'Ubah sumber…'}</option>
+          {ASSET_SOURCES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 function SkeletonRows() {
   return Array.from({ length: 6 }).map((_, i) => (
     <tr key={i} className="border-t border-gray-100">
-      {Array.from({ length: 5 }).map((__, j) => (
+      {Array.from({ length: 6 }).map((__, j) => (
         <td key={j} className="px-4 py-3">
           <span className="block h-3 w-full max-w-[10rem] animate-pulse rounded bg-gray-100" />
         </td>
@@ -68,16 +129,17 @@ function SkeletonRows() {
   ));
 }
 
-export default function ImportRowsTable({ rows, loading }) {
+export default function ImportRowsTable({ rows, loading, onResolveSource = null, sourceBusyRowId = null }) {
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-400">
               <th className="px-4 py-3">Baris</th>
               <th className="px-4 py-3">Identitas</th>
               <th className="px-4 py-3">Ruangan</th>
+              <th className="px-4 py-3">Sumber</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Catatan</th>
             </tr>
@@ -87,7 +149,7 @@ export default function ImportRowsTable({ rows, loading }) {
               <SkeletonRows />
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">
                   Tidak ada baris untuk filter ini.
                 </td>
               </tr>
@@ -114,6 +176,9 @@ export default function ImportRowsTable({ rows, loading }) {
                         {row.room_raw_value ? `${row.room_raw_value} (belum dipetakan)` : 'Belum diisi'}
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <SourceCell row={row} onResolveSource={onResolveSource} busy={sourceBusyRowId === row.id} />
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={row.validation_status} isDuplicate={row.is_duplicate} />

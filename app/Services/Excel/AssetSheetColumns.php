@@ -2,6 +2,7 @@
 
 namespace App\Services\Excel;
 
+use App\Import\Excel\SheetScanner;
 use App\Import\Parsing\CategoryColumnMap;
 use App\Import\Parsing\RowParser;
 use App\Services\Asset\AssetExportService;
@@ -39,6 +40,28 @@ final class AssetSheetColumns
         'O' => 'Ruangan',
         'P' => 'Ket. Mutasi dll',
     ];
+
+    /**
+     * Tahap 2 — Sumber Aset. Column U holds the asset-source category in BOTH the
+     * template and the export, for every category (after the last historical
+     * category-specific column, T). The importer recognises a workbook as having
+     * this column by the header text in U ({@see SheetScanner::$hasSourceColumn}),
+     * so historical workbooks — nothing in U — keep importing unchanged.
+     */
+    public const SOURCE_COL = 'U';
+
+    public const SOURCE_HEADER = 'SUMBER';
+
+    public const SOURCE_SUBHEADER = 'BOSDA / BOSP / BOSTK / Yayasan / Lainnya / Belum diberi keterangan';
+
+    /**
+     * Tahap 2 — export only: the free-text `funding_source` ("Keterangan Sumber")
+     * in column V. The importer does not read V (the template has no such column);
+     * re-importing an export therefore never writes `funding_source`.
+     */
+    public const SOURCE_NOTE_COL = 'V';
+
+    public const SOURCE_NOTE_HEADER = 'KETERANGAN SUMBER';
 
     public const CONDITION_SUBHEADERS = [
         'L' => 'Baik (B)',

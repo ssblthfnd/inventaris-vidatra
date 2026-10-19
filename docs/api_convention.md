@@ -668,3 +668,209 @@ The following are **conventions only** — no code exists yet:
 | 5.7 | non-relocation mutation types (`perbaikan`, `perubahan_kondisi`, …); room / room-alias management; import/report HTTP layer; filtered/parameterised reporting; full API feature-test matrix |
 
 Do not document any of these as available endpoints until their stage lands.
+
+---
+
+## 17. Sumber Aset — `asset_source` (Tahap 2)
+
+User-facing guide: `docs/panduan_sumber_aset.md`.
+
+### 17.1 Field
+
+- `assets.asset_source` — `ENUM('bosda','bosp','bostk','yayasan','lainnya','belum_diberi_keterangan')`
+  `NOT NULL DEFAULT 'belum_diberi_keterangan'`, index `ix_assets_asset_source`.
+  PHP: `App\Enums\AssetSource` (stored slug = source of truth; `label()` for display).
+- `belum_diberi_keterangan` is a legitimate category ("source not known yet"),
+  never an error and never a synonym of `yayasan`. Nothing new defaults to `yayasan`;
+  only assets existing at migration time are backfilled to `yayasan`, once (§17.5).
+- Separate from the free-text `funding_source` (UI label "Keterangan Sumber"); the
+  two are never merged, copied or swapped.
+- Input normalisation everywhere (`AssetSource::fromInput()` / `canonicalOrOriginal()`):
+  trim, collapse whitespace, case-insensitive, value or label (`_` = space). Anything
+  unrecognised is rejected (`422`) — never coerced.
+
+### 17.2 Write endpoints
+
+| Endpoint | Rule |
+|---|---|
+| `POST /api/assets`, `POST /api/assets/batch` | `asset_source` **required**, enum |
+| `PUT/PATCH /api/assets/{asset}` | `sometimes`, `required` (cannot be cleared), enum; omitted = untouched |
+| `PATCH /api/assets/batch` | `changes.asset_source` allowed (4th batch-editable key); `sometimes`, `required`, enum; applied only when present |
+
+`AssetResource` (and `TrashedAssetResource`) expose `asset_source` (slug).
+`AssetMutationRecorder::snapshot()` includes `asset_source`; older snapshots lack the
+key and `MutationRevertService` skips keys missing from `before`, so old history stays
+revertable unchanged.
+
+### 17.3 Filter / sort / export / report / dashboard
+
+- `GET /api/assets` (and `assets/export`, `assets/trash`, `reports/inventory` via the
+  shared `AssetIndexRequest` + `FiltersAssets`): multi-value `asset_source[]`, same
+  contract as §8.1.1 (OR within, AND between, duplicates `422`, unknown `422`).
+  Location scope is applied exactly as for every other filter.
+- Sort whitelist gains `asset_source` (ENUM definition order on MySQL and MariaDB).
+- Export: column **U = SUMBER** (label), **V = KETERANGAN SUMBER** (`funding_source`);
+  columns A–T unchanged. Known limitation (by decision): the import template has no
+  column V and the importer never reads V, so re-importing an export does not carry
+  `funding_source`; it is maintained via Edit Aset.
+- `GET /api/dashboard` and `GET /api/reports/inventory` gain `by_source`: all six
+  categories in enum order, zero-count included,
+  `[{ value, label, asset_count }]`; sums to `summary.total_assets` (non-deleted,
+  written-off included, same scope/filters).
+
+### 17.4 Import
+
+- Template DATA sheet: column **U = SUMBER** (dropdown); REFERENSI lists the six values.
+- `SheetScanner::$hasSourceColumn` is true when the header row has "SUMBER" in U;
+  historical workbooks (no header there) keep importing unchanged (no message,
+  `parsed.asset_source_status = column_absent`, source = `belum_diberi_keterangan`).
+- With the column: blank → warning `asset_source_missing` (promotable, source =
+  `belum_diberi_keterangan`); recognised → that value; unrecognised → warning
+  `asset_source_unrecognized`, `parsed.asset_source = null`, raw text kept in
+  `parsed.asset_source_raw`.
+- `POST /api/imports/{batch}/asset-sources/resolve` — `{ row_ids: [..1..500], asset_source }`,
+  `can:assets.import`; location scope via `ImportBatchPolicy::batchWithinScope()`
+  (`403`); rows must belong to the batch and be unpromoted, all-or-nothing (`422`).
+  Stores `import_rows.asset_source_override` + `asset_source_resolved_by/_at`, removes
+  the source warning, warning → valid when nothing else flags the row (batch counters
+  adjusted). `raw_payload` is never rewritten.
+- **Promotion is refused while any promotable, unpromoted row still has an
+  unrecognised SUMBER value without a correction** — `AssetPromoter::promoteBatch()`
+  (HTTP and CLI alike) throws before promoting anything; `POST /api/imports/{batch}/promote`
+  answers `422` (`errors.batch`, listing the row numbers). Nothing is converted
+  silently: such a row leaves that state only through an explicit correction (which
+  may be `belum_diberi_keterangan`). `promoteOne()` re-checks per row as defence in depth.
+- Promotion stores `override ?? parsed.asset_source`; a blank cell / workbook without
+  the column parses as `belum_diberi_keterangan`.
+  `unresolved_source_pending_count` (upload, `GET /api/imports/{batch}` and the promote
+  response) is the number of rows holding promotion back; the UI disables the promote
+  confirmation while it is > 0.
+- `GET /api/imports/{batch}/rows?status=source_unresolved` (UI-only filter value, like
+  `duplicate`) lists exactly those rows.
+- `ImportRowResource` adds `asset_source`, `asset_source_label`, `asset_source_raw`,
+  `asset_source_status` (`recognized|missing|unrecognized|column_absent|corrected`),
+  `asset_source_resolution`.
+- Duplicate detection / re-import semantics are unchanged; an existing asset's source is
+  never modified by an import.
+
+### 17.5 Migrations
+
+`2026_10_15_100000_add_asset_source_to_assets_table` (adds the column with default
+`belum_diberi_keterangan`, then sets **every asset existing at migration time — trashed
+included — to `yayasan`** with a query-builder UPDATE; not inferred from
+`funding_source`; no `updated_at` bump, no history rows) and
+`2026_10_15_100001_add_asset_source_override_to_import_rows_table`. `down()` drops only
+those columns; **rollback discards every source chosen after deployment** — never roll
+back without a backup and explicit approval.
+
+---
+
+## 18. Foto Aset — `asset_photos`
+
+User/operations guide: `docs/panduan_foto_aset.md`. Schema: `data/reference/schema_design.md` §2.11.
+
+### 18.1 Endpoints
+
+| Method & path | Gate | WHERE / state | Success |
+|---|---|---|---|
+| `GET /api/assets/{asset}/photos` | `can:viewer` | `AssetPolicy::viewDetail` → else **404**; trashed asset resolved (`withTrashed`) | `200 {data: [AssetPhotoResource], meta: {max_photos, max_upload_kb, output_max_side}}`, ordered by slot |
+| `GET /api/assets/{asset}/photos/{photo}` | `can:viewer` | same as above; `{photo}` scope-bound to `{asset}` | `200` JPEG bytes, or `304` |
+| `POST /api/assets/{asset}/photos` | `can:assets.edit` + `throttle:asset-photo-uploads` | `AssetPolicy::update` → else **403**; trashed asset → **404** | `201 {data: AssetPhotoResource, message}` |
+| `DELETE /api/assets/{asset}/photos/{photo}` | `can:assets.edit` | `AssetPolicy::update` → else **403**; trashed asset → **404**; `{photo}` scope-bound | `204` |
+
+- `AssetPolicy::viewDetail` is the asset detail page's rule, moved verbatim out of
+  `AssetController::show()` (which now calls it): active asset → `LocationScope`;
+  soft-deleted asset → additionally `assets.restore` + the location. Denial = 404 (never
+  confirms existence). `GET /api/assets/{asset}` behaviour is unchanged.
+- Write denial for a `unit_admin` outside its location is **403**, matching
+  `PUT /api/assets/{asset}` (decision K6-A).
+- All ids are `whereNumber`; a photo id of another asset, a non-numeric id or a path-like
+  segment is 404 — the storage path is never taken from the request.
+- Upload: multipart field `photo`, one file per request, `required|file|max:15360` (KB). The
+  rate limiter `asset-photo-uploads` allows **30 requests/minute per user**
+  (`inventory.photos.upload_per_minute`).
+
+### 18.2 `AssetPhotoResource`
+
+`{ id, slot, mime, size_bytes, width, height, url, created_at }` — `url` is the relative
+`GET /api/assets/{asset}/photos/{photo}` path. The private `path` is hidden on the model and is
+never part of any response, log line visible to users, or history row. Photos are not part of
+`AssetResource`, the inventory list, the Trash list, the Excel export or label PDFs.
+
+### 18.3 Validation & processing (`App\Services\Image\ImageSanitizer`, GD only)
+
+The client's file name, extension and MIME type are ignored. In order: size ≤ 15 MB →
+HEIC/HEIF (ISO-BMFF `ftyp` brand) refused with its own message (AVIF/AVIS brands are checked
+first and refused as an unsupported format, not as HEIC) → `finfo` must be JPEG/PNG
+(WebP only when GD supports it) → `getimagesize()` must agree and report the size → **before
+decode**: longest side ≤ 12 000 px, ≤ 50 MP, and `w×h×factor + 1600²×4` bytes must fit in
+`memory_limit − memory in use − 16 MB` (with `memory_limit = -1` only the dimension caps apply).
+`factor` is per format (`photos.bytes_per_input_pixel`: JPEG 6, WebP 6, PNG 9; a format missing
+from the map uses the largest) — GD's PNG reader needs a full intermediate buffer (measured
+≈ 8.2 B/px peak vs ≈ 4.9 for JPEG/WebP, PHP 8.3 bundled GD; not measured on the production host)
+→ GD decode → resize to ≤ 1600 px on white (transparency flattened) → EXIF orientation applied
+when `exif` exists → re-encode JPEG q80 (no EXIF/GPS) → output verified. Every rejection is a
+`422` on `errors.photo` with an Indonesian message; GD warnings never surface as 500s. Limits
+live in `config/inventory.php` → `photos`.
+
+### 18.4 Consistency & concurrency (`App\Services\Asset\AssetPhotoService`)
+
+- Upload: early count check → sanitize → write `asset-photos/{asset_id}/{uuid}.jpg` →
+  transaction { `SELECT … FOR UPDATE` on the asset row (gone/trashed → 404) →
+  `AssetPolicy::update` re-evaluated on that locked row (moved out of scope meanwhile → 403) →
+  count again → lowest free slot → insert → `PHOTO_ADDED` } → commit. Fourth photo → `422`. A
+  `UNIQUE (asset_id, slot)` violation (should the lock ever be bypassed) → `409`. Any failure
+  after the file was written deletes that new file only; a failed cleanup is logged
+  (`asset_photo.file_delete_failed`) and left for the prune command.
+- Delete: transaction { lock asset row → re-evaluate `AssetPolicy::update` (403) → lock the
+  photo row → `PHOTO_DELETED` → delete row } → commit → delete the file; a failed file delete is
+  logged, the photo is already unreachable.
+- Write storage failure → `500` with a fixed message, no row written.
+- Tested with real parallel requests: `tests/Feature/Concurrency/AssetPhotoConcurrencyTest`
+  starts two PHP processes (`tests/Support/asset_photo_upload_worker.php`) that each send one
+  upload through the HTTP kernel to the same MySQL test database, racing for the last slot; lock
+  timestamps show they overlap. Exactly one gets slot 3, the other `422`; never a fourth photo,
+  never another photo's file removed. Run alone: `php vendor/bin/phpunit tests/Feature/Concurrency`
+  (needs `proc_open`; MySQL 8.4 only so far).
+
+### 18.5 Image response
+
+Authorization (session + `viewDetail`) runs on **every** request, **before** `If-None-Match`
+is evaluated — a `304` is only ever sent to a caller who may still see the photo. Headers:
+`Content-Type: image/jpeg`, `Cache-Control: private, no-cache` (always revalidated, so lost
+access → 404 instead of a cached copy), `ETag` (SHA-256 of immutable row data — reveals no
+path), `X-Content-Type-Options: nosniff`, `Content-Disposition: inline`,
+`Cross-Origin-Resource-Policy: same-origin`. The SPA uses the URL directly as `<img src>`; the
+session cookie authenticates it (Sanctum's same-origin `Referer`/`Origin` only decides whether
+the session is read — without a valid session the request is `401`).
+
+### 18.6 History
+
+`PHOTO_ADDED` / `PHOTO_DELETED` (`App\Enums\MutationEventType`): `type = NULL`,
+`before_snapshot` = `after_snapshot` (same asset state), `mutation_note` = e.g.
+`Foto slot 2 ditambahkan (1600×1200, 312 KB)` / `Foto slot 2 dihapus permanen (…)`. Never
+revertable (`is_revertable = false`; `POST /api/mutations/{id}/revert` → `409`). Reverting any
+other event never touches photos (photos are not in the snapshot). Filterable with
+`?event_type=PHOTO_ADDED`.
+
+### 18.7 Maintenance command
+
+`php artisan assets:photos:prune-orphans [--older-than=60|90m|12h|7d] [--delete] [--max-delete=N] [--force]`
+— dry-run by default; prints a `Target —` line first (environment, database name, disk; no
+credentials or absolute paths). Only `{asset_id}/{uuid}.jpg` files under the photo root, older
+than the cutoff (minimum 10 minutes) and unreferenced are deleted; symlinks/other names/unexpected
+directories are never touched; rows without a file are reported, never changed. `--delete` is
+refused (exit 2, nothing deleted) when orphans exist but `asset_photos` is empty (`--force` lifts
+only this guard) or when more than `--max-delete=N` orphans are found (optional, no default). Each
+deletion/failure/refusal is logged as `asset_photo.*` with the relative path and asset id. Exit 1
+when a delete failed or the scan was incomplete. Deletion is permanent — run the dry-run first and
+never during an unfinished restore (see docs/panduan_foto_aset.md §8–§9). Manual only (no
+scheduler/queue).
+
+### 18.8 Migrations
+
+`2026_10_16_100000_create_asset_photos_table` and
+`2026_10_16_100001_add_photo_events_to_mutation_logs_table` (raw `ALTER … MODIFY` appending
+two ENUM values, still `NULL`, no default). Both `down()`s refuse to run — instead of silently
+losing data — while photo rows or photo history exist. Tested on MySQL 8.4; MariaDB 10.11 is
+verified separately.

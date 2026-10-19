@@ -25,6 +25,21 @@ class ImportTemplateServiceTest extends TestCase
     use InteractsWithAssetFixtures;
     use RefreshDatabase;
 
+    /** @var list<string> workbooks written by saveTemplate() in the current test */
+    private array $savedTemplates = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->savedTemplates as $path) {
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+        $this->savedTemplates = [];
+
+        parent::tearDown();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -144,7 +159,10 @@ class ImportTemplateServiceTest extends TestCase
     private function saveTemplate(string $category): string
     {
         $spreadsheet = app(ImportTemplateService::class)->generate($category);
-        $path = tempnam(sys_get_temp_dir(), 'import-template-test-').'.xlsx';
+        $path = tempnam(sys_get_temp_dir(), 'import-template-test-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
+        $this->savedTemplates[] = $path; // removed in tearDown(), also when the test fails
         (new Xlsx($spreadsheet))->save($path);
         $spreadsheet->disconnectWorksheets();
 

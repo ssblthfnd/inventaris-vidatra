@@ -7,8 +7,10 @@ use App\Import\Promotion\AssetPromoter;
 use App\Models\Asset;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\InteractsWithAssetFixtures;
@@ -162,5 +164,58 @@ class ImportUploadTest extends TestCase
         $this->post('/api/imports', ['file' => $upload])->assertStatus(422);
 
         $this->assertSame([], Storage::disk('local')->allFiles('imports'));
+    }
+
+    /* ------------------------------------------------------------------ R6 I6-02: atomic staging */
+
+    /**
+     * A database failure part-way through staging (row 2's room cell is longer than
+     * `import_rows.room_raw_value`, varchar(150)) rolls the whole staging back: the
+     * usual 422, and no batch, no row and no stored upload are left behind.
+     */
+    public function test_a_database_failure_mid_staging_leaves_no_partial_batch_or_rows(): void
+    {
+        $this->scope('01', '02', '001');
+        Sanctum::actingAs($this->operator());
+        $upload = $this->makeImportUpload('02', [
+            $this->validImportRowCells(['E' => '001']),
+            $this->validImportRowCells(['E' => '002', 'O' => str_repeat('R', 151)]),
+        ]);
+
+        $this->postJson('/api/imports', ['file' => $upload])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('file');
+
+        $this->assertSame(0, ImportBatch::count());
+        $this->assertSame(0, ImportRow::count());
+        $this->assertSame([], Storage::disk('local')->allFiles('imports'));
+    }
+
+    /**
+     * The failure is logged for diagnosis (exception class + SQLSTATE / driver code)
+     * but never with the SQL, its bindings (the workbook's values) or the connection.
+     */
+    public function test_a_database_failure_is_logged_without_row_values_or_connection_details(): void
+    {
+        $this->scope('01', '02', '001');
+        Sanctum::actingAs($this->operator());
+        $upload = $this->makeImportUpload('02', [
+            $this->validImportRowCells(['E' => '001', 'G' => 'MEREK-RAHASIA-123', 'O' => str_repeat('RAHASIA', 25)]),
+        ]);
+        Log::spy();
+
+        $this->postJson('/api/imports', ['file' => $upload])->assertStatus(422);
+
+        Log::shouldHaveReceived('warning')->withArgs(function (string $message, array $context): bool {
+            $logged = json_encode($context);
+
+            return $message === 'Import staging failed'
+                && $context['error'] === QueryException::class
+                && $context['sqlstate'] === '22001'
+                && ! str_contains($logged, 'RAHASIA')
+                && ! str_contains($logged, 'insert into')
+                && ! str_contains($logged, (string) config('database.connections.mysql.host'))
+                && ! str_contains($logged, (string) config('database.connections.mysql.database'));
+        })->once();
     }
 }

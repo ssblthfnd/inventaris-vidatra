@@ -46,7 +46,7 @@ class AssetWriteService
     private const WRITABLE = [
         'location_code', 'category_code', 'subcategory_code', 'asset_year', 'room_id',
         'condition', 'brand_model', 'serial_no', 'material', 'purchase_date',
-        'funding_source', 'detail_type', 'capacity_note', 'notes',
+        'funding_source', 'asset_source', 'detail_type', 'capacity_note', 'notes',
     ];
 
     public function __construct(
@@ -206,8 +206,11 @@ class AssetWriteService
     }
 
     /**
-     * Batch-edit the safe descriptive fields (`room_id`, `condition`, `notes`) across
-     * many assets in ONE atomic transaction (Tahap 5.8.6).
+     * Batch-edit the safe descriptive fields (`room_id`, `condition`, `notes`, and
+     * since Tahap 2 `asset_source`) across many assets in ONE atomic transaction
+     * (Tahap 5.8.6). A key that is absent from `$changes` is never touched — in
+     * particular an asset's source only changes when the request carries
+     * `asset_source` explicitly.
      *
      *  - Rows are locked in ascending id order (`lockForUpdate()` + `orderBy('id')`)
      *    — a deterministic lock order across every caller, so two overlapping
@@ -232,7 +235,7 @@ class AssetWriteService
      *    actually changed, so the original relocation ledger stays correct too.
      *
      * @param  array<int, int>  $assetIds
-     * @param  array{room_id?: ?int, condition?: ?string, notes?: ?string}  $changes
+     * @param  array{room_id?: ?int, condition?: ?string, notes?: ?string, asset_source?: string}  $changes
      * @return array{requested: int, updated: int, unchanged: int}
      */
     public function batchUpdate(array $assetIds, array $changes, User $actor): array
@@ -291,6 +294,9 @@ class AssetWriteService
                 }
                 if (array_key_exists('notes', $changes)) {
                     $asset->notes = $changes['notes'];
+                }
+                if (array_key_exists('asset_source', $changes)) {
+                    $asset->asset_source = $changes['asset_source'];
                 }
 
                 if (! $asset->isDirty()) {

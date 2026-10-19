@@ -17,6 +17,7 @@ import {
   controlClass,
   trimOrNull,
 } from '../lib/assetFields';
+import { ASSET_SOURCES, FUNDING_NOTE_HINT } from '../lib/assetSources';
 import { useMasterData } from '../lib/useMasterData';
 
 /**
@@ -46,6 +47,8 @@ const EMPTY = {
   capacity_note: '',
   purchase_date: '',
   funding_source: '',
+  // Tahap 2 — never pre-selected; one explicit choice applies to every created asset
+  asset_source: '',
   notes: '',
   count: '1',
 };
@@ -149,6 +152,7 @@ export default function BatchAssetForm() {
     if (!form.location_code) e.location_code = 'Lokasi wajib dipilih.';
     if (!form.category_code) e.category_code = 'Kategori wajib dipilih.';
     if (!form.subcategory_code) e.subcategory_code = 'Subkategori wajib dipilih.';
+    if (!form.asset_source) e.asset_source = 'Sumber aset wajib dipilih.';
     if (!form.asset_year) e.asset_year = 'Tahun aset wajib diisi.';
     else {
       const y = Number(form.asset_year);
@@ -180,6 +184,7 @@ export default function BatchAssetForm() {
     capacity_note: trimOrNull(form.capacity_note),
     purchase_date: trimOrNull(form.purchase_date),
     funding_source: trimOrNull(form.funding_source),
+    asset_source: form.asset_source,
     notes: trimOrNull(form.notes),
     asset_year: Number(form.asset_year),
     count: countNum,
@@ -568,7 +573,35 @@ export default function BatchAssetForm() {
               max="2999-12-31"
             />
           </Field>
-          <Field label="Sumber Dana" htmlFor="funding_source" error={fieldErrors.funding_source}>
+          <Field
+            label="Sumber"
+            htmlFor="asset_source"
+            required
+            error={fieldErrors.asset_source}
+            hint="Berlaku untuk semua aset yang dibuat. Pilih “Belum diberi keterangan” jika belum diketahui."
+          >
+            <SelectInput
+              id="asset_source"
+              value={form.asset_source}
+              onChange={set('asset_source')}
+              error={fieldErrors.asset_source}
+            >
+              <option value="" disabled>
+                Pilih sumber…
+              </option>
+              {ASSET_SOURCES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field
+            label="Keterangan Sumber"
+            htmlFor="funding_source"
+            error={fieldErrors.funding_source}
+            hint={FUNDING_NOTE_HINT}
+          >
             <TextInput
               id="funding_source"
               value={form.funding_source}

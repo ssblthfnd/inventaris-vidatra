@@ -25,6 +25,11 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = fn;
 }
 
+/** The same 401 signal for a request made outside `request()` (e.g. the XHR photo upload). */
+export function notifyUnauthorized() {
+  if (onUnauthorized) onUnauthorized();
+}
+
 export function readCookie(name) {
   const match = document.cookie.match(
     new RegExp('(?:^|;\\s*)' + name.replace(/([.*+?^${}()|[\]\\])/g, '\\$1') + '=([^;]*)'),

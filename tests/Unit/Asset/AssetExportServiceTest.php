@@ -292,7 +292,7 @@ class AssetExportServiceTest extends TestCase
 
     /**
      * @return string the generated filename for one asset whose category is
-     *                 forced to the given (possibly unsafe) raw name
+     *                forced to the given (possibly unsafe) raw name
      */
     private function filenameForCategoryNamed(string $rawName): string
     {
@@ -422,15 +422,21 @@ class AssetExportServiceTest extends TestCase
         $this->existingAsset('001', 2020, ['brand_model' => '=1+1'], '01', '02', '001');
 
         $spreadsheet = $this->service()->build(Asset::with(['location', 'category', 'room'])->get());
-        $path = tempnam(sys_get_temp_dir(), 'formula-injection-').'.xlsx';
-        (new Xlsx($spreadsheet))->save($path);
-        $spreadsheet->disconnectWorksheets();
+        $path = tempnam(sys_get_temp_dir(), 'formula-injection-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
 
-        $zip = new \ZipArchive;
-        $zip->open($path);
-        $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
-        $zip->close();
-        unlink($path);
+        try {
+            (new Xlsx($spreadsheet))->save($path);
+            $spreadsheet->disconnectWorksheets();
+
+            $zip = new \ZipArchive;
+            $zip->open($path);
+            $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
+            $zip->close();
+        } finally {
+            @unlink($path);
+        }
 
         $this->assertNotFalse($sheetXml);
         preg_match('/<c r="G8"[^>]*>.*?<\/c>/s', $sheetXml, $matches);
@@ -457,22 +463,27 @@ class AssetExportServiceTest extends TestCase
         $this->existingAsset('001', 2020, [], '01', '02', '001');
 
         $spreadsheet = $this->service()->build(Asset::with(['location', 'category', 'room'])->get());
-        $path = tempnam(sys_get_temp_dir(), 'export-roundtrip-').'.xlsx';
-        (new Xlsx($spreadsheet))->save($path);
-        $spreadsheet->disconnectWorksheets();
+        $path = tempnam(sys_get_temp_dir(), 'export-roundtrip-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
 
-        $scanner = new SheetScanner($path);
-        $dataRows = 0;
-        foreach ($scanner->rows() as $row) {
-            if ($row->type === ScannedRow::TYPE_DATA) {
-                $dataRows++;
+        try {
+            (new Xlsx($spreadsheet))->save($path);
+            $spreadsheet->disconnectWorksheets();
+
+            $scanner = new SheetScanner($path);
+            $dataRows = 0;
+            foreach ($scanner->rows() as $row) {
+                if ($row->type === ScannedRow::TYPE_DATA) {
+                    $dataRows++;
+                }
             }
+
+            $this->assertSame('02', $scanner->categoryCode);
+            $this->assertGreaterThan(0, $scanner->headerRow);
+            $this->assertSame(1, $dataRows);
+        } finally {
+            @unlink($path);
         }
-
-        $this->assertSame('02', $scanner->categoryCode);
-        $this->assertGreaterThan(0, $scanner->headerRow);
-        $this->assertSame(1, $dataRows);
-
-        unlink($path);
     }
 }

@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 
+import { AssetSourceBadge } from '../../lib/assetSources';
+
 /**
- * The Inventaris result table. Six columns chosen so a first-time user can recognise
+ * The Inventaris result table. Seven columns (Sumber added in Tahap 2) chosen so a first-time user can recognise
  * an asset without a spreadsheet's worth of columns. The asset code is a link to the
  * detail page (Tahap 5.8.2); `listSearch` is carried in navigation state so "Kembali"
  * restores the exact filtered list.
@@ -11,6 +13,10 @@ import { Link } from 'react-router-dom';
  * checkbox column at all, keeping their view strictly read-only. Selection only ever
  * covers the rows currently rendered (the visible page); the header checkbox reflects
  * that page only, never the full filtered result set.
+ *
+ * Responsive (Tahap 2): the Sumber column is hidden below `md` and the source is
+ * shown as a small badge under the asset name instead, so the table does not get
+ * wider on phones; the detail page always shows it in full.
  */
 
 function HeaderCheckbox({ checked, indeterminate, onChange, disabled }) {
@@ -82,7 +88,7 @@ export default function InventoryTable({
   onToggleRow = () => {},
   onToggleAll = () => {},
 }) {
-  const columns = selectable ? 7 : 6;
+  const columns = selectable ? 8 : 7;
   const selectableCount = assets.length;
   const selectedCount = selectable ? assets.filter((a) => selectedIds.has(a.id)).length : 0;
   const allSelected = selectableCount > 0 && selectedCount === selectableCount;
@@ -107,6 +113,7 @@ export default function InventoryTable({
               <th className="px-4 py-3">Kode Aset</th>
               <th className="px-4 py-3">Aset</th>
               <th className="px-4 py-3">Kategori</th>
+              <th className="hidden px-4 py-3 md:table-cell">Sumber</th>
               <th className="px-4 py-3">Ruangan</th>
               <th className="px-4 py-3">Kondisi</th>
               <th className="px-4 py-3">Status</th>
@@ -148,8 +155,15 @@ export default function InventoryTable({
                     {asset.brand_model && (
                       <span className="block text-xs text-gray-500">{asset.brand_model}</span>
                     )}
+                    <span className="mt-1 block md:hidden">
+                      <span className="sr-only">Sumber: </span>
+                      <AssetSourceBadge value={asset.asset_source} />
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{asset.category?.name ?? '—'}</td>
+                  <td className="hidden px-4 py-3 md:table-cell">
+                    <AssetSourceBadge value={asset.asset_source} />
+                  </td>
                   <td className="px-4 py-3">
                     {asset.room ? (
                       <>

@@ -232,6 +232,54 @@ class Stage69ImportScopeTest extends TestCase
         $this->assertSame(0, Asset::whereIn('sequence_no', ['530', '531', '532'])->count());
     }
 
+    /**
+     * R6 I6-02 — staging is one transaction, and a scope rejection is a business
+     * outcome inside it, not a failure: the rejected batch is committed whole (audit),
+     * every row stored, every foreign row marked, own rows untouched.
+     */
+    public function test_rejected_mixed_batch_is_kept_whole_with_every_foreign_row_marked(): void
+    {
+        $this->seedUnitLocations();
+        $actor = $this->unitAdmin('02');
+        Sanctum::actingAs($actor);
+
+        $this->upload([
+            $this->rowFor('02', '535'),
+            $this->rowFor('03', '536'),
+            $this->rowFor('04', '537'),
+            $this->rowFor('02', '538'),
+        ])->assertStatus(403);
+
+        $batch = $this->latestBatchFor($actor);
+        $this->assertSame('failed', $batch->status);
+        $this->assertSame(4, $batch->total_rows);
+
+        $rows = ImportRow::where('import_batch_id', $batch->id)->orderBy('row_number')->get();
+        $this->assertCount(4, $rows);
+        foreach ($rows as $row) {
+            $marked = collect($row->validation_messages)->contains(fn (array $m) => $m['code'] === 'location_out_of_scope');
+            $this->assertSame($row->location_code !== '02', $marked, "row {$row->row_number} ({$row->location_code})");
+            if ($marked) {
+                $this->assertSame('error', $row->validation_status);
+            }
+        }
+    }
+
+    /** R6 I6-02 — a DB failure while staging a mixed file leaves nothing at all: no batch, and no unmarked foreign row. */
+    public function test_a_database_failure_while_staging_a_mixed_file_leaves_nothing_behind(): void
+    {
+        $this->seedUnitLocations();
+        Sanctum::actingAs($this->unitAdmin('02'));
+
+        $this->upload([
+            $this->rowFor('03', '539'),
+            $this->rowFor('02', '540', ['O' => str_repeat('R', 151)]),
+        ])->assertStatus(422);
+
+        $this->assertSame(0, ImportBatch::count());
+        $this->assertSame(0, ImportRow::count());
+    }
+
     public function test_rejected_mixed_import_cannot_later_be_promoted(): void
     {
         $this->seedUnitLocations();
@@ -567,9 +615,18 @@ class Stage69ImportScopeTest extends TestCase
         // Bypasses app-level validation on purpose — simulates a corrupt/legacy row.
         $corrupt = User::factory()->create(['role' => UserRole::UnitAdmin, 'location_code' => '01']);
         Sanctum::actingAs($corrupt);
+        $batchesBefore = ImportBatch::count();
+        $rowsBefore = ImportRow::count();
 
         $this->upload([$this->rowFor('02', '630')])->assertStatus(403);
         $this->assertSame(0, Asset::where('sequence_no', '630')->count());
+
+        // R6 I6-02 — the scope is resolved inside the staging transaction, so the refusal
+        // rolls the attempt back: no batch and no partial row are left behind.
+        $this->assertSame($batchesBefore, ImportBatch::count());
+        $this->assertSame($rowsBefore, ImportRow::count());
+        $this->assertFalse(ImportBatch::where('uploaded_by', $corrupt->id)->exists());
+        $this->assertFalse(ImportRow::where('sequence_no', '630')->exists());
     }
 
     /* ================================================================== J. ability boundaries (not broadened by import) */
