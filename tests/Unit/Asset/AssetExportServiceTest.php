@@ -292,7 +292,7 @@ class AssetExportServiceTest extends TestCase
 
     /**
      * @return string the generated filename for one asset whose category is
-     *                 forced to the given (possibly unsafe) raw name
+     *                forced to the given (possibly unsafe) raw name
      */
     private function filenameForCategoryNamed(string $rawName): string
     {
