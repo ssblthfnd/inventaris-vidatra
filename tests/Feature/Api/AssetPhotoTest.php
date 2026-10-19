@@ -451,10 +451,15 @@ class AssetPhotoTest extends TestCase
         $this->assertSame([$photo->path], $this->storedFiles());
         Log::shouldHaveReceived('warning')->withArgs(fn ($message) => $message === 'asset_photo.file_delete_failed')->once();
 
-        // the prune command picks the orphan up once it is old enough
+        // the prune command picks the orphan up once it is old enough — this was the
+        // asset's only photo, so the table is empty and --delete needs --force (R4)
         Storage::set('local', Storage::createLocalDriver(['root' => Storage::disk('local')->path('')]));
         touch(Storage::disk('local')->path($photo->path), time() - 7200);
         $this->artisan('assets:photos:prune-orphans', ['--delete' => true])
+            ->expectsOutputToContain('asset_photos table is EMPTY')
+            ->assertExitCode(2);
+        $this->assertSame([$photo->path], $this->storedFiles());
+        $this->artisan('assets:photos:prune-orphans', ['--delete' => true, '--force' => true])
             ->expectsOutputToContain("deleted: {$photo->path}")
             ->assertSuccessful();
         $this->assertSame([], $this->storedFiles());

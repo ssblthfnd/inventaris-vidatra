@@ -141,28 +141,69 @@ setelah barisnya terhapus — tercatat di log sebagai `asset_photo.file_delete_f
 manual, tidak terjadwal, tanpa queue/cron:
 
 ```bash
-# dry-run (bawaan): hanya menampilkan, tidak mengubah apa pun; file < 60 menit diabaikan
-php artisan assets:photos:prune-orphans
-
-# usia minimum lain: menit (90), atau 90m / 12h / 7d — minimal 10 menit
+# 1. dry-run (bawaan): hanya menampilkan, tidak mengubah apa pun; file < 60 menit diabaikan
 php artisan assets:photos:prune-orphans --older-than=1d
 
-# benar-benar menghapus
-php artisan assets:photos:prune-orphans --older-than=1d --delete
+# 2. periksa baris "Target —" dan daftar "would delete", lalu hapus dengan batas sebanyak
+#    jumlah yang tadi Anda periksa (contoh: 3 file)
+php artisan assets:photos:prune-orphans --older-than=1d --delete --max-delete=3
 ```
 
-Aturan keamanan: hanya file bernama `{asset_id}/{uuid}.jpg` di dalam folder foto yang
-dipertimbangkan; nama lain, symlink, dan apa pun di luar folder foto tidak pernah dihapus; file
-yang lebih muda dari `--older-than` dianggap unggahan yang mungkin sedang berjalan; rujukan
-database diperiksa ulang tepat sebelum menghapus; baris tanpa file hanya dilaporkan (database
-tidak diubah). Di hosting tanpa SSH, command ini tidak wajib dijalankan — file yatim hanya
-memakan ruang disk.
+`--older-than`: menit (90), atau 90m / 12h / 7d — minimal 10 menit.
+
+**Selalu jalankan dry-run lebih dahulu.** Baris pertama keluaran menunjukkan target, mis.
+`Target — environment: production, database: nama_db (connection mysql), disk: local`. Pastikan
+itu memang database **pasangan** folder foto ini, lalu periksa satu per satu daftar
+`would delete`. `--delete` **menghapus file secara permanen — tidak ada undo**; satu-satunya
+jalan kembali adalah backup (§9).
+
+Pengaman bawaan:
+
+- `--delete` **ditolak** (exit 2, tidak ada yang dihapus) bila ditemukan file yatim padahal tabel
+  `asset_photos` **kosong** — hampir pasti command membaca database yang salah (`--env`/`.env`
+  keliru, atau restore belum selesai). Dry-run menampilkan catatan yang sama.
+- `--max-delete=N` (opsional): `--delete` ditolak bila file yatim yang ditemukan **lebih dari N**.
+  Tidak ada nilai bawaan — isi dengan jumlah yang Anda periksa di dry-run, agar penghapusan tidak
+  melampaui apa yang sudah ditinjau (mis. bila database berubah di antara dua perintah).
+- `--force` hanya melewati pengaman "tabel kosong" — untuk kasus yang memang sah, yaitu **semua**
+  foto sudah dihapus dan tinggal file yatimnya. `--force` **tidak** melewati `--max-delete`,
+  validasi argumen, maupun pemeriksaan path. Risikonya: bila database ternyata salah, `--force`
+  menghapus foto yang masih dibutuhkan. Gunakan hanya setelah dry-run dan baris target diperiksa.
+
+Aturan keamanan lain: hanya file bernama `{asset_id}/{uuid}.jpg` di dalam folder foto yang
+dipertimbangkan; nama lain, direktori tak terduga beserta isinya, symlink, dan apa pun di luar
+folder foto tidak pernah dihapus (hanya dilaporkan sebagai `ignored`); file yang lebih muda dari
+`--older-than` dianggap unggahan yang mungkin sedang berjalan; rujukan database diperiksa ulang
+tepat sebelum menghapus; baris tanpa file hanya dilaporkan (database tidak diubah). Setiap file
+yang dihapus/gagal dihapus dan setiap penolakan dicatat di log (`asset_photo.orphan_deleted`,
+`asset_photo.orphan_delete_failed`, `asset_photo.prune_refused`, ringkasan
+`asset_photo.prune_finished`) dengan path relatif dan ID aset saja. Exit code: 0 berhasil, 1 ada
+file yang gagal dihapus atau sebagian folder tidak terbaca, 2 argumen tidak valid atau penghapusan
+ditolak.
+
+**Jangan** menjalankan command ini dengan `--env` lain (mis. `--env=testing`) atau `.env` lain
+tanpa memastikan database dan folder foto yang dipakai memang pasangan yang sama — folder foto
+bisa sama sementara databasenya berbeda. Di hosting tanpa SSH, command ini tidak wajib
+dijalankan — file yatim hanya memakan ruang disk.
 
 ## 9. Backup & deploy manual
 
 **Backup.** Foto tidak ada di database. Backup harus mencakup **database** *dan* folder
-`storage/app/private/asset-photos/` (mis. lewat File Manager/Backup cPanel). Pulihkan keduanya
-bersama-sama agar baris `asset_photos` dan file tetap cocok.
+`storage/app/private/asset-photos/` (mis. lewat File Manager/Backup cPanel), diambil pada titik
+waktu yang sama. Pulihkan keduanya bersama-sama agar baris `asset_photos` dan file tetap cocok.
+
+**Restore dan file yatim.** Restore cPanel/arsip mempertahankan waktu file asli, sehingga foto
+hasil restore terlihat "lama" dan batas `--older-than` tidak melindunginya. Karena itu:
+
+1. **Jangan** menjalankan `assets:photos:prune-orphans` selama restore belum selesai (mis. folder
+   foto sudah dipulihkan, database belum — atau sebaliknya).
+2. Pulihkan database **dan** folder foto dari titik backup yang **sama**. Bila database
+   dikembalikan ke titik yang lebih lama daripada folder foto, foto yang lebih baru akan tampak
+   yatim; jangan menghapusnya sebelum yakin database itu memang yang akan dipakai seterusnya.
+3. Setelah restore, jalankan dry-run (§8): periksa baris `Target —`, pastikan tidak ada lonjakan
+   `would delete`, dan perhatikan peringatan `row #… has no file` (foto yang dirujuk database
+   tetapi tidak ada di disk — tanda folder foto belum lengkap dipulihkan).
+4. Baru setelah itu, bila memang perlu, jalankan `--delete --max-delete=N`.
 
 **Deploy (tanpa Node.js di server):**
 

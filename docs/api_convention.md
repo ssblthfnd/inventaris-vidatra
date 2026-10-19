@@ -855,10 +855,17 @@ other event never touches photos (photos are not in the snapshot). Filterable wi
 
 ### 18.7 Maintenance command
 
-`php artisan assets:photos:prune-orphans [--older-than=60|90m|12h|7d] [--delete]` — dry-run by
-default; only `{asset_id}/{uuid}.jpg` files under the photo root, older than the cutoff
-(minimum 10 minutes) and unreferenced are deleted; symlinks/other names are never touched;
-rows without a file are reported, never changed. Manual only (no scheduler/queue).
+`php artisan assets:photos:prune-orphans [--older-than=60|90m|12h|7d] [--delete] [--max-delete=N] [--force]`
+— dry-run by default; prints a `Target —` line first (environment, database name, disk; no
+credentials or absolute paths). Only `{asset_id}/{uuid}.jpg` files under the photo root, older
+than the cutoff (minimum 10 minutes) and unreferenced are deleted; symlinks/other names/unexpected
+directories are never touched; rows without a file are reported, never changed. `--delete` is
+refused (exit 2, nothing deleted) when orphans exist but `asset_photos` is empty (`--force` lifts
+only this guard) or when more than `--max-delete=N` orphans are found (optional, no default). Each
+deletion/failure/refusal is logged as `asset_photo.*` with the relative path and asset id. Exit 1
+when a delete failed or the scan was incomplete. Deletion is permanent — run the dry-run first and
+never during an unfinished restore (see docs/panduan_foto_aset.md §8–§9). Manual only (no
+scheduler/queue).
 
 ### 18.8 Migrations
 
