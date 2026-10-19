@@ -38,6 +38,13 @@
         <env name="DB_DATABASE" value="inventaris_vidatra_test"/>
         <env name="DB_USERNAME" value="root"/>
         <env name="DB_PASSWORD" value=""/>
+        <!--
+          Tests never write to the application's real storage/logs/laravel.log
+          (.env.testing's LOG_CHANNEL=stack would). env() reads "null" as PHP null,
+          and with APP_ENV=testing Laravel's LogManager then uses its NullHandler
+          channel. Log assertions use Log::spy(), which does not depend on this.
+        -->
+        <env name="LOG_CHANNEL" value="null"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

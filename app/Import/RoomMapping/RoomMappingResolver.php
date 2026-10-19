@@ -147,11 +147,10 @@ final class RoomMappingResolver
 
         return DB::transaction(function () use ($batch, $locationCode, $rawValue, $matchKey, $roomId, $saveAsAlias, $actor) {
             $room = DB::table('rooms')->where('id', $roomId)->lockForUpdate()->first();
-            if ($room === null) {
-                throw new RuntimeException('Ruangan tujuan tidak ditemukan.');
-            }
-            if ($room->location_code !== $locationCode) {
-                throw new RuntimeException('Ruangan tujuan harus berada di lokasi yang sama dengan nilai yang dipetakan.');
+            // R6 (I6-03) — a missing room and a room of ANOTHER location get the same
+            // answer, so a scoped actor cannot probe which room ids exist elsewhere.
+            if ($room === null || $room->location_code !== $locationCode) {
+                throw new RuntimeException('Ruangan tujuan tidak ditemukan di lokasi yang dipetakan.');
             }
             if (! $room->is_active) {
                 throw new RuntimeException('Ruangan tujuan sudah tidak aktif.');

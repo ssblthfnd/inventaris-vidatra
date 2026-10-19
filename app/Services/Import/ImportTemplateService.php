@@ -11,7 +11,9 @@ use App\Models\Category;
 use App\Models\Location;
 use App\Models\Room;
 use App\Models\Subcategory;
+use App\Models\User;
 use App\Services\Excel\AssetSheetColumns;
+use App\Support\LocationScope;
 use InvalidArgumentException;
 use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -62,7 +64,12 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  */
 final class ImportTemplateService
 {
-    public function generate(string $categoryCode): Spreadsheet
+    /**
+     * @param  ?User  $actor  whose location scope limits the REFERENSI room list
+     *                        (a unit_admin sees only its own location's rooms, like
+     *                        the room API); null = unrestricted (CLI / direct use)
+     */
+    public function generate(string $categoryCode, ?User $actor = null): Spreadsheet
     {
         if (! CategoryColumnMap::isKnownCategory($categoryCode)) {
             throw new InvalidArgumentException("Unknown category [{$categoryCode}].");
@@ -85,7 +92,7 @@ final class ImportTemplateService
 
         $referensi = $spreadsheet->createSheet();
         $referensi->setTitle('REFERENSI');
-        $this->buildReferensiSheet($referensi, $category);
+        $this->buildReferensiSheet($referensi, $category, $actor);
 
         // DATA must be the ACTIVE sheet on save: SheetScanner always reads
         // getActiveSheet(), regardless of how many other sheets the workbook has.
@@ -329,7 +336,7 @@ final class ImportTemplateService
         $line('Baris yang gagal atau belum dipromosikan tetap bisa dilihat dan diperbaiki, lalu diimpor ulang sebagai file baru.');
     }
 
-    private function buildReferensiSheet(Worksheet $sheet, Category $category): void
+    private function buildReferensiSheet(Worksheet $sheet, Category $category, ?User $actor): void
     {
         $sheet->setCellValue('A1', 'REFERENSI (hanya untuk dibaca — tidak diproses oleh sistem)');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(12);
@@ -367,7 +374,15 @@ final class ImportTemplateService
         $sheet->fromArray(['Kode Lokasi', 'Nama Ruangan'], null, "A{$row}");
         $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true);
         $row++;
-        foreach (Room::query()->where('is_active', true)->orderBy('location_code')->orderBy('name')->get(['location_code', 'name']) as $room) {
+        // null = unrestricted (global actor, or no actor at all)
+        $roomCodes = $actor !== null ? LocationScope::for($actor)->resolveFilterCodes([]) : null;
+        $rooms = Room::query()
+            ->where('is_active', true)
+            ->when($roomCodes !== null, fn ($query) => $query->whereIn('location_code', $roomCodes))
+            ->orderBy('location_code')
+            ->orderBy('name')
+            ->get(['location_code', 'name']);
+        foreach ($rooms as $room) {
             $sheet->fromArray([$room->location_code, $room->name], null, "A{$row}");
             $row++;
         }

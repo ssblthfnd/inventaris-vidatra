@@ -2,12 +2,15 @@
 
 namespace Tests\Feature\Api;
 
+use App\Enums\UserRole;
 use App\Models\Asset;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
+use App\Models\User;
 use App\Services\Import\ImportTemplateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\Concerns\InteractsWithAssetFixtures;
 use Tests\TestCase;
 use Tests\Unit\Import\ImportTemplateServiceTest;
@@ -136,5 +139,69 @@ class ImportTemplateTest extends TestCase
         $after = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'import-template-*') ?: [];
 
         $this->assertSame($before, $after, 'A temp template file was left behind after a successful request.');
+    }
+
+    /* ------------------------------------------------------------------ REFERENSI room scope (R6 I6-01) */
+
+    /**
+     * Every "code|name" pair of the downloaded workbook's REFERENSI sheet (first two
+     * columns), read back from the real response body.
+     *
+     * @return list<string>
+     */
+    private function referensiPairs(string $xlsx): array
+    {
+        $path = tempnam(sys_get_temp_dir(), 'tpl-scope-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
+
+        try {
+            file_put_contents($path, $xlsx);
+            $spreadsheet = IOFactory::load($path);
+            $rows = $spreadsheet->getSheetByName('REFERENSI')->toArray();
+            $spreadsheet->disconnectWorksheets();
+        } finally {
+            @unlink($path);
+        }
+
+        return array_map(fn (array $r): string => ($r[0] ?? '').'|'.($r[1] ?? ''), $rows);
+    }
+
+    private function roomsInEveryUnitLocation(): void
+    {
+        $this->scope('02', '02', '001');
+        $this->scope('03', '02', '001');
+        $this->scope('04', '02', '001');
+        $this->room('02', ['name' => 'Ruang Unit Dua']);
+        $this->room('03', ['name' => 'Ruang Unit Tiga']);
+        $this->room('04', ['name' => 'Ruang Unit Empat']);
+    }
+
+    public function test_unit_admin_template_lists_only_its_own_locations_rooms(): void
+    {
+        $this->roomsInEveryUnitLocation();
+        Sanctum::actingAs(User::factory()->create(['role' => UserRole::UnitAdmin, 'location_code' => '02']));
+
+        $pairs = $this->referensiPairs($this->get('/api/imports/template?category=02')->assertOk()->getContent());
+
+        $this->assertContains('02|Ruang Unit Dua', $pairs);
+        $this->assertNotContains('03|Ruang Unit Tiga', $pairs);
+        $this->assertNotContains('04|Ruang Unit Empat', $pairs);
+        $this->assertEmpty(array_filter($pairs, fn (string $p): bool => str_contains($p, 'Ruang Unit Tiga') || str_contains($p, 'Ruang Unit Empat')));
+        // the category's subcategories are listed exactly as before (not location-scoped)
+        $this->assertContains('001|Subkategori 02-001', $pairs);
+    }
+
+    public function test_global_actor_template_still_lists_rooms_of_every_location(): void
+    {
+        $this->roomsInEveryUnitLocation();
+        Sanctum::actingAs($this->admin());
+
+        $pairs = $this->referensiPairs($this->get('/api/imports/template?category=02')->assertOk()->getContent());
+
+        $this->assertContains('02|Ruang Unit Dua', $pairs);
+        $this->assertContains('03|Ruang Unit Tiga', $pairs);
+        $this->assertContains('04|Ruang Unit Empat', $pairs);
+        $this->assertContains('001|Subkategori 02-001', $pairs);
     }
 }

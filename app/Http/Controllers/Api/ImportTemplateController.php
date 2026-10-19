@@ -23,7 +23,7 @@ class ImportTemplateController extends ApiController
     public function show(ImportTemplateRequest $request, ImportTemplateService $service): Response
     {
         $categoryCode = $request->categoryCode();
-        $spreadsheet = $service->generate($categoryCode);
+        $spreadsheet = $service->generate($categoryCode, $request->user());
 
         // Tahap 6.9 R8.2 (P3-3): guaranteed cleanup, same pattern as
         // AssetExportController — see that file's comment for the rationale.

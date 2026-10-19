@@ -76,98 +76,110 @@ final class ImportManager
         $validator = new RowValidator($master, $duplicates);
         $this->roomMatcher->forgetCache();
 
-        $now = now();
-        $batchId = DB::table('import_batches')->insertGetId([
-            'source_filename' => basename($path),
-            'source_sheet' => $scanner->sheetName,
-            'category_code' => $master->hasCategory((string) $scanner->categoryCode) ? $scanner->categoryCode : null,
-            'status' => 'validating',
-            'total_rows' => 0,
-            'valid_rows' => 0,
-            'warning_rows' => 0,
-            'error_rows' => 0,
-            'imported_rows' => 0,
-            'uploaded_by' => $uploadedBy,
-            'notes' => $this->batchNote($scanner, $skippedRows),
-            'imported_at' => null,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
-
-        $batchCategory = $scanner->categoryCode;
-
-        foreach ($dataRows as $scanned) {
-            $parsed = $this->parser->parse($scanned, (string) $batchCategory, $scanner->hasSourceColumn);
-            $room = $this->roomMatcher->match($parsed->locationCode, $parsed->roomRawValue);
-            $validation = $validator->validate($parsed, $room, $batchCategory);
-
-            DB::table('import_rows')->insert([
-                'import_batch_id' => $batchId,
-                'row_number' => $scanned->rowNumber,
-                'raw_payload' => json_encode([
-                    'row_number' => $scanned->rowNumber,
-                    'sheet' => $scanner->sheetName,
-                    'source_file' => basename($path),
-                    'block_subcategory_code' => $scanned->blockSubcategoryCode,
-                    'block_subcategory_name' => $scanned->blockSubcategoryName,
-                    'cells' => $scanned->cells,
-                    'formulas' => $scanned->formulas,
-                    'parsed' => $parsed->toArray(),
-                    'room_match' => [
-                        'method' => $room->method,
-                        'match_key' => $room->matchKey,
-                        'room_id' => $room->roomId,
-                    ],
-                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-                'location_code' => $parsed->locationCode,
-                'category_code' => $parsed->categoryCode,
-                'subcategory_code' => $parsed->subcategoryCode,
-                'sequence_no' => $parsed->sequenceNo,
-                'asset_year' => $parsed->assetYear,
-                'room_raw_value' => $parsed->roomRawValue,
-                'matched_room_id' => $room->roomId,
-                'room_match_method' => $room->method,
-                'condition_raw' => $parsed->conditionRaw,
-                'condition_parsed' => $parsed->conditionParsed,
-                'validation_status' => $validation->status,
-                'validation_messages' => json_encode($validation->messages, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-                'duplicate_of_asset_id' => $validation->duplicateOfAssetId,
-                'promoted_asset_id' => null,
-                'promoted_at' => null,
+        // R6 (I6-02) — staging is ONE transaction, from the batch insert to its final
+        // status: a database failure part-way (e.g. a cell longer than its column)
+        // leaves no batch and no rows behind. A scope rejection is a business
+        // outcome, not a failure: it is written inside this same transaction and
+        // committed with it, so a rejected batch stays on record (audit) with every
+        // foreign row marked.
+        [$batchId, $counts, $status, $scopeRejected] = DB::transaction(function () use (
+            $path, $uploadedBy, $actor, $scanner, $dataRows, $skippedRows, $master, $validator
+        ): array {
+            $now = now();
+            $batchId = DB::table('import_batches')->insertGetId([
+                'source_filename' => basename($path),
+                'source_sheet' => $scanner->sheetName,
+                'category_code' => $master->hasCategory((string) $scanner->categoryCode) ? $scanner->categoryCode : null,
+                'status' => 'validating',
+                'total_rows' => 0,
+                'valid_rows' => 0,
+                'warning_rows' => 0,
+                'error_rows' => 0,
+                'imported_rows' => 0,
+                'uploaded_by' => $uploadedBy,
+                'notes' => $this->batchNote($scanner, $skippedRows),
+                'imported_at' => null,
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
-        }
 
-        $counts = $this->recomputeCounts($batchId);
-        $status = ($counts['total'] > 0 && $counts['error'] === $counts['total']) ? 'failed' : 'validated';
+            $batchCategory = $scanner->categoryCode;
 
-        // Stage 6.9 R6 — a location-scoped actor (unit_admin) uploading ANY
-        // row that resolved to a location outside their scope forces the
-        // WHOLE batch non-promotable, regardless of how many other rows are
-        // otherwise perfectly valid. Global actors (isGlobal() === true, the
-        // $actor === null CLI path included) are completely unaffected —
-        // this block is a no-op for them, byte-identical to before R6.
-        $scopeRejected = false;
-        if ($actor !== null) {
-            $scope = LocationScope::for($actor);
-            if (! $scope->isGlobal()) {
-                $scopeRejected = $this->rejectOutOfScopeRows($batchId, $scope);
-                if ($scopeRejected) {
-                    $counts = $this->recomputeCounts($batchId);
-                    $status = 'failed';
+            foreach ($dataRows as $scanned) {
+                $parsed = $this->parser->parse($scanned, (string) $batchCategory, $scanner->hasSourceColumn);
+                $room = $this->roomMatcher->match($parsed->locationCode, $parsed->roomRawValue);
+                $validation = $validator->validate($parsed, $room, $batchCategory);
+
+                DB::table('import_rows')->insert([
+                    'import_batch_id' => $batchId,
+                    'row_number' => $scanned->rowNumber,
+                    'raw_payload' => json_encode([
+                        'row_number' => $scanned->rowNumber,
+                        'sheet' => $scanner->sheetName,
+                        'source_file' => basename($path),
+                        'block_subcategory_code' => $scanned->blockSubcategoryCode,
+                        'block_subcategory_name' => $scanned->blockSubcategoryName,
+                        'cells' => $scanned->cells,
+                        'formulas' => $scanned->formulas,
+                        'parsed' => $parsed->toArray(),
+                        'room_match' => [
+                            'method' => $room->method,
+                            'match_key' => $room->matchKey,
+                            'room_id' => $room->roomId,
+                        ],
+                    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                    'location_code' => $parsed->locationCode,
+                    'category_code' => $parsed->categoryCode,
+                    'subcategory_code' => $parsed->subcategoryCode,
+                    'sequence_no' => $parsed->sequenceNo,
+                    'asset_year' => $parsed->assetYear,
+                    'room_raw_value' => $parsed->roomRawValue,
+                    'matched_room_id' => $room->roomId,
+                    'room_match_method' => $room->method,
+                    'condition_raw' => $parsed->conditionRaw,
+                    'condition_parsed' => $parsed->conditionParsed,
+                    'validation_status' => $validation->status,
+                    'validation_messages' => json_encode($validation->messages, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                    'duplicate_of_asset_id' => $validation->duplicateOfAssetId,
+                    'promoted_asset_id' => null,
+                    'promoted_at' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            $counts = $this->recomputeCounts($batchId);
+            $status = ($counts['total'] > 0 && $counts['error'] === $counts['total']) ? 'failed' : 'validated';
+
+            // Stage 6.9 R6 — a location-scoped actor (unit_admin) uploading ANY
+            // row that resolved to a location outside their scope forces the
+            // WHOLE batch non-promotable, regardless of how many other rows are
+            // otherwise perfectly valid. Global actors (isGlobal() === true, the
+            // $actor === null CLI path included) are completely unaffected —
+            // this block is a no-op for them, byte-identical to before R6.
+            $scopeRejected = false;
+            if ($actor !== null) {
+                $scope = LocationScope::for($actor);
+                if (! $scope->isGlobal()) {
+                    $scopeRejected = $this->rejectOutOfScopeRows($batchId, $scope);
+                    if ($scopeRejected) {
+                        $counts = $this->recomputeCounts($batchId);
+                        $status = 'failed';
+                    }
                 }
             }
-        }
 
-        DB::table('import_batches')->where('id', $batchId)->update([
-            'status' => $status,
-            'total_rows' => $counts['total'],
-            'valid_rows' => $counts['valid'],
-            'warning_rows' => $counts['warning'],
-            'error_rows' => $counts['error'],
-            'updated_at' => now(),
-        ]);
+            DB::table('import_batches')->where('id', $batchId)->update([
+                'status' => $status,
+                'total_rows' => $counts['total'],
+                'valid_rows' => $counts['valid'],
+                'warning_rows' => $counts['warning'],
+                'error_rows' => $counts['error'],
+                'updated_at' => now(),
+            ]);
+
+            return [$batchId, $counts, $status, $scopeRejected];
+        });
 
         return [
             'batch_id' => $batchId,

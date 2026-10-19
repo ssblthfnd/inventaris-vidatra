@@ -12,6 +12,7 @@ use App\Models\RoomAlias;
 use App\Models\Subcategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
@@ -682,6 +683,30 @@ class ImportRoomMappingTest extends TestCase
         ])->assertStatus(422);
 
         $this->assertSame(0, ImportRow::whereNotNull('matched_room_id')->count());
+    }
+
+    /**
+     * R6 (I6-03) — a room id of ANOTHER location and an id that does not exist at
+     * all get the identical 422 (status and body), so a scoped actor cannot probe
+     * which room ids exist elsewhere; neither attempt changes anything.
+     */
+    public function test_a_foreign_room_id_is_answered_exactly_like_a_missing_one(): void
+    {
+        $admin = $this->unitAdmin('02');
+        $foreignRoom = $this->roomIn('04', ['name' => 'Ruang Asing']);
+        $batchId = $this->stageUnmapped($admin, '02', 'LAB KOMPUTER');
+        $rowsBefore = ImportRow::query()->orderBy('id')->get()->toArray();
+
+        Sanctum::actingAs($admin);
+        $payload = ['location_code' => '02', 'raw_value' => 'LAB KOMPUTER', 'save_as_alias' => false];
+        $foreign = $this->resolve($batchId, $payload + ['room_id' => $foreignRoom->id])->assertStatus(422);
+        $missing = $this->resolve($batchId, $payload + ['room_id' => 999999])->assertStatus(422);
+
+        $this->assertSame($missing->json(), $foreign->json());
+        $this->assertSame(['Ruangan tujuan tidak ditemukan di lokasi yang dipetakan.'], $foreign->json('errors.room_id'));
+        $this->assertSame($rowsBefore, ImportRow::query()->orderBy('id')->get()->toArray());
+        $this->assertSame(0, RoomAlias::count());
+        $this->assertSame(0, DB::table('import_room_mapping_resolutions')->count());
     }
 
     public function test_location_code_claimed_in_payload_cannot_override_actual_scope_check(): void

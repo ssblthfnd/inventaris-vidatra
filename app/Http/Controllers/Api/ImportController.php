@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PDOException;
 use RuntimeException;
 
 /**
@@ -98,7 +99,7 @@ class ImportController extends ApiController
             $summary = $manager->stageFile($absolutePath, $request->user()->id, $request->user());
         } catch (RuntimeException $e) {
             Storage::disk('local')->deleteDirectory($directory);
-            Log::warning('Import staging failed', ['file' => $originalName, 'error' => $e->getMessage()]);
+            Log::warning('Import staging failed', ['file' => $originalName] + self::stagingFailureContext($e));
 
             throw ValidationException::withMessages([
                 'file' => ['File Excel tidak dapat diproses. Pastikan file menggunakan format dan struktur kolom yang benar (lihat template import), lalu coba lagi.'],
@@ -344,5 +345,27 @@ class ImportController extends ApiController
         if ($request->user()->cannot('view', $batch)) {
             throw (new ModelNotFoundException)->setModel(ImportBatch::class, [$batch->getRouteKey()]);
         }
+    }
+
+    /**
+     * R6 (I6-02) — what a staging failure may write to the log. A database error's
+     * message carries the SQL with its bindings (the workbook's row values) and the
+     * connection (host / port / database), so for it only the class and the
+     * SQLSTATE / driver error code are logged. The importer's own messages
+     * (SheetScanner / ImportManager) are fixed texts about the file and stay as-is.
+     *
+     * @return array<string, mixed>
+     */
+    private static function stagingFailureContext(RuntimeException $e): array
+    {
+        if ($e instanceof PDOException) { // QueryException extends PDOException
+            return [
+                'error' => $e::class,
+                'sqlstate' => $e->errorInfo[0] ?? null,
+                'driver_code' => $e->errorInfo[1] ?? null,
+            ];
+        }
+
+        return ['error' => $e->getMessage()];
     }
 }
