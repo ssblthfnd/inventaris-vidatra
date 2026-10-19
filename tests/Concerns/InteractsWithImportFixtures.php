@@ -5,6 +5,7 @@ namespace Tests\Concerns;
 use App\Import\Excel\SheetScanner;
 use App\Services\Import\ImportTemplateService;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -14,9 +15,43 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * documents (KODE BARANG metadata row drives category detection; "No. Urut" header
  * anchor; data starts at headerRow+2). Used by the Tahap 6.1 HTTP feature tests to
  * exercise a REAL upload -> stage -> promote round trip, not a mocked one.
+ *
+ * Filesystem isolation (Laravel runs `setUp{Trait}` / `tearDown{Trait}` for every
+ * test using this trait): `POST /api/imports` stores the workbook on the `local`
+ * disk (`imports/{uuid}/…`), so that disk is faked — nothing reaches the real
+ * storage/app/private. The fixture files built here live in the system temp dir
+ * and exactly those (no pattern, no directory) are removed after each test.
  */
 trait InteractsWithImportFixtures
 {
+    /** @var list<string> temp files created by this trait in the current test */
+    private array $importFixtureFiles = [];
+
+    protected function setUpInteractsWithImportFixtures(): void
+    {
+        Storage::fake('local');
+    }
+
+    protected function tearDownInteractsWithImportFixtures(): void
+    {
+        foreach ($this->importFixtureFiles as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
+        }
+        $this->importFixtureFiles = [];
+    }
+
+    /** A fresh `….xlsx` path in the system temp dir; it and tempnam()'s own placeholder are cleaned up. */
+    private function importFixturePath(string $prefix): string
+    {
+        $placeholder = tempnam(sys_get_temp_dir(), $prefix);
+        $path = $placeholder.'.xlsx';
+        array_push($this->importFixtureFiles, $placeholder, $path);
+
+        return $path;
+    }
+
     /**
      * @param  list<array<string,string>>  $rows  each row's cells keyed by column letter (B..U)
      * @param  bool  $withSourceColumn  Tahap 2 — write the `SUMBER` header in U (current
@@ -49,7 +84,7 @@ trait InteractsWithImportFixtures
             }
         }
 
-        $path = tempnam(sys_get_temp_dir(), 'import-test-').'.xlsx';
+        $path = $this->importFixturePath('import-test-');
         (new Xlsx($spreadsheet))->save($path);
         $spreadsheet->disconnectWorksheets();
 
@@ -69,7 +104,7 @@ trait InteractsWithImportFixtures
     /** A workbook that is a real file but not a valid xlsx structure at all. */
     protected function makeMalformedUpload(string $filename = 'malformed.xlsx'): UploadedFile
     {
-        $path = tempnam(sys_get_temp_dir(), 'import-bad-').'.xlsx';
+        $path = $this->importFixturePath('import-bad-');
         file_put_contents($path, 'this is not a spreadsheet');
 
         return new UploadedFile($path, $filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
@@ -83,7 +118,7 @@ trait InteractsWithImportFixtures
         $sheet->setCellValue('A1', 'Just some random text');
         $sheet->setCellValue('B1', 'Nothing importable here');
 
-        $path = tempnam(sys_get_temp_dir(), 'import-noheader-').'.xlsx';
+        $path = $this->importFixturePath('import-noheader-');
         (new Xlsx($spreadsheet))->save($path);
         $spreadsheet->disconnectWorksheets();
 

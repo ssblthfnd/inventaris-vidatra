@@ -372,23 +372,34 @@ class Stage2ImportAssetSourceTest extends TestCase
         }
         $this->assertContains('Belum diberi keterangan', $values);
 
-        $path = tempnam(sys_get_temp_dir(), 'tpl-').'.xlsx';
-        (new Xlsx($spreadsheet))->save($path);
-        $scanner = new SheetScanner($path);
-        iterator_to_array($scanner->rows());
-        $this->assertTrue($scanner->hasSourceColumn);
-        unlink($path);
+        $path = tempnam(sys_get_temp_dir(), 'tpl-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
+
+        try {
+            (new Xlsx($spreadsheet))->save($path);
+            $scanner = new SheetScanner($path);
+            iterator_to_array($scanner->rows());
+            $this->assertTrue($scanner->hasSourceColumn);
+        } finally {
+            @unlink($path);
+        }
     }
 
     public function test_an_exported_workbook_reimports_its_source_labels(): void
     {
         $asset = $this->existingAsset('710', 2020, ['asset_source' => 'bostk'], '01', '02', '001');
         $spreadsheet = app(AssetExportService::class)->build(Asset::with(['location', 'category', 'room'])->get());
-        $path = tempnam(sys_get_temp_dir(), 'exp-').'.xlsx';
-        (new Xlsx($spreadsheet))->save($path);
+        $path = tempnam(sys_get_temp_dir(), 'exp-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
 
-        $batchId = app(ImportManager::class)->stageFile($path)['batch_id'];
-        unlink($path);
+        try {
+            (new Xlsx($spreadsheet))->save($path);
+            $batchId = app(ImportManager::class)->stageFile($path)['batch_id'];
+        } finally {
+            @unlink($path);
+        }
 
         $parsed = $this->rowOf($batchId)->raw_payload['parsed'];
         $this->assertSame('bostk', $parsed['asset_source']);

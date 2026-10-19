@@ -32,12 +32,17 @@ class AssetExportTest extends TestCase
 
     private function saveResponseAsWorkbook(string $content): Spreadsheet
     {
-        $path = tempnam(sys_get_temp_dir(), 'export-test-').'.xlsx';
-        file_put_contents($path, $content);
-        $spreadsheet = IOFactory::load($path);
-        unlink($path);
+        $path = tempnam(sys_get_temp_dir(), 'export-test-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
 
-        return $spreadsheet;
+        try {
+            file_put_contents($path, $content);
+
+            return IOFactory::load($path);
+        } finally {
+            @unlink($path);
+        }
     }
 
     /* ------------------------------------------------------------------ authorization */

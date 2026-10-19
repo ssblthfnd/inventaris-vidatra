@@ -409,12 +409,17 @@ class Stage2AssetSourceTest extends TestCase
 
     private function workbook(string $content): Spreadsheet
     {
-        $path = tempnam(sys_get_temp_dir(), 'source-export-').'.xlsx';
-        file_put_contents($path, $content);
-        $spreadsheet = IOFactory::load($path);
-        unlink($path);
+        $path = tempnam(sys_get_temp_dir(), 'source-export-');
+        @unlink($path); // tempnam()'s placeholder — only its unique name is used
+        $path .= '.xlsx';
 
-        return $spreadsheet;
+        try {
+            file_put_contents($path, $content);
+
+            return IOFactory::load($path);
+        } finally {
+            @unlink($path);
+        }
     }
 
     private function unitAdmin(string $locationCode): User
