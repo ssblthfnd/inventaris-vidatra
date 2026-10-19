@@ -33,7 +33,9 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Off: no signed GET/PUT /storage/{path} routes for the private disk —
+            // asset photos are written only through ImageSanitizer (Foto Aset R2).
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],
