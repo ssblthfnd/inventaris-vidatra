@@ -10,6 +10,7 @@ import BatchAssetForm from './pages/BatchAssetForm';
 import Dashboard from './pages/Dashboard';
 import Imports from './pages/Imports';
 import Inventory from './pages/Inventory';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import MasterData from './pages/MasterData';
 import Reports from './pages/Reports';
@@ -24,6 +25,16 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          {/* Public landing page for guests; a signed-in user goes to /dashboard as before. */}
+          <Route
+            path="/"
+            element={
+              <GuestRoute>
+                <Landing />
+              </GuestRoute>
+            }
+          />
+
           <Route
             path="/login"
             element={
