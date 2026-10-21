@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="id" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — PDF Laporan Inventaris</title>
+<!--
+  Mockup isi PDF Laporan (A4 potret). Selalu mode TERANG, apa pun mode yang dipakai pengguna.
+  Kolom filter TIDAK dicetak; filter yang dipakai ditulis sebagai keterangan di bagian atas.
+  Filter dibaca dari alamat, mis. laporan-pdf.html?lokasi=YAYASAN&status=Aktif
+  Angka di bawah hanya ilustrasi (contoh untuk filter Lokasi: YAYASAN · Status: Aktif).
+-->
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #d9dee2; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1f333f; }
+  .sheet { width: 210mm; min-height: 297mm; margin: 24px auto; background: #ffffff; padding: 13mm 14mm; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 4px 24px rgba(0,0,0,.12); }
+  @media print { body { background: #ffffff; } .sheet { margin: 0; box-shadow: none; } }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; padding-bottom: 12px; border-bottom: 2px solid #2e4a5b; }
+  h1 { margin: 0; font-size: 26px; font-weight: 800; color: #2e4a5b; }
+  h2 { margin: 0; font-size: 14px; font-weight: 700; color: #2e4a5b; }
+  .meta { text-align: right; font-size: 12px; color: #4f6b7c; line-height: 1.5; }
+  .filter-note { background: #eef7fd; border: 1px solid #a8d0ea; border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.55; }
+  .filter-note strong { color: #2e4a5b; }
+  .filter-note .rest { color: #4f6b7c; }
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .kpi { border: 1px solid #c9d4db; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .kpi span:first-child { font-size: 12px; color: #4f6b7c; }
+  .kpi span:last-child { font-size: 20px; font-weight: 800; color: #2e4a5b; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .box { border: 1px solid #c9d4db; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .stack { display: flex; height: 16px; border-radius: 3px; overflow: hidden; gap: 2px; background: #eaf1f6; }
+  .stack div { height: 100%; }
+  .legend { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  .legend div { display: flex; align-items: center; gap: 8px; }
+  .legend .sw { width: 9px; height: 9px; border-radius: 2px; }
+  .legend .lbl { flex: 1 1 auto; }
+  .legend .pct { width: 44px; text-align: right; color: #4f6b7c; }
+  .bar { display: grid; grid-template-columns: 130px minmax(0, 1fr) 34px; align-items: center; gap: 8px; font-size: 12px; }
+  .bar .track { height: 8px; background: #eaf1f6; border-radius: 3px; overflow: hidden; }
+  .bar .fill { height: 100%; background: #6f9bb8; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead tr { border-bottom: 1px solid #2e4a5b; }
+  th { text-align: left; padding: 6px 4px; font-weight: 700; }
+  td { padding: 5px 4px; border-bottom: 1px solid #c9d4db; }
+  .r { text-align: right; font-variant-numeric: tabular-nums; }
+  .foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 12px; color: #4f6b7c; border-top: 1px solid #c9d4db; padding-top: 8px; }
+</style>
+</head>
+<body>
+<article class="sheet" id="sheet"></article>
+<script>
+(function () {
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const pct = (v, t) => (t ? (v / t * 100).toLocaleString('id-ID', { maximumFractionDigits: 1 }) : '0') + '%';
+  const LABELS = { lokasi: 'Lokasi', kategori: 'Kategori', kondisi: 'Kondisi', status: 'Status', tahun: 'Tahun', sumber: 'Sumber' };
+  const params = new URLSearchParams(location.search);
+  if (![...params.keys()].length) { params.set('lokasi', 'YAYASAN'); params.set('status', 'Aktif'); }
+  const used = Object.keys(LABELS).filter((k) => params.get(k)).map((k) => `${LABELS[k]}: ${params.get(k)}`);
+  const unused = Object.keys(LABELS).filter((k) => !params.get(k)).map((k) => LABELS[k]);
+
+  const stack = (title, items) => {
+    const t = items.reduce((a, i) => a + i[1], 0);
+    return `<div class="box"><h2>${title}</h2>
+      <div class="stack" role="img" aria-label="${esc(title + ': ' + items.map((i) => `${i[0]} ${i[1]}`).join(', '))}">${items.filter((i) => i[1] > 0).map((i) => `<div style="width:${i[1] / t * 100}%;background:${i[2]}"></div>`).join('')}</div>
+      <div class="legend">${items.map((i) => `<div><span class="sw" style="background:${i[2]}"></span><span class="lbl">${i[0]}</span><span class="r">${i[1]}</span><span class="pct r">${pct(i[1], t)}</span></div>`).join('')}</div></div>`;
+  };
+  const bars = (title, rows) => {
+    const sorted = [...rows].sort((a, b) => b[1] - a[1]);
+    const max = Math.max(1, ...sorted.map((r) => r[1]));
+    return `<div class="box"><h2>${title}</h2>${sorted.map(([l, v]) => `<div class="bar"><span>${esc(l)}</span><div class="track"><div class="fill" style="width:${v / max * 100}%"></div></div><span class="r">${v}</span></div>`).join('')}</div>`;
+  };
+  const rooms = [['Ruangan Keuangan', 53], ['Ruangan Ketua Harian', 41], ['Ruangan Admin Personalia / SARPRAS', 9], ['Ruangan Humas IT', 6], ['Ruangan Cikini', 4], ['Gudang', 2], ['Musholla', 2], ['CS', 1]];
+
+  document.getElementById('sheet').innerHTML = `
+    <header class="head">
+      <div><h1>Laporan Inventaris</h1><div style="font-size:13px;color:#4f6b7c">Yayasan Vidatra · inventaris.vidatra.sch.id</div></div>
+      <div class="meta"><div>Dicetak: 21 Oktober 2026, 09.30 WIB</div><div>Oleh: Super Admin</div></div>
+    </header>
+    <div class="filter-note">
+      <strong>Data dalam laporan ini berdasarkan filter:</strong>
+      ${used.length ? esc(used.join(' · ')) + '.' : 'tanpa filter — semua data.'}
+      ${unused.length ? `<span class="rest">Filter lain tidak dipakai (${esc(unused.join(', '))}: semua).</span>` : ''}
+    </div>
+    <div class="kpis">${[['Total aset', 368], ['Aset aktif', 368], ['Ditulis off', 0], ['Lokasi', 1], ['Kategori', 3]].map(([l, v]) => `<div class="kpi"><span>${l}</span><span>${v}</span></div>`).join('')}</div>
+    <div class="grid2">
+      ${stack('Aset per Sumber', [['BOSDA', 0, '#2a78d6'], ['BOSP', 0, '#eb6834'], ['BOSTK', 0, '#1baf7a'], ['Yayasan', 368, '#eda100'], ['Lainnya', 0, '#e87ba4'], ['Belum diberi keterangan', 0, '#9ca3af']])}
+      ${stack('Kondisi Aset', [['Baik', 352, '#0ca30c'], ['Kurang Baik', 0, '#fab219'], ['Rusak Berat', 11, '#d03b3b'], ['Tidak diketahui', 5, '#9ca3af']])}
+    </div>
+    <div class="grid2">
+      ${bars('Aset per Lokasi', [['YAYASAN', 368]])}
+      ${bars('Aset per Kategori', [['MEUBELAIR', 174], ['ELEKTRONIK', 180], ['ALAT KEBERSIHAN', 14]])}
+    </div>
+    <section style="display:flex;flex-direction:column;gap:6px">
+      <h2>Aset per Ruangan</h2>
+      <table><thead><tr><th>Ruangan</th><th>Lokasi</th><th class="r">Jumlah</th></tr></thead>
+      <tbody>${rooms.map(([n, v]) => `<tr><td>${esc(n)}</td><td>YAYASAN</td><td class="r">${v}</td></tr>`).join('')}</tbody></table>
+    </section>
+    <footer class="foot"><span>Laporan Inventaris — Yayasan Vidatra</span><span>Halaman 1 dari 2</span></footer>`;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Laporan Inventaris</title>
+<link rel="stylesheet" href="assets/mockup.css">
+</head>
+<body>
+<!--
+  Mockup halaman Laporan (disetujui Oktober 2026). Buka langsung di browser.
+  Filter di mockup hanya mengubah keterangan "Filter aktif" dan isi PDF; angka grafik statis.
+  Tombol "Unduh PDF" membuka laporan-pdf.html dengan filter yang sedang dipilih.
+  Spesifikasi lengkap: README.md di folder ini.
+-->
+<main class="page" id="app"></main>
+<script src="assets/mockup.js"></script>
+<script>
+  InventarisMockup.mountThemeToggle();
+  InventarisMockup.renderLaporan(document.getElementById('app'));
+</script>
+</body>
+</html>
