@@ -117,6 +117,7 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     // location scoping happens); see ReportController.
     Route::middleware('can:assets.report')->group(function () {
         Route::get('reports/inventory', [ReportController::class, 'index'])->name('api.reports.inventory');
+        Route::get('reports/inventory/pdf', [ReportController::class, 'pdf'])->name('api.reports.inventory.pdf');
     });
 
     // --- asset write API (Tahap 5.4/5.8; Stage 6.9 R5) — each action regated

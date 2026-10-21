@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Api\Concerns\FiltersAssets;
 use App\Http\Requests\Api\AssetIndexRequest;
 use App\Models\Asset;
@@ -9,6 +10,7 @@ use App\Models\ImportBatch;
 use App\Models\ImportRow;
 use App\Models\Location;
 use App\Models\MutationLog;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\InteractsWithAssetFixtures;
@@ -303,5 +305,36 @@ class ReportApiTest extends TestCase
         $this->assertSame(3, collect($data['by_category'])->sum('asset_count'));
         $this->assertSame(3, collect($data['by_location'])->sum('asset_count'));
         $this->assertSame(3, array_sum($data['by_condition']));
+    }
+
+    /* ------------------------------------------------------------------ available_years (Tahun filter options) */
+
+    public function test_available_years_are_distinct_newest_first_and_ignore_the_other_filters(): void
+    {
+        $this->scope('01', '02', '001');
+        $this->existingAsset('001', 2019, [], '01', '02', '001');
+        $this->existingAsset('002', 2021, [], '01', '02', '001');
+        $this->existingAsset('003', 2021, [], '01', '02', '001');
+        $trashed = $this->existingAsset('004', 2015, [], '01', '02', '001');
+        $trashed->delete();
+        Sanctum::actingAs($this->operator());
+
+        $this->getJson('/api/reports/inventory')->assertOk()->assertJsonPath('data.available_years', [2021, 2019]);
+        // picking a year must not make the other years disappear from the picker
+        $this->getJson('/api/reports/inventory?asset_year[]=2019')
+            ->assertOk()
+            ->assertJsonPath('data.summary.total_assets', 1)
+            ->assertJsonPath('data.available_years', [2021, 2019]);
+    }
+
+    public function test_available_years_follow_the_unit_admin_location_scope(): void
+    {
+        $this->scope('02', '02', '001');
+        $this->scope('03', '02', '001');
+        $this->existingAsset('001', 2018, [], '02', '02', '001');
+        $this->existingAsset('001', 2023, [], '03', '02', '001');
+        Sanctum::actingAs(User::factory()->create(['role' => UserRole::UnitAdmin, 'location_code' => '02']));
+
+        $this->getJson('/api/reports/inventory')->assertOk()->assertJsonPath('data.available_years', [2018]);
     }
 }

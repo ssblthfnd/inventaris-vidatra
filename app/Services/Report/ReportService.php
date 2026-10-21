@@ -2,7 +2,10 @@
 
 namespace App\Services\Report;
 
+use App\Models\Asset;
+use App\Models\User;
 use App\Services\Dashboard\DashboardService;
+use App\Support\LocationScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -55,6 +58,27 @@ class ReportService
             'by_year' => $this->byYear($assets),
             'by_source' => $this->bySource($assets),
         ];
+    }
+
+    /**
+     * The Laporan page's "Tahun" filter options: every acquisition year present
+     * among the actor's non-deleted assets (LocationScope only, deliberately NOT the
+     * other filters, so picking a year never makes the other years disappear),
+     * newest first. One DISTINCT query.
+     *
+     * @return list<int>
+     */
+    public function availableYears(User $user): array
+    {
+        $locationCodes = LocationScope::for($user)->resolveFilterCodes([]);
+
+        return Asset::query()
+            ->when($locationCodes !== null, fn ($q) => $q->whereIn('location_code', $locationCodes))
+            ->distinct()
+            ->orderByDesc('asset_year')
+            ->pluck('asset_year')
+            ->map(fn ($year): int => (int) $year)
+            ->all();
     }
 
     /**
