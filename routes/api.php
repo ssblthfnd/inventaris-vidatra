@@ -50,6 +50,7 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     // --- read API: any active user (viewer / operator / admin) ---
     Route::middleware('can:viewer')->group(function () {
         Route::get('dashboard', [DashboardController::class, 'index'])->name('api.dashboard');
+        Route::get('dashboard/rooms', [DashboardController::class, 'rooms'])->name('api.dashboard.rooms');
 
         Route::get('assets', [AssetController::class, 'index'])->name('api.assets.index');
         // ->withTrashed(): an actor holding `assets.restore` can read a soft-deleted

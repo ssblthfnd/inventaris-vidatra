@@ -130,6 +130,7 @@ class DashboardApiTest extends TestCase
         $this->getJson(self::URL)
             ->assertOk()
             ->assertJsonPath('data.summary.total_assets', 7)
+            ->assertJsonPath('data.summary.active_assets', 6)
             ->assertJsonPath('data.summary.written_off', 1)
             ->assertJsonPath('data.summary.by_condition.baik', 4)
             ->assertJsonPath('data.summary.by_condition.kurang_baik', 1)

@@ -7,7 +7,9 @@ use App\Models\Asset;
 use App\Models\MutationLog;
 use App\Models\User;
 use App\Support\LocationScope;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
 
@@ -82,6 +84,8 @@ class DashboardService
 
         return [
             'total_assets' => (int) $row->total_assets,
+            // the "Aset aktif" KPI — same total/active/written-off split as the report's summary
+            'active_assets' => (int) $row->total_assets - (int) $row->written_off,
             'written_off' => (int) $row->written_off,
             'by_condition' => [
                 'baik' => (int) $row->cond_baik,
@@ -225,6 +229,64 @@ class DashboardService
         }
 
         return $rooms;
+    }
+
+    /**
+     * `GET /api/dashboard/rooms` — the same rows as {@see byRoom()} (rooms holding at
+     * least one non-deleted asset, plus the "Tanpa Ruangan" bucket), searched,
+     * filtered, sorted and paginated in SQL so the table stays cheap however many
+     * rooms exist.
+     *
+     * `$locationCode` is one requested location, still narrowed by LocationScope:
+     * a unit_admin asking for another unit's location gets no rows, never that
+     * unit's data (same rule as `GET /api/assets`). It filters on the asset's own
+     * location, so it narrows the roomless bucket too. `$likePattern` is an
+     * already-escaped LIKE pattern for the row name (the bucket's label included).
+     * `$sort` = `count` (most assets first, then name) or `name` (A–Z); either way
+     * the roomless bucket stays last, as in `by_room`, and `id` breaks ties.
+     */
+    public function roomPage(User $user, ?string $likePattern, ?string $locationCode, string $sort, int $perPage): LengthAwarePaginator
+    {
+        $locationCodes = LocationScope::for($user)->resolveFilterCodes($locationCode === null ? [] : [$locationCode]);
+        $inScope = fn ($q, string $column) => $q->when($locationCodes !== null, fn ($w) => $w->whereIn($column, $locationCodes));
+
+        $rooms = DB::table('rooms as r')
+            ->join('assets as a', function (JoinClause $join) use ($inScope): void {
+                $join->on('a.room_id', '=', 'r.id')->whereNull('a.deleted_at');
+                $inScope($join, 'a.location_code');
+            })
+            ->join('locations as l', 'l.code', '=', 'r.location_code')
+            ->groupBy('r.id', 'r.name', 'r.location_code', 'l.name')
+            ->select('r.id', 'r.name', 'r.location_code')
+            ->selectRaw('l.name as location_name')
+            ->selectRaw('COUNT(a.id) as asset_count');
+
+        // one aggregate row; HAVING drops it when there is no roomless asset
+        $roomless = DB::table('assets')
+            ->whereNull('deleted_at')
+            ->whereNull('room_id')
+            ->tap(fn (QueryBuilder $q) => $inScope($q, 'location_code'))
+            ->selectRaw('NULL as id, ? as name, NULL as location_code, NULL as location_name, COUNT(*) as asset_count', [self::ROOMLESS_LABEL])
+            ->havingRaw('COUNT(*) > 0');
+
+        $query = DB::query()
+            ->fromSub($rooms->unionAll($roomless), 'x')
+            ->when($likePattern !== null, fn ($q) => $q->where('x.name', 'like', $likePattern))
+            ->orderByRaw('x.id IS NULL');
+
+        if ($sort === 'name') {
+            $query->orderBy('x.name')->orderBy('x.location_name');
+        } else {
+            $query->orderByDesc('x.asset_count')->orderBy('x.name');
+        }
+
+        return $query->orderBy('x.id')->paginate($perPage)->through(fn ($r) => [
+            'id' => $r->id === null ? null : (int) $r->id,
+            'name' => $r->name,
+            'location_code' => $r->location_code,
+            'location_name' => $r->location_name,
+            'asset_count' => (int) $r->asset_count,
+        ]);
     }
 
     /**
