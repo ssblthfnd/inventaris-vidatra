@@ -220,7 +220,7 @@ export default function Trash() {
         </div>
         <Link
           to="/inventory"
-          className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400"
+          className="inline-flex items-center rounded-lg border border-gray-300 bg-surface px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400"
         >
           Kembali ke Inventaris
         </Link>
@@ -296,20 +296,20 @@ export default function Trash() {
           <button
             type="button"
             onClick={() => setReloadKey((k) => k + 1)}
-            className="mt-3 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+            className="mt-3 rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-hover"
           >
             Coba lagi
           </button>
         </div>
       ) : phase === 'ready' && assets.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-12 text-center">
+        <div className="rounded-xl border border-gray-200 bg-surface px-4 py-12 text-center">
           <p className="text-sm font-medium text-gray-700">
             {filterActive ? 'Tidak ada aset dihapus yang cocok dengan filter.' : 'Tidak ada aset yang dihapus.'}
           </p>
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-surface">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-sm">
                 <thead>

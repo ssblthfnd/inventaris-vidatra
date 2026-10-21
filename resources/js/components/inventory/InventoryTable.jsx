@@ -95,7 +95,7 @@ export default function InventoryTable({
   const someSelected = selectedCount > 0 && !allSelected;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-surface">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead>

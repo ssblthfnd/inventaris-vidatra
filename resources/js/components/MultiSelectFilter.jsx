@@ -152,8 +152,8 @@ export default function MultiSelectFilter({
           disabled
             ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
             : active
-              ? 'border-gray-900 bg-gray-900 text-white hover:bg-gray-800'
-              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400',
+              ? 'border-accent bg-accent text-accent-fg hover:bg-accent-hover'
+              : 'border-gray-300 bg-surface text-gray-700 hover:border-gray-400',
         ].join(' ')}
       >
         <span className="flex min-w-0 items-center gap-1.5">
@@ -178,7 +178,7 @@ export default function MultiSelectFilter({
         <div
           id={listId}
           style={panelStyle ?? undefined}
-          className="absolute left-0 z-30 mt-2 w-72 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+          className="absolute left-0 z-30 mt-2 w-72 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-surface shadow-lg"
         >
           {showSearch && (
             <div className="border-b border-gray-100 p-2">
@@ -241,7 +241,7 @@ export default function MultiSelectFilter({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded bg-gray-900 px-2.5 py-1 font-medium text-white hover:bg-gray-800"
+              className="rounded bg-accent px-2.5 py-1 font-medium text-accent-fg hover:bg-accent-hover"
             >
               Selesai
             </button>

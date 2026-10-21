@@ -111,7 +111,7 @@ function RoomMappingGroupCard({ group, locationName, batchId, availableRooms, on
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+    <div className="rounded-lg border border-gray-200 bg-surface px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div>
           <p className="text-xs text-gray-500">{locationName}</p>
@@ -169,7 +169,7 @@ function RoomMappingGroupCard({ group, locationName, batchId, availableRooms, on
               type="button"
               onClick={handleCreateRoom}
               disabled={createBusy}
-              className="rounded-lg bg-gray-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
               {createBusy ? 'Menyimpan…' : 'Buat Ruangan'}
             </button>
@@ -218,7 +218,7 @@ function RoomMappingGroupCard({ group, locationName, batchId, availableRooms, on
           type="button"
           onClick={handleApply}
           disabled={!selectedRoomId || applyBusy}
-          className="rounded-lg bg-gray-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
           {applyBusy ? 'Menerapkan…' : 'Terapkan'}
         </button>
@@ -290,7 +290,7 @@ export default function RoomMappingSection({
 
   if (phase === 'loading') {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+      <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
         Memuat pemetaan ruangan…
       </div>
     );
@@ -312,7 +312,7 @@ export default function RoomMappingSection({
   }
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+    <section className="rounded-xl border border-gray-200 bg-surface p-4 sm:p-5">
       <h2 className="text-sm font-semibold text-gray-800">Pemetaan Ruangan</h2>
       <p className="mt-0.5 text-xs text-gray-500">
         {groups.length > 0

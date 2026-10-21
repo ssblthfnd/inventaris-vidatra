@@ -13,7 +13,7 @@ const CONDITION_LABELS = {
 
 function StatCard({ label, value }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div className="rounded-xl border border-gray-200 bg-surface p-4">
       <p className="text-sm text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
     </div>
@@ -22,7 +22,7 @@ function StatCard({ label, value }) {
 
 function CountTable({ title, rows, labelKey, headers }) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white">
+    <section className="rounded-xl border border-gray-200 bg-surface">
       <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">{title}</h2>
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-sm text-gray-400">Belum ada data.</p>
@@ -115,7 +115,7 @@ export default function Dashboard() {
         <StatCard label="Kategori Terdaftar" value={byCategory.filter((r) => r.is_active !== false).length} />
       </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white">
+      <section className="rounded-xl border border-gray-200 bg-surface">
         <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">Kondisi Aset</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -165,7 +165,7 @@ export default function Dashboard() {
         headers={['Ruangan', 'Jumlah']}
       />
 
-      <section className="rounded-xl border border-gray-200 bg-white">
+      <section className="rounded-xl border border-gray-200 bg-surface">
         <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">Mutasi Terbaru</h2>
         {(data?.recent_mutations ?? []).length === 0 ? (
           <p className="px-4 py-6 text-sm text-gray-400">Belum ada mutasi.</p>

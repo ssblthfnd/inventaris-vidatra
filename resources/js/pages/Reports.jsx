@@ -36,7 +36,7 @@ const CONDITION_LABELS = {
 
 function StatCard({ label, value }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div className="rounded-xl border border-gray-200 bg-surface p-4">
       <p className="text-sm text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
     </div>
@@ -45,7 +45,7 @@ function StatCard({ label, value }) {
 
 function CountTable({ title, rows, labelKey, headers, secondaryKey }) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white">
+    <section className="rounded-xl border border-gray-200 bg-surface">
       <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">{title}</h2>
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-sm text-gray-400">Tidak ada data untuk ditampilkan.</p>
@@ -353,7 +353,7 @@ export default function Reports() {
                 key={`${chip.filter}:${chip.value}`}
                 type="button"
                 onClick={() => removeChip(chip.filter, chip.value)}
-                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white py-1 pl-2.5 pr-1.5 text-xs text-gray-700 hover:border-gray-300"
+                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-surface py-1 pl-2.5 pr-1.5 text-xs text-gray-700 hover:border-gray-300"
               >
                 {chip.label}
                 <span aria-hidden="true" className="text-gray-400">✕</span>
@@ -380,7 +380,7 @@ export default function Reports() {
           <button
             type="button"
             onClick={() => setRetryKey((k) => k + 1)}
-            className="mt-3 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+            className="mt-3 rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-hover"
           >
             Coba lagi
           </button>
@@ -412,7 +412,7 @@ export default function Reports() {
             Status untuk melihat aset aktif saja.
           </p>
 
-          <section className="rounded-xl border border-gray-200 bg-white">
+          <section className="rounded-xl border border-gray-200 bg-surface">
             <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
               Kondisi Aset
             </h2>

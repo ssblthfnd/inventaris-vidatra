@@ -131,7 +131,7 @@ function SkeletonRows() {
 
 export default function ImportRowsTable({ rows, loading, onResolveSource = null, sourceBusyRowId = null }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-surface">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] text-sm">
           <thead>
