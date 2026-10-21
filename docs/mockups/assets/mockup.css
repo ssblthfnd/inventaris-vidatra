@@ -1,0 +1,137 @@
+/*
+ * Mockup styles — Dashboard & Laporan (desain disetujui Oktober 2026).
+ * Acuan visual saja; implementasi sebenarnya memakai Tailwind di resources/js.
+ * Semua warna ditulis sebagai token di bawah: mode terang dan gelap.
+ */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f9f7f3;
+  --surface: #ffffff;
+  --border: #e4e7ea;
+  --divider: #eef0f1;
+  --text: #2e4a5b;
+  --muted: #4f6b7c;
+  --track: #eaf1f6;
+  --bar: #6f9bb8;
+  --accent: #2e4a5b;
+  --accent-text: #ffffff;
+  --chip-bg: #d5efff;
+  --chip-text: #2e4a5b;
+  --input-bg: #ffffff;
+  --input-border: #c9d4db;
+  /* Sumber aset — warna kategori (urutan tetap, tervalidasi buta warna) */
+  --src-bosda: #2a78d6;
+  --src-bosp: #eb6834;
+  --src-bostk: #1baf7a;
+  --src-yayasan: #eda100;
+  --src-lainnya: #e87ba4;
+  --src-belum: #9ca3af;
+  /* Kondisi — warna status (sama di kedua mode) */
+  --st-baik: #0ca30c;
+  --st-kurang: #fab219;
+  --st-rusak: #d03b3b;
+  --st-unknown: #9ca3af;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1b2b35;
+  --surface: #233846;
+  --border: #2f4858;
+  --divider: #2b4252;
+  --text: #f9f7f3;
+  --muted: #b9ccd8;
+  --track: #2b4252;
+  --bar: #a8d0ea;
+  --accent: #a8d0ea;
+  --accent-text: #1b2b35;
+  --chip-bg: #2e4a5b;
+  --chip-text: #d5efff;
+  --input-bg: #1b2b35;
+  --input-border: #3a576a;
+  --src-bosda: #3987e5;
+  --src-bosp: #d95926;
+  --src-bostk: #199e70;
+  --src-yayasan: #c98500;
+  --src-lainnya: #d55181;
+  --src-belum: #7c8d99;
+  --st-unknown: #7c8d99;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.page { max-width: 1160px; margin: 0 auto; padding: 28px 16px 72px; display: flex; flex-direction: column; gap: 20px; }
+h1 { margin: 0; font-size: 22px; font-weight: 700; }
+h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+.row { display: flex; flex-wrap: wrap; gap: 16px; }
+.kpis { display: flex; flex-wrap: wrap; gap: 12px; }
+.kpi { flex: 1 1 150px; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.kpi span:first-child { font-size: 14px; color: var(--muted); }
+.kpi span:last-child { font-size: 26px; font-weight: 700; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card.third { flex: 1 1 300px; }
+.card.half { flex: 1 1 420px; }
+.card.flush { padding: 0; gap: 0; overflow: hidden; }
+
+/* Batang bertumpuk 100% (Sumber, Kondisi) */
+.stack { display: flex; height: 24px; border-radius: 4px; overflow: hidden; gap: 2px; background: var(--track); }
+.stack > div { height: 100%; }
+.legend { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 9px; font-size: 14px; }
+.legend li { display: flex; align-items: center; gap: 10px; }
+.legend .sw { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+.legend .lbl { flex: 1 1 auto; min-width: 0; }
+.legend .pct { width: 52px; text-align: right; color: var(--muted); }
+
+/* Batang horizontal (Lokasi, Kategori) — diurutkan dari terbesar */
+.bars { display: flex; flex-direction: column; gap: 14px; }
+.bars.two-col { flex-direction: row; flex-wrap: wrap; column-gap: 40px; row-gap: 14px; }
+.bars.two-col .bar { flex: 1 1 300px; min-width: 0; }
+.bar { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.bar .top { display: flex; justify-content: space-between; gap: 8px; }
+.bar .track { height: 10px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--bar); border-radius: 0 4px 4px 0; }
+
+/* Kolom per tahun (Laporan) */
+.cols { display: flex; align-items: flex-end; gap: 6px; height: 200px; border-bottom: 1px solid var(--border); padding-top: 18px; }
+.cols .c { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.cols .c div { width: 100%; max-width: 28px; background: var(--bar); border-radius: 4px 4px 0 0; }
+.col-labels { display: flex; gap: 6px; }
+.col-labels span { flex: 1 1 0; min-width: 0; text-align: center; font-size: 11px; color: var(--muted); }
+
+/* Form & tabel */
+.filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.field { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.field.wide { flex: 2 1 240px; }
+.field.narrow { flex: 0 1 110px; }
+.field input, .field select { height: 44px; width: 100%; border: 1px solid var(--input-border); border-radius: 10px; padding: 0 10px; font-size: 14px; background: var(--input-bg); color: var(--text); }
+.btn { min-height: 44px; padding: 0 16px; border: 1px solid var(--input-border); border-radius: 10px; background: transparent; color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { border: 0; background: var(--accent); color: var(--accent-text); font-weight: 700; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.chip { padding: 5px 10px; border-radius: 999px; background: var(--chip-bg); color: var(--chip-text); font-weight: 600; }
+.card-head { padding: 16px 20px; border-bottom: 1px solid var(--divider); display: flex; flex-direction: column; gap: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
+th { text-align: left; padding: 10px 20px; font-size: 12px; color: var(--muted); font-weight: 600; }
+th.r, td.r { text-align: right; }
+td { padding: 11px 20px; border-top: 1px solid var(--divider); vertical-align: top; }
+td .sub { display: block; font-size: 12px; color: var(--muted); padding-top: 2px; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--divider); font-size: 14px; color: var(--muted); }
+.pager div { display: flex; gap: 8px; align-items: center; }
+
+/* Tombol mode terang/gelap — pojok kanan bawah, kecil, jelas saat hover */
+.theme-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; align-items: center; gap: 8px; }
+.theme-toggle .label { opacity: 0; transform: translateX(6px); transition: opacity .15s, transform .15s; pointer-events: none; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 999px; white-space: nowrap; background: var(--accent); color: var(--accent-text); }
+.theme-toggle:hover .label, .theme-toggle:focus-within .label { opacity: 1; transform: none; }
+.theme-toggle button { width: 40px; height: 40px; border-radius: 999px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: .72; transition: opacity .15s; border: 1px solid var(--border); background: var(--surface); color: var(--text); box-shadow: 0 4px 12px rgba(0, 0, 0, .15); }
+.theme-toggle:hover button, .theme-toggle button:focus-visible { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .theme-toggle .label, .theme-toggle button { transition: none; } }
