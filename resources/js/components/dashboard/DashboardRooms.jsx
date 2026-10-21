@@ -12,7 +12,7 @@ const fieldClass = 'flex min-w-0 flex-col gap-1.5 text-[13px] text-muted max-[48
 const controlClass =
   'h-11 w-full rounded-[10px] border border-field-border bg-field px-2.5 text-sm text-ink focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none';
 const pagerButton =
-  'min-h-11 cursor-pointer rounded-[10px] border border-field-border px-4 text-sm font-semibold text-ink hover:bg-gray-50 disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent';
+  'min-h-11 cursor-pointer whitespace-nowrap rounded-[10px] border border-field-border px-4 text-sm font-semibold text-ink hover:bg-gray-50 disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent';
 
 /**
  * Dashboard "Aset per Ruangan": search, location filter, sort and page size, all
@@ -80,6 +80,7 @@ export default function DashboardRooms({ locations }) {
   const summary = meta.total
     ? `Menampilkan ${formatNumber(from)}–${formatNumber(to)} dari ${formatNumber(meta.total)} ruangan`
     : 'Menampilkan 0 ruangan';
+  const pageLabel = `${meta.current_page} / ${lastPage}`;
 
   return (
     <section className="min-w-0 overflow-hidden rounded-[14px] border border-border bg-surface">
@@ -156,9 +157,13 @@ export default function DashboardRooms({ locations }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider px-5 py-3.5 text-sm text-muted">
-        <span aria-live="polite">{result === null ? '' : summary}</span>
-        <div className="flex items-center gap-2">
+      {/* phones: summary + page number on one line, the two buttons below splitting the full width */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider px-5 py-3.5 text-sm text-muted max-[480px]:flex-col max-[480px]:items-stretch">
+        <div className="flex items-baseline justify-between gap-3">
+          <span aria-live="polite">{result === null ? '' : summary}</span>
+          <span className="hidden whitespace-nowrap tabular-nums max-[480px]:inline">{pageLabel}</span>
+        </div>
+        <div className="flex items-center gap-2 max-[480px]:grid max-[480px]:grid-cols-2">
           <button
             type="button"
             onClick={() => update({ page: meta.current_page - 1 })}
@@ -167,9 +172,7 @@ export default function DashboardRooms({ locations }) {
           >
             ‹ Sebelumnya
           </button>
-          <span className="tabular-nums">
-            {meta.current_page} / {lastPage}
-          </span>
+          <span className="whitespace-nowrap tabular-nums max-[480px]:hidden">{pageLabel}</span>
           <button
             type="button"
             onClick={() => update({ page: meta.current_page + 1 })}

@@ -168,6 +168,30 @@ class ReportPdfTest extends TestCase
         );
     }
 
+    public function test_rooms_table_lists_most_assets_first_then_name_with_the_roomless_bucket_last(): void
+    {
+        [$l2] = $this->scope('02', '01', '001');
+        $l3 = Location::factory()->create(['code' => '03', 'name' => 'Lokasi 03']);
+        $aula = Room::factory()->forLocation($l2)->create(['name' => 'Aula']);
+        $perpus = Room::factory()->forLocation($l2)->create(['name' => 'Perpustakaan']);
+        $kelas = Room::factory()->forLocation($l3)->create(['name' => 'Kelas']);
+        $seq = 0;
+        foreach ([[$aula, '02', 1], [$perpus, '02', 2], [$kelas, '03', 2], [null, '02', 3]] as [$room, $loc, $count]) {
+            for ($i = 0; $i < $count; $i++) {
+                $this->existingAsset(sprintf('%03d', ++$seq), 2020, ['room_id' => $room?->id], $loc, '01', '001');
+            }
+        }
+        Sanctum::actingAs($this->operator());
+
+        $this->get(self::URL)->assertOk();
+
+        $this->assertSame(
+            ['Kelas=2', 'Perpustakaan=2', 'Aula=1', 'Tanpa Ruangan=3'],
+            array_map(fn ($r) => "{$r['name']}={$r['asset_count']}", $this->viewData['rooms']),
+        );
+        $this->assertMatchesRegularExpression('/Kelas.*Perpustakaan.*Aula.*Tanpa Ruangan/s', $this->html());
+    }
+
     public function test_charts_list_every_bucket_with_shares_and_bars_sorted_largest_first(): void
     {
         $this->seedReport();

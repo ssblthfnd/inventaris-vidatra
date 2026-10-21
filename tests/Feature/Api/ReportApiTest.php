@@ -176,6 +176,30 @@ class ReportApiTest extends TestCase
         $this->assertNotContains($roomB->id, $byRoom->pluck('id'));
     }
 
+    public function test_by_room_is_ordered_by_count_then_name_with_the_roomless_bucket_last(): void
+    {
+        $zeta = $this->room('01', ['name' => 'Zeta']);
+        $beta = $this->room('01', ['name' => 'Beta']);
+        $alfa = $this->room('02', ['name' => 'Alfa']);
+        $gudang = $this->room('02', ['name' => 'Gudang']);
+        $seq = 0;
+        foreach ([[$zeta, 1], [$beta, 2], [$alfa, 2], [$gudang, 3], [null, 4]] as [$room, $count]) {
+            for ($i = 0; $i < $count; $i++) {
+                $loc = $room?->location_code ?? '01';
+                $this->existingAsset(sprintf('%03d', ++$seq), 2020, ['room_id' => $room?->id], $loc, 'ZC', '001');
+            }
+        }
+        Sanctum::actingAs($this->operator());
+
+        $byRoom = $this->getJson('/api/reports/inventory')->assertOk()->json('data.by_room');
+
+        // most assets first, then name A–Z across locations; "Tanpa Ruangan" last even though it holds the most
+        $this->assertSame(
+            ['Gudang=3', 'Alfa=2', 'Beta=2', 'Zeta=1', 'Tanpa Ruangan=4'],
+            array_map(fn ($r) => "{$r['name']}={$r['asset_count']}", $byRoom),
+        );
+    }
+
     /* ------------------------------------------------------------------ by_condition */
 
     public function test_by_condition_aggregation_including_unknown_null(): void

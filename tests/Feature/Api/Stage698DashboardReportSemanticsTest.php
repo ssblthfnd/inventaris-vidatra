@@ -155,7 +155,7 @@ class Stage698DashboardReportSemanticsTest extends TestCase
         Sanctum::actingAs($this->user(UserRole::Operator));
 
         foreach ([$this->dashboard()['by_room'], $this->report()['by_room']] as $byRoom) {
-            // real rooms keep their ordering (location, name, id); the bucket is last
+            // equal counts: real rooms by name (dashboard: location, name; report: count, name); the bucket is last
             $this->assertSame(['A Ruang', 'B Ruang', 'Tanpa Ruangan'], array_column($byRoom, 'name'));
             $this->assertSame(
                 ['id' => null, 'name' => 'Tanpa Ruangan', 'location_code' => null, 'location_name' => null, 'asset_count' => 1],
