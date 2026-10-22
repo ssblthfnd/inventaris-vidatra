@@ -80,7 +80,7 @@ async function fetchPdf(method, url, body) {
  * `click()`: some browsers (Firefox in particular) start the save asynchronously,
  * and revoking too early can cancel it.
  */
-function downloadBlob(blob, filename) {
+export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

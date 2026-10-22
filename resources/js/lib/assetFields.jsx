@@ -87,7 +87,7 @@ export function SelectInput({ id, value, onChange, error, disabled, children }) 
 
 export function Section({ title, description, children }) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+    <section className="rounded-xl border border-gray-200 bg-surface p-4 sm:p-5">
       <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
       {description && <p className="mt-0.5 text-xs text-gray-500">{description}</p>}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
@@ -103,7 +103,7 @@ export function FormSkeleton() {
       <div className="h-4 w-40 animate-pulse rounded bg-gray-100" />
       <div className="h-7 w-56 animate-pulse rounded bg-gray-100" />
       {[0, 1, 2].map((i) => (
-        <div key={i} className="rounded-xl border border-gray-200 bg-white p-5">
+        <div key={i} className="rounded-xl border border-gray-200 bg-surface p-5">
           <div className="mb-4 h-4 w-32 animate-pulse rounded bg-gray-100" />
           <div className="grid gap-4 sm:grid-cols-2">
             {[0, 1, 2, 3].map((j) => (
@@ -119,7 +119,7 @@ export function FormSkeleton() {
 export function CenteredState({ title, message, backTo, backLabel, action }) {
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="rounded-xl border border-gray-200 bg-white px-6 py-14 text-center">
+      <div className="rounded-xl border border-gray-200 bg-surface px-6 py-14 text-center">
         <h1 className="text-base font-semibold text-gray-900">{title}</h1>
         <p className="mx-auto mt-1.5 max-w-sm text-sm text-gray-500">{message}</p>
         {action}

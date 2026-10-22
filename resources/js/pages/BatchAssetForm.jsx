@@ -289,7 +289,7 @@ export default function BatchAssetForm() {
           </p>
         </div>
 
-        <dl className="overflow-hidden rounded-xl border border-gray-200 bg-white divide-y divide-gray-100">
+        <dl className="overflow-hidden rounded-xl border border-gray-200 bg-surface divide-y divide-gray-100">
           {[
             ['Lokasi', result.template.location],
             ['Kategori', result.template.category],
@@ -305,7 +305,7 @@ export default function BatchAssetForm() {
         </dl>
 
         {shown.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="rounded-xl border border-gray-200 bg-surface p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
               Kode aset yang dibuat
             </p>
@@ -342,7 +342,7 @@ export default function BatchAssetForm() {
           </button>
           <Link
             to={result.filterLink}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-gray-800"
+            className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-accent-fg hover:bg-accent-hover"
           >
             Lihat di Inventaris
           </Link>
@@ -693,7 +693,7 @@ export default function BatchAssetForm() {
           <button
             type="submit"
             disabled={submitting || !countValid}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting
               ? `Membuat ${countValid ? countNum : ''} aset…`

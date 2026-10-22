@@ -50,6 +50,7 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     // --- read API: any active user (viewer / operator / admin) ---
     Route::middleware('can:viewer')->group(function () {
         Route::get('dashboard', [DashboardController::class, 'index'])->name('api.dashboard');
+        Route::get('dashboard/rooms', [DashboardController::class, 'rooms'])->name('api.dashboard.rooms');
 
         Route::get('assets', [AssetController::class, 'index'])->name('api.assets.index');
         // ->withTrashed(): an actor holding `assets.restore` can read a soft-deleted
@@ -116,6 +117,7 @@ Route::middleware(['auth:sanctum', 'auth.active'])->group(function () {
     // location scoping happens); see ReportController.
     Route::middleware('can:assets.report')->group(function () {
         Route::get('reports/inventory', [ReportController::class, 'index'])->name('api.reports.inventory');
+        Route::get('reports/inventory/pdf', [ReportController::class, 'pdf'])->name('api.reports.inventory.pdf');
     });
 
     // --- asset write API (Tahap 5.4/5.8; Stage 6.9 R5) — each action regated

@@ -146,7 +146,7 @@ function DeskIllustration() {
 
 function ExampleAssetCard() {
   return (
-    <div className="w-full max-w-[440px] overflow-hidden rounded-[20px] border border-gray-200 bg-white shadow-[0_24px_48px_rgba(17,24,39,0.08)]">
+    <div className="w-full max-w-[440px] overflow-hidden rounded-[20px] border border-gray-200 bg-surface shadow-[0_24px_48px_rgba(17,24,39,0.08)]">
       <div className="h-[200px] bg-[#EEF2F7]">
         <DeskIllustration />
       </div>
@@ -161,7 +161,7 @@ function ExampleAssetCard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-[13px] font-bold text-emerald-800">Kondisi: Baik</span>
-          <span className="rounded-full bg-indigo-100 px-3 py-1.5 text-[13px] font-bold text-[#1E3A8A]">Sumber: Yayasan</span>
+          <span className="rounded-full bg-indigo-100 px-3 py-1.5 text-[13px] font-bold text-[#1E3A8A] dark:text-indigo-800">Sumber: Yayasan</span>
           <span className="rounded-full bg-gray-100 px-3 py-1.5 text-[13px] font-bold text-gray-700">3 foto</span>
         </div>
       </div>
@@ -170,9 +170,9 @@ function ExampleAssetCard() {
 }
 
 const navLink =
-  'hidden rounded-lg px-3.5 py-3 sm:inline-block text-[15px] font-semibold text-gray-700 hover:text-[#1E3A8A] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A]';
+  'hidden rounded-lg px-3.5 py-3 sm:inline-block text-[15px] font-semibold text-gray-700 hover:text-[#1E3A8A] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A] dark:hover:text-accent dark:focus-visible:outline-accent';
 const primaryButton =
-  'inline-flex items-center justify-center rounded-xl bg-[#1E3A8A] px-7 py-4 text-base font-bold text-white hover:bg-[#172554] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A]';
+  'inline-flex items-center justify-center rounded-xl bg-[#1E3A8A] px-7 py-4 text-base font-bold text-white hover:bg-[#172554] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A] dark:bg-accent dark:text-accent-fg dark:hover:bg-accent-hover dark:focus-visible:outline-accent';
 
 export default function Landing() {
   useEffect(() => {
@@ -184,8 +184,8 @@ export default function Landing() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9] font-['Plus_Jakarta_Sans',ui-sans-serif,system-ui,sans-serif] text-gray-900">
-      <header className="border-b border-gray-200 bg-white">
+    <div className="min-h-screen bg-[#F6F7F9] dark:bg-page font-['Plus_Jakarta_Sans',ui-sans-serif,system-ui,sans-serif] text-gray-900">
+      <header className="border-b border-gray-200 bg-surface">
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-4 px-6 py-[18px]">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#1E3A8A] text-white">
@@ -212,7 +212,7 @@ export default function Landing() {
             </a>
             <Link
               to="/login"
-              className="rounded-[10px] bg-[#1E3A8A] px-[22px] py-3 text-[15px] font-bold text-white hover:bg-[#172554] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A]"
+              className="rounded-[10px] bg-[#1E3A8A] px-[22px] py-3 text-[15px] font-bold text-white hover:bg-[#172554] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A] dark:bg-accent dark:text-accent-fg dark:hover:bg-accent-hover dark:focus-visible:outline-accent"
             >
               Masuk
             </Link>
@@ -221,10 +221,10 @@ export default function Landing() {
       </header>
 
       <main>
-        <section className="bg-white">
+        <section className="bg-surface">
           <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-14 px-6 pt-16 pb-20 sm:pt-20 sm:pb-24">
             <div className="flex min-w-0 flex-[1_1_460px] flex-col gap-6">
-              <span className="self-start rounded-full bg-indigo-50 px-3.5 py-2 text-sm font-bold text-[#1E3A8A]">
+              <span className="self-start rounded-full bg-indigo-50 px-3.5 py-2 text-sm font-bold text-[#1E3A8A] dark:text-indigo-800">
                 Sistem Inventaris Yayasan Vidatra
               </span>
               <h1 className="text-4xl leading-[1.08] font-extrabold tracking-[-0.03em] sm:text-[54px]">
@@ -240,7 +240,7 @@ export default function Landing() {
                 </Link>
                 <a
                   href="#cara"
-                  className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-7 py-4 text-base font-bold text-gray-900 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A]"
+                  className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-surface px-7 py-4 text-base font-bold text-gray-900 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A8A] dark:focus-visible:outline-accent"
                 >
                   Lihat Cara Kerja
                 </a>
@@ -261,8 +261,8 @@ export default function Landing() {
           </div>
           <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f) => (
-              <li key={f.title} className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-7">
-                <LineIcon className="h-7 w-7 text-[#1E3A8A]">{f.icon}</LineIcon>
+              <li key={f.title} className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-surface p-7">
+                <LineIcon className="h-7 w-7 text-[#1E3A8A] dark:text-accent">{f.icon}</LineIcon>
                 <h3 className="text-xl font-bold">{f.title}</h3>
                 <p className="text-base leading-relaxed text-gray-600">{f.text}</p>
               </li>
@@ -274,8 +274,8 @@ export default function Landing() {
           <h2 className="text-3xl font-extrabold tracking-tight sm:text-[38px]">Cara kerjanya</h2>
           <ol className="grid grid-cols-1 gap-8 md:grid-cols-3">
             {STEPS.map((s, i) => (
-              <li key={s.title} className="flex flex-col gap-3 border-t-[3px] border-[#1E3A8A] pt-6">
-                <span className="text-[15px] font-extrabold text-[#1E3A8A]">Langkah {i + 1}</span>
+              <li key={s.title} className="flex flex-col gap-3 border-t-[3px] border-[#1E3A8A] pt-6 dark:border-accent">
+                <span className="text-[15px] font-extrabold text-[#1E3A8A] dark:text-accent">Langkah {i + 1}</span>
                 <h3 className="text-[22px] font-bold">{s.title}</h3>
                 <p className="text-base leading-relaxed text-gray-600">{s.text}</p>
               </li>
@@ -287,13 +287,13 @@ export default function Landing() {
           <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-6 px-6 py-[72px]">
             <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5">
               <h2 className="text-[32px] font-extrabold text-white">Sudah punya akun?</h2>
-              <p className="text-[17px] leading-relaxed text-indigo-100">
+              <p className="text-[17px] leading-relaxed text-[#E0E7FF]">
                 Belum punya akun atau lupa kata sandi? Hubungi admin IT Yayasan.
               </p>
             </div>
             <Link
               to="/login"
-              className="inline-flex items-center justify-center rounded-xl bg-white px-8 py-4 text-base font-bold text-[#1E3A8A] hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="inline-flex items-center justify-center rounded-xl bg-white px-8 py-4 text-base font-bold text-[#1E3A8A] hover:bg-[#EEF2FF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               Masuk ke Aplikasi
             </Link>
@@ -301,7 +301,7 @@ export default function Landing() {
         </section>
       </main>
 
-      <footer className="mx-auto flex max-w-[1200px] flex-wrap justify-between gap-3 px-6 py-8 text-sm text-gray-600">
+      <footer className="mx-auto flex max-w-[1200px] flex-wrap justify-between gap-3 px-6 pt-8 pb-[72px] text-sm text-gray-600">
         <span>© Yayasan Vidatra</span>
         <span>inventaris.vidatra.sch.id</span>
       </footer>

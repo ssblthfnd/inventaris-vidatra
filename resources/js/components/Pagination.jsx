@@ -15,8 +15,8 @@ function PageButton({ children, active, disabled, onClick, ariaLabel }) {
       className={[
         'min-w-9 rounded-md border px-3 py-1.5 text-sm transition-colors',
         active
-          ? 'border-gray-900 bg-gray-900 text-white'
-          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-300',
+          ? 'border-accent bg-accent text-accent-fg'
+          : 'border-gray-300 bg-surface text-gray-700 hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-300',
       ].join(' ')}
     >
       {children}

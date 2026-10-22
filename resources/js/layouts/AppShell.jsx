@@ -71,7 +71,7 @@ function NavItems({ onNavigate }) {
             className={({ isActive }) =>
               [
                 'rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100',
+                isActive ? 'bg-accent text-accent-fg' : 'text-gray-700 hover:bg-gray-100',
               ].join(' ')
             }
           >
@@ -145,8 +145,8 @@ export default function AppShell() {
     isUnitAdmin && locationCode ? `${baseRoleLabel} — ${unitLocationName ?? locationCode}` : baseRoleLabel;
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
+    <div className="min-h-screen bg-page text-gray-900">
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-surface px-4">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -171,13 +171,13 @@ export default function AppShell() {
               <span className="block font-medium leading-tight">{user?.name}</span>
               <span className="block text-xs text-gray-500">{roleLabel}</span>
             </span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-xs font-semibold text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-fg">
               {(user?.name ?? '?').slice(0, 1).toUpperCase()}
             </span>
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-2 w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+            <div className="absolute right-0 mt-2 w-52 rounded-md border border-gray-200 bg-surface py-1 shadow-lg">
               <div className="border-b border-gray-100 px-3 py-2 sm:hidden">
                 <p className="text-sm font-medium">{user?.name}</p>
                 <p className="text-xs text-gray-500">{user?.email}</p>
@@ -204,7 +204,7 @@ export default function AppShell() {
       */}
       <div className="flex">
         {/* desktop sidebar — first flex child, constant width, viewport-left */}
-        <aside className="hidden w-56 shrink-0 border-r border-gray-200 bg-white md:block">
+        <aside className="hidden w-56 shrink-0 border-r border-gray-200 bg-surface md:block">
           <div className="sticky top-14">
             <NavItems />
           </div>
@@ -219,7 +219,7 @@ export default function AppShell() {
               className="absolute inset-0 bg-black/30"
               onClick={() => setSidebarOpen(false)}
             />
-            <div className="absolute left-0 top-0 h-full w-64 border-r border-gray-200 bg-white shadow-xl">
+            <div className="absolute left-0 top-0 h-full w-64 border-r border-gray-200 bg-surface shadow-xl">
               <div className="flex h-14 items-center border-b border-gray-200 px-4 font-semibold">
                 Inventaris Vidatra
               </div>
@@ -230,7 +230,8 @@ export default function AppShell() {
 
         {/* content column — `min-w-0` lets it shrink instead of pushing the
             sidebar; `max-w-*` / `mx-auto` are scoped here, to the content only */}
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6">
+        {/* pb-[72px]: room for the fixed theme toggle (bottom-right) */}
+        <main className="min-w-0 flex-1 px-4 pt-6 pb-[72px] sm:px-6">
           <div className="mx-auto w-full max-w-5xl">
             <Outlet />
           </div>

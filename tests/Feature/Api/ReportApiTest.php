@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Api\Concerns\FiltersAssets;
 use App\Http\Requests\Api\AssetIndexRequest;
 use App\Models\Asset;
@@ -9,6 +10,7 @@ use App\Models\ImportBatch;
 use App\Models\ImportRow;
 use App\Models\Location;
 use App\Models\MutationLog;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\InteractsWithAssetFixtures;
@@ -174,6 +176,30 @@ class ReportApiTest extends TestCase
         $this->assertNotContains($roomB->id, $byRoom->pluck('id'));
     }
 
+    public function test_by_room_is_ordered_by_count_then_name_with_the_roomless_bucket_last(): void
+    {
+        $zeta = $this->room('01', ['name' => 'Zeta']);
+        $beta = $this->room('01', ['name' => 'Beta']);
+        $alfa = $this->room('02', ['name' => 'Alfa']);
+        $gudang = $this->room('02', ['name' => 'Gudang']);
+        $seq = 0;
+        foreach ([[$zeta, 1], [$beta, 2], [$alfa, 2], [$gudang, 3], [null, 4]] as [$room, $count]) {
+            for ($i = 0; $i < $count; $i++) {
+                $loc = $room?->location_code ?? '01';
+                $this->existingAsset(sprintf('%03d', ++$seq), 2020, ['room_id' => $room?->id], $loc, 'ZC', '001');
+            }
+        }
+        Sanctum::actingAs($this->operator());
+
+        $byRoom = $this->getJson('/api/reports/inventory')->assertOk()->json('data.by_room');
+
+        // most assets first, then name A–Z across locations; "Tanpa Ruangan" last even though it holds the most
+        $this->assertSame(
+            ['Gudang=3', 'Alfa=2', 'Beta=2', 'Zeta=1', 'Tanpa Ruangan=4'],
+            array_map(fn ($r) => "{$r['name']}={$r['asset_count']}", $byRoom),
+        );
+    }
+
     /* ------------------------------------------------------------------ by_condition */
 
     public function test_by_condition_aggregation_including_unknown_null(): void
@@ -303,5 +329,36 @@ class ReportApiTest extends TestCase
         $this->assertSame(3, collect($data['by_category'])->sum('asset_count'));
         $this->assertSame(3, collect($data['by_location'])->sum('asset_count'));
         $this->assertSame(3, array_sum($data['by_condition']));
+    }
+
+    /* ------------------------------------------------------------------ available_years (Tahun filter options) */
+
+    public function test_available_years_are_distinct_newest_first_and_ignore_the_other_filters(): void
+    {
+        $this->scope('01', '02', '001');
+        $this->existingAsset('001', 2019, [], '01', '02', '001');
+        $this->existingAsset('002', 2021, [], '01', '02', '001');
+        $this->existingAsset('003', 2021, [], '01', '02', '001');
+        $trashed = $this->existingAsset('004', 2015, [], '01', '02', '001');
+        $trashed->delete();
+        Sanctum::actingAs($this->operator());
+
+        $this->getJson('/api/reports/inventory')->assertOk()->assertJsonPath('data.available_years', [2021, 2019]);
+        // picking a year must not make the other years disappear from the picker
+        $this->getJson('/api/reports/inventory?asset_year[]=2019')
+            ->assertOk()
+            ->assertJsonPath('data.summary.total_assets', 1)
+            ->assertJsonPath('data.available_years', [2021, 2019]);
+    }
+
+    public function test_available_years_follow_the_unit_admin_location_scope(): void
+    {
+        $this->scope('02', '02', '001');
+        $this->scope('03', '02', '001');
+        $this->existingAsset('001', 2018, [], '02', '02', '001');
+        $this->existingAsset('001', 2023, [], '03', '02', '001');
+        Sanctum::actingAs(User::factory()->create(['role' => UserRole::UnitAdmin, 'location_code' => '02']));
+
+        $this->getJson('/api/reports/inventory')->assertOk()->assertJsonPath('data.available_years', [2018]);
     }
 }

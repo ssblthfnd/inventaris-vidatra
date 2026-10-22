@@ -28,6 +28,8 @@ class ReportResource extends JsonResource
             'by_condition' => $this->resource['by_condition'],
             'by_year' => $this->resource['by_year'],
             'by_source' => $this->resource['by_source'],
+            // the Laporan page's Tahun filter options (LocationScope only, not the other filters)
+            'available_years' => $this->resource['available_years'],
         ];
     }
 }

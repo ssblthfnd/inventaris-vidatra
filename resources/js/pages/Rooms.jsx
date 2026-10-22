@@ -182,7 +182,7 @@ export default function Rooms() {
           <button
             type="button"
             onClick={() => setFormModal({ mode: 'create' })}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
           >
             <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Ruangan
           </button>
@@ -208,7 +208,7 @@ export default function Rooms() {
           <select
             value={selectedLocation}
             onChange={(e) => setSelectedLocation(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-900"
+            className="rounded-lg border border-gray-300 bg-surface px-3 py-2 text-sm outline-none focus:border-gray-900"
           >
             <option value="">Pilih unit…</option>
             {globalLocations.map((l) => (
@@ -230,7 +230,7 @@ export default function Rooms() {
       </div>
 
       {!activeLocationCode ? (
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-12 text-center">
+        <div className="rounded-xl border border-gray-200 bg-surface px-4 py-12 text-center">
           <p className="text-sm font-medium text-gray-700">Pilih unit terlebih dahulu.</p>
         </div>
       ) : phase === 'error' ? (
@@ -239,7 +239,7 @@ export default function Rooms() {
           <button
             type="button"
             onClick={() => setRetryKey((k) => k + 1)}
-            className="mt-3 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+            className="mt-3 rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-hover"
           >
             Coba lagi
           </button>
@@ -247,11 +247,11 @@ export default function Rooms() {
       ) : phase === 'loading' && result === null ? (
         <p className="text-sm text-gray-500">Memuat…</p>
       ) : rooms.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-12 text-center">
+        <div className="rounded-xl border border-gray-200 bg-surface px-4 py-12 text-center">
           <p className="text-sm font-medium text-gray-700">Belum ada ruangan di unit ini.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-surface">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-400">

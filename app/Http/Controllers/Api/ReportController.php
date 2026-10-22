@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\FiltersAssets;
 use App\Http\Requests\Api\AssetIndexRequest;
 use App\Http\Resources\ReportResource;
+use App\Services\Report\ReportPdfService;
 use App\Services\Report\ReportService;
+use Carbon\CarbonImmutable;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * `GET /api/reports/inventory` (Tahap 6.3), `can:assets.report` (Stage 6.9 R4; was `can:operator`) — a viewer is
@@ -20,6 +23,10 @@ use App\Services\Report\ReportService;
  *
  * Read-only and fully server-side aggregated ({@see ReportService}) — no raw
  * asset rows are ever fetched into PHP or returned to the client.
+ *
+ * `GET /api/reports/inventory/pdf` (same gate, same request, same aggregates) is
+ * the Laporan page's "Unduh PDF": the filters arrive as the same query string,
+ * are validated again here, and are printed as a caption ({@see ReportPdfService}).
  */
 class ReportController extends ApiController
 {
@@ -29,6 +36,16 @@ class ReportController extends ApiController
     {
         $assets = $this->assetsMatchingFilters($request);
 
-        return new ReportResource($service->build($assets));
+        return new ReportResource($service->build($assets) + [
+            'available_years' => $service->availableYears($request->user()),
+        ]);
+    }
+
+    public function pdf(AssetIndexRequest $request, ReportService $service, ReportPdfService $pdf): Response
+    {
+        $report = $service->build($this->assetsMatchingFilters($request));
+        $printedAt = CarbonImmutable::now(ReportPdfService::TIMEZONE);
+
+        return $pdf->render($report, $request, $printedAt)->download($pdf->filename($printedAt));
     }
 }

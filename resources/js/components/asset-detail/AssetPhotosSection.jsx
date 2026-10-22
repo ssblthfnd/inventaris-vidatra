@@ -63,7 +63,7 @@ function Thumbnail({ photo, onOpen, onDelete, canManage }) {
           />
         )}
       </button>
-      <div className="flex items-center justify-between gap-2 border-t border-gray-200 bg-white px-2.5 py-1.5">
+      <div className="flex items-center justify-between gap-2 border-t border-gray-200 bg-surface px-2.5 py-1.5">
         <span className="text-xs text-gray-500">
           Slot {photo.slot} · {formatBytes(photo.size_bytes)}
         </span>
@@ -99,7 +99,7 @@ function Lightbox({ photos, index, onClose, onIndex }) {
   if (!photo) return null;
 
   const navBtn =
-    'rounded-full bg-white/90 px-3 py-2 text-sm font-medium text-gray-900 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white';
+    'rounded-full bg-surface/90 px-3 py-2 text-sm font-medium text-gray-900 shadow hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-white';
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/85" role="dialog" aria-modal="true" aria-label="Pratinjau foto aset">
@@ -284,7 +284,7 @@ export default function AssetPhotosSection({ assetId, canManage = false, isTrash
     'inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-700">Foto Aset</h2>
@@ -298,7 +298,7 @@ export default function AssetPhotosSection({ assetId, canManage = false, isTrash
               type="button"
               disabled={!canAdd}
               onClick={() => cameraInput.current?.click()}
-              className={`${inputBtn} border-gray-900 bg-gray-900 text-white hover:bg-gray-800`}
+              className={`${inputBtn} border-accent bg-accent text-accent-fg hover:bg-accent-hover`}
             >
               Ambil Foto
             </button>
@@ -360,7 +360,7 @@ export default function AssetPhotosSection({ assetId, canManage = false, isTrash
         {pending && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="flex aspect-[4/3] w-full shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-gray-200 sm:w-48">
+              <div className="flex aspect-[4/3] w-full shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface ring-1 ring-gray-200 sm:w-48">
                 {pending.previewUrl ? (
                   <img src={pending.previewUrl} alt="Pratinjau foto yang akan diunggah" className="h-full w-full object-contain" />
                 ) : (
@@ -389,7 +389,7 @@ export default function AssetPhotosSection({ assetId, canManage = false, isTrash
                     type="button"
                     onClick={doUpload}
                     disabled={uploading || full}
-                    className={`${inputBtn} border-gray-900 bg-gray-900 text-white hover:bg-gray-800`}
+                    className={`${inputBtn} border-accent bg-accent text-accent-fg hover:bg-accent-hover`}
                   >
                     {uploading ? 'Mengunggah…' : uploadError ? 'Coba Unggah Lagi' : 'Unggah Foto'}
                   </button>

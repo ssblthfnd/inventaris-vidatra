@@ -93,7 +93,7 @@ export default function PrintLabelMenu({
         <div
           role="menu"
           className={[
-            'absolute z-30 mt-2 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg',
+            'absolute z-30 mt-2 w-56 overflow-hidden rounded-lg border border-gray-200 bg-surface py-1 shadow-lg',
             align === 'right' ? 'right-0' : 'left-0',
           ].join(' ')}
         >

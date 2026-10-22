@@ -68,7 +68,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-page px-4 pt-10 pb-[72px]">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Inventaris Vidatra</h1>
@@ -78,7 +78,7 @@ export default function Login() {
         <form
           onSubmit={handleSubmit}
           noValidate
-          className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
+          className="space-y-4 rounded-xl border border-gray-200 bg-surface p-6 shadow-sm"
         >
           {formError && (
             <div
@@ -127,7 +127,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? 'Memproses…' : 'Masuk'}
           </button>

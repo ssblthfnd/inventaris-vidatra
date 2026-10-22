@@ -130,6 +130,7 @@ class DashboardApiTest extends TestCase
         $this->getJson(self::URL)
             ->assertOk()
             ->assertJsonPath('data.summary.total_assets', 7)
+            ->assertJsonPath('data.summary.active_assets', 6)
             ->assertJsonPath('data.summary.written_off', 1)
             ->assertJsonPath('data.summary.by_condition.baik', 4)
             ->assertJsonPath('data.summary.by_condition.kurang_baik', 1)
@@ -254,6 +255,29 @@ class DashboardApiTest extends TestCase
         $this->assertSame(
             [[$rA1->id], [$rA2->id], [$rB->id]],
             array_map(fn ($r) => [$r['id']], $rows),
+        );
+    }
+
+    public function test_by_room_order_ignores_asset_counts(): void
+    {
+        // the Laporan's by_room sorts by count; this one stays location, name
+        Sanctum::actingAs($this->viewer());
+        $la = Location::factory()->create(['code' => 'OA']);
+        $lb = Location::factory()->create(['code' => 'OB']);
+        $cat = Category::factory()->create(['code' => 'OK']);
+        $sub = Subcategory::factory()->forCategory($cat)->create(['code' => '001']);
+        $rB = Room::factory()->forLocation($lb)->create(['name' => 'Alfa']);
+        $rA2 = Room::factory()->forLocation($la)->create(['name' => 'Beta']);
+        $rA1 = Room::factory()->forLocation($la)->create(['name' => 'Zeta']);
+        foreach ([[$rB, 3], [$rA2, 2], [$rA1, 1]] as [$room, $count]) {
+            Asset::factory()->count($count)->forSubcategory($sub)->inRoom($room)->create();
+        }
+
+        $rows = $this->getJson(self::URL)->assertOk()->json('data.by_room');
+
+        $this->assertSame(
+            [[$rA2->id, 2], [$rA1->id, 1], [$rB->id, 3]],
+            array_map(fn ($r) => [$r['id'], $r['asset_count']], $rows),
         );
     }
 

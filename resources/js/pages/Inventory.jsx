@@ -385,14 +385,14 @@ export default function Inventory() {
                 <Link
                   to="/inventory/new"
                   state={{ from: searchParams.toString() }}
-                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                 >
                   <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Aset
                 </Link>
                 <Link
                   to="/inventory/batch"
                   state={{ from: searchParams.toString() }}
-                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-surface px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                 >
                   <span aria-hidden="true" className="text-base leading-none">+</span> Tambah Banyak Aset
                 </Link>
@@ -410,7 +410,7 @@ export default function Inventory() {
                 onSelect={handleExport}
                 busy={exportingExcel}
                 align="right"
-                buttonClassName="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                buttonClassName="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-surface px-3.5 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               />
             )}
           </div>
@@ -432,13 +432,13 @@ export default function Inventory() {
 
       {/* batch selection toolbar */}
       {canWriteInventory && selectedIds.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-900 bg-gray-900 px-3.5 py-2.5 text-sm text-white">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-accent bg-accent px-3.5 py-2.5 text-sm text-accent-fg">
           <span className="font-medium">{selectedIds.size} aset dipilih</span>
           <div className="ml-auto flex gap-2">
             <button
               type="button"
               onClick={() => setShowBatchModal(true)}
-              className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100"
+              className="rounded-md bg-surface px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100"
             >
               Edit massal
             </button>
@@ -450,20 +450,20 @@ export default function Inventory() {
                 align="right"
                 showModeSelector
                 selectionCount={selectedIds.size}
-                buttonClassName="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                buttonClassName="rounded-md bg-surface px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
             )}
             <button
               type="button"
               onClick={() => setShowDeleteDialog(true)}
-              className="rounded-md border border-red-500 bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+              className="rounded-md border border-danger bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-hover"
             >
               Hapus
             </button>
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
-              className="rounded-md border border-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+              className="rounded-md border border-accent-fg/40 px-3 py-1.5 text-sm font-medium text-accent-fg hover:bg-accent-hover"
             >
               Batal pilih
             </button>
@@ -559,7 +559,7 @@ export default function Inventory() {
                 key={`${chip.filter}:${chip.value}`}
                 type="button"
                 onClick={() => removeChip(chip.filter, chip.value)}
-                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white py-1 pl-2.5 pr-1.5 text-xs text-gray-700 hover:border-gray-300"
+                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-surface py-1 pl-2.5 pr-1.5 text-xs text-gray-700 hover:border-gray-300"
               >
                 {chip.label}
                 <span aria-hidden="true" className="text-gray-400">✕</span>
@@ -600,7 +600,7 @@ export default function Inventory() {
                 const opt = SORTS.find((s) => s.value === e.target.value);
                 if (opt) patchState({ sort: opt.sort, direction: opt.direction });
               }}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 outline-none focus:border-gray-900"
+              className="rounded-md border border-gray-300 bg-surface px-2 py-1.5 outline-none focus:border-gray-900"
             >
               {SORTS.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -614,7 +614,7 @@ export default function Inventory() {
             <select
               value={state.per_page}
               onChange={(e) => patchState({ per_page: Number(e.target.value) })}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 outline-none focus:border-gray-900"
+              className="rounded-md border border-gray-300 bg-surface px-2 py-1.5 outline-none focus:border-gray-900"
             >
               {PER_PAGE_OPTIONS.map((n) => (
                 <option key={n} value={n}>
@@ -637,13 +637,13 @@ export default function Inventory() {
               setPhase(result ? 'ready' : 'loading');
               setRetryKey((k) => k + 1);
             }}
-            className="mt-3 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+            className="mt-3 rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-hover"
           >
             Coba lagi
           </button>
         </div>
       ) : phase === 'ready' && assets.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-12 text-center">
+        <div className="rounded-xl border border-gray-200 bg-surface px-4 py-12 text-center">
           <p className="text-sm font-medium text-gray-700">Tidak ada aset yang ditemukan.</p>
           <p className="mt-1 text-sm text-gray-500">
             Coba ubah kata pencarian atau filter yang digunakan.

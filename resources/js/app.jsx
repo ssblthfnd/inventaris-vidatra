@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { AuthProvider } from './auth/AuthContext';
+import ThemeToggle from './components/ThemeToggle';
 import AppShell from './layouts/AppShell';
 import AssetDetail from './pages/AssetDetail';
 import AssetForm from './pages/AssetForm';
@@ -67,6 +68,8 @@ function App() {
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        {/* every page, signed in or not */}
+        <ThemeToggle />
       </AuthProvider>
     </BrowserRouter>
   );

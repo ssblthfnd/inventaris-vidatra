@@ -91,7 +91,7 @@ function HistoryEventCard({ event, canRevert, onRevertClick }) {
   const nothingToShow = !status && !photoNote && changes.length === 0 && summary.length === 0;
 
   return (
-    <li className="relative rounded-xl border border-gray-200 bg-white p-4 pl-6">
+    <li className="relative rounded-xl border border-gray-200 bg-surface p-4 pl-6">
       <span
         className="absolute left-2 top-[1.35rem] h-2 w-2 rounded-full bg-gray-900"
         aria-hidden="true"
@@ -230,7 +230,7 @@ export default function AssetHistorySection({
   };
 
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-surface">
       <div className="border-b border-gray-100 px-4 py-3">
         <h2 className="text-sm font-semibold text-gray-700">Riwayat Perubahan</h2>
         <p className="mt-0.5 text-xs text-gray-500">Catatan perubahan aset dari waktu ke waktu.</p>

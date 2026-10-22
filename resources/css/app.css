@@ -3,9 +3,181 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/*
+ * Light/dark theme (docs/mockups/README.md). `public/theme-init.js` sets
+ * `data-theme="light|dark"` on <html> before React renders; ThemeToggle.jsx flips it.
+ * `dark:` follows that attribute (not the OS setting), and only on screen — printing
+ * from the browser always uses the light theme.
+ */
+@custom-variant dark {
+    @media screen {
+        &:where([data-theme='dark'], [data-theme='dark'] *) {
+            @slot;
+        }
+    }
+}
+
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* Semantic tokens (light values; dark values below). Utilities: bg-page, bg-surface,
+       border-border, border-divider, text-ink, text-muted, bg-track, bg-bar, bg-accent, … */
+    --color-page: #f9f7f3;
+    --color-surface: #ffffff;
+    --color-border: #e4e7ea;
+    --color-divider: #eef0f1;
+    --color-ink: #2e4a5b;
+    --color-muted: #4f6b7c;
+    --color-track: #eaf1f6;
+    --color-bar: #6f9bb8;
+    --color-accent: #2e4a5b;
+    --color-accent-hover: #233a48;
+    --color-accent-fg: #ffffff;
+    --color-chip: #d5efff;
+    --color-chip-fg: #2e4a5b;
+    --color-field: #ffffff;
+    --color-field-border: #c9d4db;
+    /* solid destructive buttons (text-white on top): Tailwind's default red-600 / red-700 */
+    --color-danger: oklch(57.7% 0.245 27.325);
+    --color-danger-hover: oklch(50.5% 0.213 27.518);
+
+    /* Sumber aset — fixed category colours, fixed order (colour-blind checked) */
+    --color-src-bosda: #2a78d6;
+    --color-src-bosp: #eb6834;
+    --color-src-bostk: #1baf7a;
+    --color-src-yayasan: #eda100;
+    --color-src-lainnya: #e87ba4;
+    --color-src-belum: #9ca3af;
+
+    /* Kondisi — status colours */
+    --color-st-baik: #0ca30c;
+    --color-st-kurang: #fab219;
+    --color-st-rusak: #d03b3b;
+    --color-st-unknown: #9ca3af;
+
+    /* WCAG AA (4.5:1) for text: Tailwind's gray-400 (~2.6:1 on white), gray-500 and red-600
+       fall short on the light tints they sit on (gray-100, page, red-50/100), so they are
+       darkened slightly. red-600 is text-only here; solid red buttons use bg-danger. */
+    --color-gray-400: #636b7a;
+    --color-gray-500: #5d6574;
+    --color-red-600: oklch(52% 0.22 27.4);
+}
+
+/*
+ * Dark theme. Besides the semantic tokens, the neutral scale (gray-*) and the status
+ * tints (red/emerald/amber/indigo) are redefined, so the existing pages' utility
+ * classes (`text-gray-500`, `bg-red-50`, `border-gray-200`, …) adapt without a
+ * `dark:` variant on every element. Solid fills that carry white text never use these
+ * shades: they use bg-accent / bg-danger instead. Screen only — see @media print.
+ */
+@media screen {
+    :root[data-theme='dark'] {
+        color-scheme: dark;
+
+        --color-page: #1b2b35;
+        --color-surface: #233846;
+        --color-border: #2f4858;
+        --color-divider: #2b4252;
+        --color-ink: #f9f7f3;
+        --color-muted: #b9ccd8;
+        --color-track: #2b4252;
+        --color-bar: #a8d0ea;
+        --color-accent: #a8d0ea;
+        --color-accent-hover: #c4e0f1;
+        --color-accent-fg: #1b2b35;
+        --color-chip: #2e4a5b;
+        --color-chip-fg: #d5efff;
+        --color-field: #1b2b35;
+        --color-field-border: #3a576a;
+        --color-danger: #c53030;
+        --color-danger-hover: #a82626;
+
+        --color-src-bosda: #3987e5;
+        --color-src-bosp: #d95926;
+        --color-src-bostk: #199e70;
+        --color-src-yayasan: #c98500;
+        --color-src-lainnya: #d55181;
+        --color-src-belum: #7c8d99;
+        --color-st-unknown: #7c8d99;
+
+        --color-gray-50: #283f4e;
+        --color-gray-100: #2b4252;
+        --color-gray-200: #2f4858;
+        --color-gray-300: #3a576a;
+        --color-gray-400: #98b0c0;
+        --color-gray-500: #a9bfcd;
+        --color-gray-600: #b9ccd8;
+        --color-gray-700: #d0dde5;
+        --color-gray-800: #e3ebf0;
+        --color-gray-900: #f9f7f3;
+        --color-gray-950: #ffffff;
+
+        --color-red-50: #3a2630;
+        --color-red-100: #4a2c35;
+        --color-red-200: #6e3a44;
+        --color-red-300: #8f4a55;
+        --color-red-400: #e58a8a;
+        --color-red-500: #f07878;
+        --color-red-600: #ff9e9e;
+        --color-red-700: #ffb0b0;
+        --color-red-800: #ffc8c8;
+        --color-red-900: #ffdcdc;
+
+        --color-emerald-50: #1f3a36;
+        --color-emerald-100: #24473f;
+        --color-emerald-200: #2f5c51;
+        --color-emerald-300: #3d7566;
+        --color-emerald-400: #5fc9a0;
+        --color-emerald-500: #4cc795;
+        --color-emerald-600: #74d9b0;
+        --color-emerald-700: #8ee3c0;
+        --color-emerald-800: #a9ecd1;
+        --color-emerald-900: #c6f4e1;
+
+        --color-amber-50: #3a3424;
+        --color-amber-100: #4a4026;
+        --color-amber-200: #66562c;
+        --color-amber-300: #85702f;
+        --color-amber-400: #f0c35a;
+        --color-amber-500: #f5b83d;
+        --color-amber-600: #f7c766;
+        --color-amber-700: #f9d27f;
+        --color-amber-800: #fbdc99;
+        --color-amber-900: #fde7b8;
+
+        --color-indigo-50: #283a5c;
+        --color-indigo-100: #2f4470;
+        --color-indigo-200: #3d5486;
+        --color-indigo-300: #5068a0;
+        --color-indigo-400: #9fb0ec;
+        --color-indigo-500: #a8b8f0;
+        --color-indigo-600: #b4c2f2;
+        --color-indigo-700: #c2cdf5;
+        --color-indigo-800: #d2dbf8;
+        --color-indigo-900: #e2e8fb;
+    }
+
+    /* focus-ring offsets are white by default: match the dark surface instead */
+    :root[data-theme='dark'] * {
+        --tw-ring-offset-color: var(--color-surface);
+    }
+}
+
+@layer base {
+    :root {
+        color-scheme: light;
+    }
+
+    body {
+        background-color: var(--color-page);
+        color: var(--color-gray-900);
+    }
+
+    /* Tailwind's default placeholder is 50% of the text colour (~3.5:1); use an AA colour. */
+    ::placeholder {
+        color: var(--color-gray-500);
+    }
 }
 
 /*
@@ -17,4 +189,11 @@
  */
 html {
     scrollbar-gutter: stable;
+}
+
+/* Printing from the browser: always light (the dark block above is screen-only). */
+@media print {
+    :root {
+        color-scheme: light;
+    }
 }

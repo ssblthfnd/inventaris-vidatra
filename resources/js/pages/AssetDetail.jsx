@@ -49,7 +49,7 @@ function ConditionBadge({ value }) {
   const meta = CONDITION[value] ?? CONDITION_UNKNOWN;
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${meta.ring} ${meta.text}`}
+      className={`inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${meta.ring} ${meta.text}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} aria-hidden="true" />
       {meta.label}
@@ -73,7 +73,7 @@ function StatusBadge({ trashed, writtenOff }) {
     );
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-200">
+    <span className="inline-flex items-center rounded-full bg-surface px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-200">
       Aktif
     </span>
   );
@@ -97,7 +97,7 @@ function Row({ label, children }) {
 
 function Section({ title, children, list = true }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-surface">
       <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
         {title}
       </h2>
@@ -131,7 +131,7 @@ function DetailSkeleton() {
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
         {[0, 1].map((i) => (
-          <div key={i} className="rounded-xl border border-gray-200 bg-white p-4">
+          <div key={i} className="rounded-xl border border-gray-200 bg-surface p-4">
             <div className="mb-4 h-4 w-32 animate-pulse rounded bg-gray-100" />
             <div className="space-y-3">
               {[0, 1, 2, 3].map((j) => (
@@ -149,7 +149,7 @@ function CenteredState({ backTo, backLabel, title, message, action }) {
   return (
     <div className="mx-auto max-w-2xl">
       <BackLink to={backTo} label={backLabel} />
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white px-6 py-14 text-center">
+      <div className="mt-6 rounded-xl border border-gray-200 bg-surface px-6 py-14 text-center">
         <h1 className="text-base font-semibold text-gray-900">{title}</h1>
         <p className="mx-auto mt-1.5 max-w-sm text-sm text-gray-500">{message}</p>
         {action}
@@ -379,7 +379,7 @@ export default function AssetDetail() {
           <button
             type="button"
             onClick={retry}
-            className="mt-4 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+            className="mt-4 rounded-md bg-accent px-3.5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
           >
             Coba lagi
           </button>
@@ -453,7 +453,7 @@ export default function AssetDetail() {
           <button
             type="button"
             onClick={() => setAction('restore')}
-            className={`${actionBtn} border-gray-900 bg-gray-900 text-white hover:bg-gray-800`}
+            className={`${actionBtn} border-accent bg-accent text-accent-fg hover:bg-accent-hover`}
           >
             Restore Aset
           </button>

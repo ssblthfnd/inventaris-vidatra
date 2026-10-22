@@ -83,7 +83,7 @@ function SummaryTile({ label, value, tone = 'default' }) {
   }[tone];
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+    <div className="rounded-xl border border-gray-200 bg-surface px-4 py-3">
       <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</p>
       <p className={`mt-1 text-2xl font-semibold ${toneClass}`}>{value}</p>
     </div>
@@ -535,7 +535,7 @@ export default function Imports() {
       )}
 
       {/* Step 1: template */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+      <section className="rounded-xl border border-gray-200 bg-surface p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-gray-800">1. Unduh Template Excel</h2>
         <p className="mt-0.5 text-xs text-gray-500">
           Pilih kategori aset, unduh template, lalu isi sheet DATA sesuai panduan di dalamnya.
@@ -567,7 +567,7 @@ export default function Imports() {
       </section>
 
       {/* Step 2: upload */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+      <section className="rounded-xl border border-gray-200 bg-surface p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-gray-800">2. Unggah File yang Sudah Diisi</h2>
         <p className="mt-0.5 text-xs text-gray-500">
           Mengunggah file HANYA memvalidasi dan menyimpan data sementara — belum membuat aset baru.
@@ -578,13 +578,13 @@ export default function Imports() {
             type="file"
             accept=".xlsx"
             disabled={uploadBusy}
-            className="block text-sm text-gray-700 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-700 hover:file:border-gray-400 disabled:opacity-60"
+            className="block text-sm text-gray-700 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-700 hover:file:border-gray-400 disabled:opacity-60"
           />
           <button
             type="button"
             onClick={handleUpload}
             disabled={uploadBusy}
-            className="rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {uploadBusy ? 'Mengunggah…' : 'Upload & Validasi'}
           </button>
@@ -594,14 +594,14 @@ export default function Imports() {
 
       {/* Step 3: preview */}
       {batchLoading && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-5 text-sm text-gray-400">
           Memuat data import…
         </div>
       )}
 
       {batch && !batchLoading && (
         <section className="space-y-4">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+          <div className="rounded-xl border border-gray-200 bg-surface p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-gray-800">{batch.source_filename}</h2>
@@ -628,7 +628,7 @@ export default function Imports() {
                   type="button"
                   onClick={openPromote}
                   disabled={!canPromote || promotePreparing}
-                  className="rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {promotePreparing ? 'Memuat…' : 'Promote / Import ke Inventaris'}
                 </button>
@@ -717,7 +717,7 @@ export default function Imports() {
                   await handleResolveSource(unresolvedOnPage, bulkSource);
                   setBulkSource('');
                 }}
-                className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-fg disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Terapkan
               </button>
@@ -733,8 +733,8 @@ export default function Imports() {
                 className={[
                   'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                   statusFilter === opt.value
-                    ? 'border-gray-900 bg-gray-900 text-white'
-                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400',
+                    ? 'border-accent bg-accent text-accent-fg'
+                    : 'border-gray-300 bg-surface text-gray-700 hover:border-gray-400',
                 ].join(' ')}
               >
                 {opt.label}
@@ -786,7 +786,7 @@ export default function Imports() {
           would misleadingly read as "no imports yet" rather than "you can't
           see this". */}
       {canViewImportHistory && (
-      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+      <section className="rounded-xl border border-gray-200 bg-surface p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-gray-800">Riwayat Import</h2>
         {historyLoading ? (
           <p className="mt-3 text-sm text-gray-400">Memuat riwayat…</p>
@@ -875,7 +875,7 @@ export default function Imports() {
                 <button
                   type="button"
                   onClick={showUnresolvedSources}
-                  className="mt-2 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
+                  className="mt-2 rounded-md border border-red-300 bg-surface px-2.5 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
                 >
                   Tampilkan baris yang perlu dipilih
                 </button>

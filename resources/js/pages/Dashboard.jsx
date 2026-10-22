@@ -1,57 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { useAuth } from '../auth/AuthContext';
+import BarListCard from '../components/charts/BarListCard';
+import KpiRow from '../components/charts/KpiRow';
+import StackedBarCard from '../components/charts/StackedBarCard';
+import DashboardRooms from '../components/dashboard/DashboardRooms';
 import { api, ApiError } from '../lib/api';
 import { recentMutationSummary } from '../lib/assetHistory';
-import { useAuth } from '../auth/AuthContext';
+import { conditionItems, countActive, masterBars, sourceItems } from '../lib/chartData';
 
-const CONDITION_LABELS = {
-  baik: 'Baik',
-  kurang_baik: 'Kurang Baik',
-  rusak_berat: 'Rusak Berat',
-  unknown: 'Tidak diketahui',
-};
-
-function StatCard({ label, value }) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-    </div>
-  );
-}
-
-function CountTable({ title, rows, labelKey, headers }) {
-  return (
-    <section className="rounded-xl border border-gray-200 bg-white">
-      <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">{title}</h2>
-      {rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-gray-400">Belum ada data.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                <th className="px-4 py-2 font-medium">{headers[0]}</th>
-                <th className="px-4 py-2 text-right font-medium">{headers[1]}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={row.id ?? row.code ?? i} className="border-t border-gray-100">
-                  <td className="px-4 py-2">{row[labelKey]}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{row.asset_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
+/**
+ * Dashboard (design: docs/mockups/dashboard.html). KPIs, Sumber · Lokasi · Kondisi,
+ * Kategori and Mutasi Terbaru come from `GET /api/dashboard`; the "Aset per
+ * Ruangan" table pages through `GET /api/dashboard/rooms` on its own.
+ */
 export default function Dashboard() {
-  const { refreshUser } = useAuth();
+  const { refreshUser, isUnitAdmin, locationCode } = useAuth();
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -83,8 +47,17 @@ export default function Dashboard() {
     };
   }, [refreshUser]);
 
+  const byLocation = useMemo(() => data?.by_location ?? [], [data]);
+  const byCategory = data?.by_category ?? [];
+
+  // a unit_admin's data is limited to their own location, so that is the only useful filter choice
+  const roomLocations = useMemo(
+    () => byLocation.filter((l) => (isUnitAdmin ? l.code === locationCode : l.is_active !== false || l.asset_count > 0)),
+    [byLocation, isUnitAdmin, locationCode],
+  );
+
   if (status === 'loading') {
-    return <p className="text-sm text-gray-500">Memuat dashboard…</p>;
+    return <p className="text-sm text-muted">Memuat dashboard…</p>;
   }
 
   if (status === 'error') {
@@ -95,103 +68,64 @@ export default function Dashboard() {
     );
   }
 
-  const summary = data?.summary ?? { total_assets: 0, written_off: 0, by_condition: {} };
-  const byCondition = summary.by_condition ?? {};
-  // R9.4-15 — an inactive location/category is listed only while it still holds
-  // assets (D15-5): mark it, and keep the "Terdaftar" cards counting active master rows (D15-4)
-  const markInactive = (rows) =>
-    rows.map((r) => (r.is_active === false ? { ...r, name: `${r.name} (nonaktif)` } : r));
-  const byLocation = data?.by_location ?? [];
-  const byCategory = data?.by_category ?? [];
+  const summary = data?.summary ?? {};
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+    <div className="flex flex-col gap-5 text-ink">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="text-[22px] font-bold tracking-tight">Dashboard</h1>
+        <p className="text-sm text-muted">Ringkasan jumlah dan kondisi aset Yayasan Vidatra saat ini.</p>
+      </header>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total Aset" value={summary.total_assets} />
-        <StatCard label="Written-off" value={summary.written_off} />
-        <StatCard label="Lokasi Terdaftar" value={byLocation.filter((r) => r.is_active !== false).length} />
-        <StatCard label="Kategori Terdaftar" value={byCategory.filter((r) => r.is_active !== false).length} />
-      </div>
-
-      <section className="rounded-xl border border-gray-200 bg-white">
-        <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">Kondisi Aset</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <tbody>
-              {['baik', 'kurang_baik', 'rusak_berat', 'unknown'].map((key) => (
-                <tr key={key} className="border-t border-gray-100 first:border-t-0">
-                  <td className="px-4 py-2">{CONDITION_LABELS[key]}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{byCondition[key] ?? 0}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Tahap 2 — all six sources (zero rows included); sums to Total Aset */}
-      <CountTable
-        title="Aset per Sumber"
-        rows={data?.by_source ?? []}
-        labelKey="label"
-        headers={['Sumber', 'Jumlah']}
+      <KpiRow
+        items={[
+          { label: 'Total aset', value: summary.total_assets ?? 0 },
+          { label: 'Aset aktif', value: summary.active_assets ?? 0 },
+          { label: 'Ditulis off', value: summary.written_off ?? 0 },
+          { label: 'Lokasi', value: countActive(byLocation) },
+          { label: 'Kategori', value: countActive(byCategory) },
+        ]}
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <CountTable
-          title="Aset per Lokasi"
-          rows={markInactive(byLocation)}
-          labelKey="name"
-          headers={['Lokasi', 'Jumlah']}
-        />
-        <CountTable
-          title="Aset per Kategori"
-          rows={markInactive(byCategory)}
-          labelKey="name"
-          headers={['Kategori', 'Jumlah']}
+      <div className="flex flex-wrap gap-4">
+        <StackedBarCard title="Aset per Sumber" items={sourceItems(data?.by_source)} className="flex-[1_1_230px]" />
+        <BarListCard title="Aset per Lokasi" rows={masterBars(byLocation)} className="flex-[1_1_230px]" />
+        <StackedBarCard
+          title="Kondisi Aset"
+          items={conditionItems(summary.by_condition)}
+          className="flex-[1_1_230px]"
         />
       </div>
 
-      <CountTable
-        title="Aset per Ruangan"
-        rows={(data?.by_room ?? []).map((r) => ({
-          ...r,
-          // the "Tanpa Ruangan" bucket (D15-3) has no room/location of its own
-          name: r.location_name ? `${r.name} — ${r.location_name}` : r.name,
-        }))}
-        labelKey="name"
-        headers={['Ruangan', 'Jumlah']}
-      />
+      <BarListCard title="Aset per Kategori" rows={masterBars(byCategory)} twoColumns />
 
-      <section className="rounded-xl border border-gray-200 bg-white">
-        <h2 className="border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">Mutasi Terbaru</h2>
+      <DashboardRooms locations={roomLocations} />
+
+      <section className="min-w-0 overflow-hidden rounded-[14px] border border-border bg-surface">
+        <h2 className="border-b border-divider px-5 py-4 text-[15px] font-bold">Mutasi Terbaru</h2>
         {(data?.recent_mutations ?? []).length === 0 ? (
-          <p className="px-4 py-6 text-sm text-gray-400">Belum ada mutasi.</p>
+          <p className="px-5 py-6 text-sm text-muted">Belum ada mutasi.</p>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul>
             {data.recent_mutations.map((m) => {
-              const summary = recentMutationSummary(m);
+              const item = recentMutationSummary(m);
 
               return (
-                <li key={m.id} className="px-4 py-3 text-sm">
-                  <span className="text-gray-500">{m.mutation_date}</span>{' '}
-                  {summary.kind === 'move' ? (
+                <li key={m.id} className="border-t border-divider px-5 py-3 text-sm first:border-t-0">
+                  <span className="text-muted tabular-nums">{m.mutation_date}</span>{' '}
+                  {item.kind === 'move' ? (
                     <>
-                      <span className="font-medium">{summary.from ?? '—'}</span>
-                      <span className="text-gray-400"> → </span>
-                      <span className="font-medium">{summary.to ?? '—'}</span>
+                      <span className="font-medium">{item.from ?? '—'}</span>
+                      <span className="text-muted"> → </span>
+                      <span className="font-medium">{item.to ?? '—'}</span>
                     </>
                   ) : (
                     <>
-                      <span className="font-medium">{summary.label}</span>
-                      {summary.assetCode && <span className="text-gray-600"> · {summary.assetCode}</span>}
+                      <span className="font-medium">{item.label}</span>
+                      {item.assetCode && <span className="text-muted"> · {item.assetCode}</span>}
                     </>
                   )}
-                  {m.performed_by?.name && (
-                    <span className="text-gray-400"> · {m.performed_by.name}</span>
-                  )}
+                  {m.performed_by?.name && <span className="text-muted"> · {m.performed_by.name}</span>}
                 </li>
               );
             })}
